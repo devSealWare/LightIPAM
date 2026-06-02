@@ -89,26 +89,34 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 - Prefer simple server-rendered flows until a workflow clearly needs HTMX or targeted JavaScript.
 - Keep Tailwind classes readable and avoid turning the app into a heavy SPA.
 
+## Scanner Components
+
+- `internal/scanner`: versioned protocol types and allowlist validation
+  (issue #7, merged). `ValidateJobForAgent` enforces the dual job/agent
+  allowlist contract.
+- `internal/scanner/agent`: no-op agent receive/report handler plus mTLS
+  server/client TLS config builders.
+- `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
+  certificates.
+- `cmd/scanner-agent`: the agent process (mTLS HTTPS, `GET /healthz`,
+  `POST /jobs`). No active scanning yet.
+- `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
+  `scanner` profile) build and run the agent unprivileged.
+
+See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, and ADRs 0002/0003.
+
 ## Current Branch Plan
 
-The next work is issue #7: scanner agent protocol.
+Issue #8 is in progress: scanner-agent container with a no-op receive/report
+loop over mTLS. The app stays unprivileged; the agent drops all capabilities
+and performs no scanning.
 
-Goals for issue #7:
+## After Issue #8
 
-- Define agent registration.
-- Define mTLS identity model.
-- Define scan job schema.
-- Define scan result schema.
-- Require explicit IPv4 allowlists per scan.
-- Keep the protocol implementation separate from actual Nmap execution.
+Proceed to issue #9: app-side scan orchestration.
 
-## After Issue #7
-
-Proceed to scanner-agent container work:
-
-- Add `cmd/scanner-agent`.
-- Add a separate Compose service.
-- Keep the app container unprivileged.
-- Give scanner capabilities only to the agent when required.
-- Start with a no-op scan job before adding Nmap.
+- App-side manual and scheduled scan job dispatch.
+- App acts as the mTLS client to the agent.
+- Scan status lifecycle and immutable scan audit trail.
+- Still no active Nmap probing (issue #10).
 

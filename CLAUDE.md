@@ -50,31 +50,26 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-Issue #7 is next: define scanner agent protocol.
+Issue #8 is in progress: add the scanner-agent container with a no-op job
+receive/report loop. Issue #7 (scanner agent protocol) is merged to `main`.
 
-The protocol should be concrete enough for implementation but should not add active scanning yet.
+Issue #8 scope (a no-op agent only — no Nmap, no active scanning):
 
-Expected protocol shape:
+- `cmd/scanner-agent`: mTLS HTTPS server exposing `GET /healthz` and `POST /jobs`.
+- `internal/scanner/agent`: receive/report handler, mTLS server/client TLS config,
+  client-identity check, no-op job processing via `scanner.ValidateJobForAgent`.
+- `internal/scanner/pki` + `cmd/scanner-certs`: dev CA, agent server cert, app
+  client cert.
+- `Dockerfile.scanner` and a `scanner-agent` Compose service behind the `scanner`
+  profile (drops all caps, read-only). App stays unprivileged.
+- Docs: `docs/SCANNER_AGENT.md`, `docs/adr/0003-scanner-agent-container.md`.
 
-- Agent registration model.
-- Agent identity and mTLS model.
-- Scan job schema.
-- Scan result schema.
-- Explicit IPv4 allowlist per scan.
-- Scan lifecycle states.
-- Error/result evidence.
-- Versioned protocol package or docs.
+## Scanner Protocol (merged, issue #7)
 
-## Suggested Implementation
-
-Add:
-
-- `docs/SCANNER_PROTOCOL.md`
-- `docs/adr/0002-scanner-agent-protocol.md`
-- `internal/scanner/protocol.go`
-- `internal/scanner/protocol_test.go`
-
-Keep this PR focused on contracts. Do not implement the scanner container or Nmap execution yet.
+`internal/scanner/protocol.go` defines the versioned protocol: agent
+registration, mTLS identity, scan job/result schemas, lifecycle states, and
+allowlist validation. `ValidateJob` checks job structure; `ValidateJobForAgent`
+enforces the dual job/agent allowlist contract. See `docs/SCANNER_PROTOCOL.md`.
 
 ## Verification
 
@@ -88,13 +83,19 @@ docker compose up -d
 docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 ```
 
-## Next After Issue #7
+For the scanner agent (issue #8):
 
-After the protocol is reviewed/merged, start issue #8:
+```sh
+go run ./cmd/scanner-certs -dir deploy/scanner-certs
+docker compose --profile scanner up -d --build
+```
 
-- Add scanner-agent container.
-- Add `cmd/scanner-agent`.
-- Add Compose service.
-- Implement no-op job receive/report loop.
-- Keep app unprivileged.
+## Next After Issue #8
+
+After the scanner-agent container is reviewed/merged, start issue #9:
+
+- App-side manual and scheduled scan job dispatch.
+- App acts as the mTLS client to the agent (`POST /jobs`).
+- Scan status lifecycle and immutable scan audit trail.
+- Still no active Nmap probing (that is issue #10).
 

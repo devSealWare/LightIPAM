@@ -1,0 +1,20 @@
+# Scanner agent image. Built separately from the web app so the two components
+# can be hardened and (later) granted capabilities independently. This no-op
+# agent needs no extra Linux capabilities; privileged discovery (Nmap) arrives
+# in a later issue and will be scoped to this image only.
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod ./
+COPY go.sum* ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN go build -trimpath -ldflags="-s -w" -o /out/scanner-agent ./cmd/scanner-agent
+
+FROM alpine:3.20
+RUN addgroup -S scanner && adduser -S -G scanner scanner
+USER scanner
+WORKDIR /app
+COPY --from=build /out/scanner-agent /app/scanner-agent
+EXPOSE 8443
+ENTRYPOINT ["/app/scanner-agent"]
