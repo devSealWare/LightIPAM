@@ -25,6 +25,10 @@ type PageData struct {
 	Devices        []store.Device
 	Device         store.Device
 	MACAddresses   []store.MACAddress
+	AuditLogs      []store.AuditLog
+	AuditActions   []string
+	AuditSubjects  []string
+	AuditActors    []store.User
 	Form           map[string]string
 	ActiveNav      string
 	SuccessMessage string

@@ -1,0 +1,72 @@
+{{ define "content" }}
+<main class="min-h-screen bg-zinc-100 px-4 py-4 dark:bg-zinc-950 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl">
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Audit log</h1>
+          <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Append-only activity for authentication and IPAM changes.</p>
+        </div>
+      </div>
+    </header>
+
+    <form method="get" action="/audit" class="glass-panel mt-5 grid gap-4 rounded-[28px] p-5 lg:grid-cols-4">
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Action</span>
+        <select class="form-input" name="action">
+          <option value="">All actions</option>
+          {{ range .AuditActions }}
+          <option value="{{ . }}" {{ if eq . (index $.Form "action") }}selected{{ end }}>{{ . }}</option>
+          {{ end }}
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Subject</span>
+        <select class="form-input" name="subject_type">
+          <option value="">All subjects</option>
+          {{ range .AuditSubjects }}
+          <option value="{{ . }}" {{ if eq . (index $.Form "subject_type") }}selected{{ end }}>{{ . }}</option>
+          {{ end }}
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Actor</span>
+        <select class="form-input" name="actor">
+          <option value="">All actors</option>
+          {{ range .AuditActors }}
+          <option value="{{ .ID }}" {{ if eq .ID (index $.Form "actor") }}selected{{ end }}>{{ .DisplayName }}</option>
+          {{ end }}
+        </select>
+      </label>
+      <div class="flex items-end gap-3">
+        <button class="button-primary" type="submit">Apply</button>
+        <a class="button-muted" href="/audit">Reset</a>
+      </div>
+    </form>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      {{ if .AuditLogs }}
+      <div class="grid grid-cols-[0.7fr_1.1fr_1fr_0.9fr_1fr_1.2fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>ID</span><span>Time</span><span>Actor</span><span>Action</span><span>Subject</span><span>Metadata</span>
+      </div>
+      {{ range .AuditLogs }}
+      <div class="grid grid-cols-[0.7fr_1.1fr_1fr_0.9fr_1fr_1.2fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="font-mono text-zinc-500 dark:text-zinc-400">#{{ .ID }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ if .ActorDisplayName }}{{ .ActorDisplayName }}{{ else }}System{{ end }}</span>
+        <span class="font-semibold text-zinc-950 dark:text-white">{{ .Action }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .SubjectType }} {{ .SubjectID }}</span>
+        <span class="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ .Metadata }}</span>
+      </div>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No audit events found</h2>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Try clearing filters or making a change in IPAM.</p>
+      </div>
+      {{ end }}
+    </section>
+  </div>
+</main>
+{{ end }}

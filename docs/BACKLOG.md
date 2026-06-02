@@ -72,6 +72,7 @@ Acceptance criteria:
 
 - Audit entries for login, logout, IPAM mutations, and scan configuration changes.
 - Audit entries cannot be edited through normal app APIs.
+- Database trigger rejects direct audit row update/delete attempts.
 - Audit UI with filters.
 
 ## 7. Define Scanner Agent Protocol

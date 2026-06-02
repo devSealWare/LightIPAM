@@ -81,12 +81,32 @@ func TestRenderTemplates(t *testing.T) {
 			Address:   "da:a1:19:22:33:44",
 			IsPrivate: true,
 		}},
+		AuditLogs: []store.AuditLog{{
+			ID:               1,
+			ActorUserID:      "user-1",
+			ActorDisplayName: "Admin",
+			Action:           "subnet.created",
+			SubjectType:      "subnet",
+			SubjectID:        "subnet-1",
+			Metadata:         "{}",
+		}},
+		AuditActions:  []string{"subnet.created"},
+		AuditSubjects: []string{"subnet"},
+		AuditActors: []store.User{{
+			ID:          "user-1",
+			Username:    "admin",
+			DisplayName: "Admin",
+			IsAdmin:     true,
+		}},
 		Form: map[string]string{
-			"site_id":     "default",
-			"name":        "Office LAN",
-			"cidr":        "192.168.10.0/24",
-			"vlan":        "20",
-			"description": "Primary office network",
+			"site_id":      "default",
+			"name":         "Office LAN",
+			"cidr":         "192.168.10.0/24",
+			"vlan":         "20",
+			"description":  "Primary office network",
+			"action":       "subnet.created",
+			"subject_type": "subnet",
+			"actor":        "user-1",
 		},
 	}
 
@@ -100,6 +120,7 @@ func TestRenderTemplates(t *testing.T) {
 		"devices.html",
 		"device_form.html",
 		"device_detail.html",
+		"audit.html",
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

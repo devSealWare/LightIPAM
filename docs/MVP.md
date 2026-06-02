@@ -66,6 +66,7 @@ Passive integrations such as DHCP, DNS, SNMP, LLDP/CDP, firewall, and controller
 - Put elevated scan capabilities only in the scanner agent.
 - Use mTLS for app-to-agent communication.
 - Write immutable audit logs for scan activity and IPAM changes.
+- Audit rows are append-only and protected against direct update/delete attempts.
 - MFA is not required for MVP, but the auth design should leave room for it.
 
 ## UI

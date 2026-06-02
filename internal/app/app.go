@@ -67,6 +67,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /devices/{id}/delete", app.deviceDelete)
 	mux.HandleFunc("POST /devices/{id}/macs", app.macCreate)
 	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
+	mux.HandleFunc("GET /audit", app.auditIndex)
 
 	return securityHeaders(mux)
 }
@@ -104,6 +105,12 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
 		return
 	}
+	auditLogs, err := a.store.ListAuditLogs(r.Context(), store.AuditFilters{Limit: 5})
+	if err != nil {
+		a.logger.Error("list audit logs", "error", err)
+		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
+		return
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
 		Title:     "Dashboard",
@@ -112,7 +119,60 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		Stats:     stats,
 		Subnets:   subnets,
 		Devices:   devices,
+		AuditLogs: auditLogs,
 		ActiveNav: "dashboard",
+	})
+}
+
+func (a *App) auditIndex(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	filters := store.AuditFilters{
+		Action:      strings.TrimSpace(r.URL.Query().Get("action")),
+		SubjectType: strings.TrimSpace(r.URL.Query().Get("subject_type")),
+		ActorUserID: strings.TrimSpace(r.URL.Query().Get("actor")),
+		Limit:       100,
+	}
+	logs, err := a.store.ListAuditLogs(r.Context(), filters)
+	if err != nil {
+		a.logger.Error("list audit logs", "error", err)
+		http.Error(w, "Unable to load audit logs", http.StatusInternalServerError)
+		return
+	}
+	actions, err := a.store.AuditActions(r.Context())
+	if err != nil {
+		a.logger.Error("list audit actions", "error", err)
+		http.Error(w, "Unable to load audit filters", http.StatusInternalServerError)
+		return
+	}
+	subjects, err := a.store.AuditSubjectTypes(r.Context())
+	if err != nil {
+		a.logger.Error("list audit subjects", "error", err)
+		http.Error(w, "Unable to load audit filters", http.StatusInternalServerError)
+		return
+	}
+	actors, err := a.store.AuditActors(r.Context())
+	if err != nil {
+		a.logger.Error("list audit actors", "error", err)
+		http.Error(w, "Unable to load audit filters", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "audit.html", ui.PageData{
+		Title:         "Audit Log",
+		User:          session.User,
+		CSRF:          session.CSRFToken,
+		AuditLogs:     logs,
+		AuditActions:  actions,
+		AuditSubjects: subjects,
+		AuditActors:   actors,
+		Form: map[string]string{
+			"action":       filters.Action,
+			"subject_type": filters.SubjectType,
+			"actor":        filters.ActorUserID,
+		},
+		ActiveNav: "audit",
 	})
 }
 
