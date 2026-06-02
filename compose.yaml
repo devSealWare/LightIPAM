@@ -16,6 +16,35 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Optional active-discovery agent. Started only with the "scanner" profile so
+  # the default app+db stack stays unchanged. Requires mTLS material generated
+  # by `go run ./cmd/scanner-certs` into ./deploy/scanner-certs first.
+  # See docs/SCANNER_AGENT.md.
+  scanner-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.scanner
+    profiles:
+      - scanner
+    environment:
+      AGENT_LISTEN: ":8443"
+      AGENT_ID: agent-local
+      AGENT_NAME: local-scanner-agent
+      AGENT_ALLOWED_CIDRS: "192.168.0.0/16,10.0.0.0/8"
+      APP_CLIENT_CN: light-ipam-app
+      SCANNER_TLS_CERT: /certs/agent.crt
+      SCANNER_TLS_KEY: /certs/agent.key
+      SCANNER_TLS_CA: /certs/ca.crt
+    volumes:
+      - ./deploy/scanner-certs:/certs:ro
+    read_only: true
+    # No extra capabilities: the no-op agent does not scan yet. NET_RAW will be
+    # added here (and only here) when Nmap-based discovery lands.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
   db:
     image: postgres:16-alpine
     environment:
