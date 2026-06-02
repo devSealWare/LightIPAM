@@ -1,0 +1,84 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div class="mx-auto max-w-3xl">
+    <header class="mb-5 flex items-center justify-between">
+      <div>
+        <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/schedules">Schedules</a>
+        <h1 class="mt-2 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">{{ .Title }}</h1>
+      </div>
+      {{ if .ScanSchedule.ID }}
+      <a class="text-sm font-medium text-rose-600 hover:text-rose-700 dark:text-rose-300" href="/schedules/{{ .ScanSchedule.ID }}/delete">Delete</a>
+      {{ end }}
+    </header>
+
+    {{ if not .ScanAgents }}
+    <section class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No agents registered</h2>
+      <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent before creating a schedule.</p>
+      <a class="button-primary mt-5" href="/agents/new">Register agent</a>
+    </section>
+    {{ else }}
+    <form method="post" action="{{ if .ScanSchedule.ID }}/schedules/{{ .ScanSchedule.ID }}{{ else }}/schedules{{ end }}" class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+      {{ if .Error }}
+      <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+      {{ end }}
+      <div class="grid gap-5 sm:grid-cols-2">
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Name</span>
+          <input class="form-input" name="name" value="{{ index .Form "name" }}" required>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Agent</span>
+          <select class="form-input" name="agent_id">
+            {{ range .ScanAgents }}
+            <option value="{{ .ID }}" {{ if eq .ID (index $.Form "agent_id") }}selected{{ end }}>{{ .Name }} ({{ .Status }})</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Interval (seconds)</span>
+          <input class="form-input" name="interval" value="{{ index .Form "interval" }}" inputmode="numeric" placeholder="3600">
+          <span class="mt-1 block text-xs text-zinc-400">Minimum 60 seconds.</span>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan type</span>
+          <select class="form-input" name="scan_type">
+            {{ range .ScanTypes }}
+            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ . }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Mode</span>
+          <select class="form-input" name="mode">
+            {{ range .ScanModes }}
+            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ . }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
+          <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="allowed_cidrs" placeholder="192.168.10.0/24">{{ index .Form "allowed_cidrs" }}</textarea>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Targets</span>
+          <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="targets" placeholder="192.168.10.0/24">{{ index .Form "targets" }}</textarea>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timeout (seconds)</span>
+          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="60">
+        </label>
+        <label class="flex items-center gap-3 sm:col-span-2">
+          <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="enabled" {{ if index .Form "enabled" }}checked{{ end }}>
+          <span class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Enabled</span>
+        </label>
+      </div>
+      <div class="mt-7 flex items-center justify-between gap-3">
+        <a class="button-muted" href="/schedules">Cancel</a>
+        <button class="button-primary" type="submit">Save schedule</button>
+      </div>
+    </form>
+    {{ end }}
+  </div>
+{{ end }}

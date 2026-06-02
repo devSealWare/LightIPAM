@@ -5,11 +5,18 @@ services:
       PORT: "8080"
       DATABASE_URL: postgres://lightipam:lightipam@db:5432/lightipam?sslmode=disable
       APP_SECRET: change-me-in-production
+      # Client identity for dispatching scan jobs to agents over mTLS. If these
+      # files are absent the app still boots and scan jobs fail cleanly.
+      SCANNER_CLIENT_CERT: /certs/app.crt
+      SCANNER_CLIENT_KEY: /certs/app.key
+      SCANNER_CLIENT_CA: /certs/ca.crt
     ports:
       - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./deploy/scanner-certs:/certs:ro
     read_only: true
     cap_drop:
       - ALL

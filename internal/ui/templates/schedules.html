@@ -1,0 +1,49 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Scan Schedules</h1>
+        </div>
+        <a class="button-primary" href="/schedules/new">New schedule</a>
+      </div>
+    </header>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      {{ if .ScanSchedules }}
+      <div class="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.9fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Name</span>
+        <span>Agent</span>
+        <span>Every</span>
+        <span>Enabled</span>
+        <span>Next run</span>
+        <span class="text-right">Actions</span>
+      </div>
+      {{ range .ScanSchedules }}
+      <div class="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.9fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <a class="font-semibold text-zinc-950 hover:underline dark:text-white" href="/schedules/{{ .ID }}/edit">{{ .Name }}<span class="block text-xs font-normal text-zinc-400">{{ .ScanType }} / {{ .Mode }}</span></a>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ if .AgentName }}{{ .AgentName }}{{ else }}removed{{ end }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .IntervalSeconds }}s</span>
+        <span>{{ if .Enabled }}{{ template "status_badge" "active" }}{{ else }}{{ template "status_badge" "disabled" }}{{ end }}</span>
+        <span class="text-zinc-500 dark:text-zinc-400">{{ datetime .NextRunAt }}</span>
+        <div class="flex items-center justify-end gap-2">
+          <form method="post" action="/schedules/{{ .ID }}/run">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="button-muted h-9 px-3 text-xs" type="submit">Run now</button>
+          </form>
+          <a class="button-muted h-9 px-3 text-xs" href="/schedules/{{ .ID }}/edit">Edit</a>
+        </div>
+      </div>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No schedules yet</h2>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Schedules run on the app's in-process timer and enqueue scan jobs automatically. Each run is bounded by the agent's allowlist and recorded in the audit log.</p>
+        <a class="button-primary mt-5" href="/schedules/new">New schedule</a>
+      </div>
+      {{ end }}
+    </section>
+  </div>
+{{ end }}

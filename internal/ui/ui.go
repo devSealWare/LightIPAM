@@ -4,6 +4,8 @@ import (
 	"embed"
 	"html/template"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
@@ -30,6 +32,16 @@ type PageData struct {
 	AuditActions   []string
 	AuditSubjects  []string
 	AuditActors    []store.User
+	ScanAgents     []store.ScanAgent
+	ScanAgent      store.ScanAgent
+	ScanJobs       []store.ScanJob
+	ScanJob        store.ScanJob
+	ScanSchedules  []store.ScanSchedule
+	ScanSchedule   store.ScanSchedule
+	ScanTypes      []string
+	ScanModes      []string
+	AgentStatuses  []string
+	DispatchReady  bool
 	Form           map[string]string
 	ActiveNav      string
 	SuccessMessage string
@@ -42,6 +54,21 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		},
 		"ne": func(a, b any) bool {
 			return a != b
+		},
+		"join": func(values []string, sep string) string {
+			return strings.Join(values, sep)
+		},
+		"datetime": func(t time.Time) string {
+			if t.IsZero() {
+				return "-"
+			}
+			return t.Format("2006-01-02 15:04")
+		},
+		"datetimeptr": func(t *time.Time) string {
+			if t == nil || t.IsZero() {
+				return "-"
+			}
+			return t.Format("2006-01-02 15:04")
 		},
 	}).ParseFS(assets, "templates/base.html", "templates/shell.html", "templates/"+name)
 	if err != nil {

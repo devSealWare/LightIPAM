@@ -50,26 +50,34 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-Issue #8 is in progress: add the scanner-agent container with a no-op job
-receive/report loop. Issue #7 (scanner agent protocol) is merged to `main`.
+Issue #9 is in progress: app-side scan orchestration (manual + scheduled scan
+jobs, app-as-mTLS-client, lifecycle, scan audit trail). Issues #7 (protocol) and
+#8 (no-op agent container) are merged to `main`. Still no active Nmap scanning.
 
-Issue #8 scope (a no-op agent only — no Nmap, no active scanning):
+Issue #9 scope:
 
-- `cmd/scanner-agent`: mTLS HTTPS server exposing `GET /healthz` and `POST /jobs`.
-- `internal/scanner/agent`: receive/report handler, mTLS server/client TLS config,
-  client-identity check, no-op job processing via `scanner.ValidateJobForAgent`.
-- `internal/scanner/pki` + `cmd/scanner-certs`: dev CA, agent server cert, app
-  client cert.
-- `Dockerfile.scanner` and a `scanner-agent` Compose service behind the `scanner`
-  profile (drops all caps, read-only). App stays unprivileged.
-- Docs: `docs/SCANNER_AGENT.md`, `docs/adr/0003-scanner-agent-container.md`.
+- DB migration 5: `scan_agents`, `scan_schedules`, `scan_jobs`.
+- `internal/scanner/dispatch`: app-side mTLS client that POSTs jobs to agents.
+- `internal/scanner/orchestrator`: validates, enqueues, dispatches async, records
+  lifecycle + audit, and runs an in-process schedule ticker.
+- App UI: `/scans` (list + run), `/agents` (CRUD), `/schedules` (CRUD + run-now).
+- App mounts its mTLS client cert (`/certs/app.crt` etc.); dispatch disables
+  cleanly if absent.
 
 ## Scanner Protocol (merged, issue #7)
 
 `internal/scanner/protocol.go` defines the versioned protocol: agent
 registration, mTLS identity, scan job/result schemas, lifecycle states, and
 allowlist validation. `ValidateJob` checks job structure; `ValidateJobForAgent`
-enforces the dual job/agent allowlist contract. See `docs/SCANNER_PROTOCOL.md`.
+is the app-side check (active + agent_id + allowlist containment);
+`ValidateAgentScope` is the agent-side check (allowlist containment only). See
+`docs/SCANNER_PROTOCOL.md`.
+
+## Scanner Agent (merged, issue #8)
+
+`cmd/scanner-agent` + `internal/scanner/agent` run a no-op mTLS agent
+(`GET /healthz`, `POST /jobs`). `internal/scanner/pki` + `cmd/scanner-certs`
+generate the dev CA and certs. See `docs/SCANNER_AGENT.md`, ADR 0003.
 
 ## Verification
 
@@ -90,12 +98,13 @@ go run ./cmd/scanner-certs -dir deploy/scanner-certs
 docker compose --profile scanner up -d --build
 ```
 
-## Next After Issue #8
+## Next After Issue #9
 
-After the scanner-agent container is reviewed/merged, start issue #9:
+After scan orchestration is reviewed/merged, start issue #10 (Nmap Discovery MVP):
 
-- App-side manual and scheduled scan job dispatch.
-- App acts as the mTLS client to the agent (`POST /jobs`).
-- Scan status lifecycle and immutable scan audit trail.
-- Still no active Nmap probing (that is issue #10).
+- Implement active discovery inside the scanner agent (Nmap), gated by scan mode.
+- Add `NET_RAW` to the agent image/Compose service only — app stays unprivileged.
+- IPv4 host discovery, TCP service detection, OS probing where reliable.
+- Rate limits; turn agent observations into auto-created or review-queued IPAM
+  records (the app already stores raw results in `scan_jobs.result`).
 
