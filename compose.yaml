@@ -3,7 +3,7 @@ services:
     build: .
     environment:
       PORT: "8080"
-      DATABASE_URL: postgres://netventory:netventory@db:5432/netventory?sslmode=disable
+      DATABASE_URL: postgres://lightipam:lightipam@db:5432/lightipam?sslmode=disable
     ports:
       - "8080:8080"
     depends_on:
@@ -18,17 +18,16 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: netventory
-      POSTGRES_USER: netventory
-      POSTGRES_PASSWORD: netventory
+      POSTGRES_DB: lightipam
+      POSTGRES_USER: lightipam
+      POSTGRES_PASSWORD: lightipam
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U netventory -d netventory"]
+      test: ["CMD-SHELL", "pg_isready -U lightipam -d lightipam"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
   pgdata:
-
