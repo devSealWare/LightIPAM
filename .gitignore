@@ -7,3 +7,6 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Generated dev mTLS material for the scanner agent (never commit keys).
+deploy/scanner-certs/
