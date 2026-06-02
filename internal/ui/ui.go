@@ -12,14 +12,27 @@ import (
 var assets embed.FS
 
 type PageData struct {
-	Title string
-	Error string
-	CSRF  string
-	User  store.User
+	Title          string
+	Error          string
+	CSRF           string
+	User           store.User
+	Stats          store.DashboardStats
+	Sites          []store.Site
+	Subnets        []store.Subnet
+	Subnet         store.Subnet
+	Addresses      []store.IPAddress
+	AddressStates  []string
+	Form           map[string]string
+	ActiveNav      string
+	SuccessMessage string
 }
 
 func Render(w http.ResponseWriter, name string, data PageData) error {
-	tmpl, err := template.ParseFS(assets, "templates/base.html", "templates/"+name)
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"eq": func(a, b any) bool {
+			return a == b
+		},
+	}).ParseFS(assets, "templates/base.html", "templates/"+name)
 	if err != nil {
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return err

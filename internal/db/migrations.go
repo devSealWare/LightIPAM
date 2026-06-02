@@ -59,23 +59,12 @@ CREATE TABLE IF NOT EXISTS sites (
 	updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS vlans (
-	id text PRIMARY KEY,
-	site_id text REFERENCES sites(id) ON DELETE SET NULL,
-	vlan_id integer NOT NULL CHECK (vlan_id BETWEEN 1 AND 4094),
-	name text NOT NULL,
-	description text NOT NULL DEFAULT '',
-	created_at timestamptz NOT NULL DEFAULT now(),
-	updated_at timestamptz NOT NULL DEFAULT now(),
-	UNIQUE (site_id, vlan_id)
-);
-
 CREATE TABLE IF NOT EXISTS subnets (
 	id text PRIMARY KEY,
 	site_id text REFERENCES sites(id) ON DELETE SET NULL,
-	vlan_id text REFERENCES vlans(id) ON DELETE SET NULL,
 	cidr cidr NOT NULL,
 	name text NOT NULL,
+	vlan integer CHECK (vlan IS NULL OR vlan BETWEEN 1 AND 4094),
 	description text NOT NULL DEFAULT '',
 	created_at timestamptz NOT NULL DEFAULT now(),
 	updated_at timestamptz NOT NULL DEFAULT now(),
@@ -147,6 +136,20 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
 CREATE INDEX IF NOT EXISTS idx_subnets_cidr ON subnets USING gist (cidr inet_ops);
 CREATE INDEX IF NOT EXISTS idx_ip_addresses_address ON ip_addresses USING gist (address inet_ops);
+
+INSERT INTO sites (id, name, description)
+VALUES ('default', 'Default', 'Initial site for this Light IPAM installation.')
+ON CONFLICT (id) DO NOTHING;
+`,
+	},
+	{
+		version: 2,
+		sql: `
+ALTER TABLE subnets ADD COLUMN IF NOT EXISTS vlan integer CHECK (vlan IS NULL OR vlan BETWEEN 1 AND 4094);
+
+INSERT INTO sites (id, name, description)
+VALUES ('default', 'Default', 'Initial site for this Light IPAM installation.')
+ON CONFLICT (id) DO NOTHING;
 `,
 	},
 }

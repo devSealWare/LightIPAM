@@ -4,11 +4,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
 	"github.com/devSealWare/LightIPAM/internal/config"
+	"github.com/devSealWare/LightIPAM/internal/ipam"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,6 +49,15 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
 	mux.HandleFunc("POST /logout", app.logout)
+	mux.HandleFunc("GET /subnets", app.subnetsIndex)
+	mux.HandleFunc("GET /subnets/new", app.subnetNew)
+	mux.HandleFunc("POST /subnets", app.subnetCreate)
+	mux.HandleFunc("GET /subnets/{id}", app.subnetShow)
+	mux.HandleFunc("GET /subnets/{id}/edit", app.subnetEdit)
+	mux.HandleFunc("POST /subnets/{id}", app.subnetUpdate)
+	mux.HandleFunc("POST /subnets/{id}/delete", app.subnetDelete)
+	mux.HandleFunc("POST /subnets/{id}/addresses", app.addressCreate)
+	mux.HandleFunc("POST /addresses/{id}/delete", app.addressDelete)
 
 	return securityHeaders(mux)
 }
@@ -66,12 +77,196 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	stats, err := a.store.DashboardStats(r.Context())
+	if err != nil {
+		a.logger.Error("dashboard stats", "error", err)
+		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
+		return
+	}
+	subnets, err := a.store.ListSubnets(r.Context())
+	if err != nil {
+		a.logger.Error("list subnets", "error", err)
+		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
+		return
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
-		Title: "Dashboard",
-		User:  session.User,
-		CSRF:  session.CSRFToken,
+		Title:     "Dashboard",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		Stats:     stats,
+		Subnets:   subnets,
+		ActiveNav: "dashboard",
 	})
+}
+
+func (a *App) subnetsIndex(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	subnets, err := a.store.ListSubnets(r.Context())
+	if err != nil {
+		a.logger.Error("list subnets", "error", err)
+		http.Error(w, "Unable to load subnets", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "subnets.html", ui.PageData{
+		Title:     "Subnets",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		Subnets:   subnets,
+		ActiveNav: "subnets",
+	})
+}
+
+func (a *App) subnetNew(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	a.renderSubnetForm(w, r, session, "New Subnet", store.Subnet{}, nil, "")
+}
+
+func (a *App) subnetCreate(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, form, err := subnetInputFromRequest(r)
+	if err != nil {
+		a.renderSubnetForm(w, r, session, "New Subnet", store.Subnet{}, form, err.Error())
+		return
+	}
+	subnet, err := a.store.CreateSubnet(r.Context(), input)
+	if err != nil {
+		a.renderSubnetForm(w, r, session, "New Subnet", store.Subnet{}, form, subnetError(err))
+		return
+	}
+	a.audit(r, &session.User.ID, "subnet.created", "subnet", subnet.ID)
+	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
+}
+
+func (a *App) subnetShow(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	addresses, err := a.store.ListAddresses(r.Context(), subnet.ID)
+	if err != nil {
+		a.logger.Error("list addresses", "error", err)
+		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "subnet_detail.html", ui.PageData{
+		Title:         subnet.Name,
+		User:          session.User,
+		CSRF:          session.CSRFToken,
+		Subnet:        subnet,
+		Addresses:     addresses,
+		AddressStates: addressStates(),
+		ActiveNav:     "subnets",
+	})
+}
+
+func (a *App) subnetEdit(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	a.renderSubnetForm(w, r, session, "Edit Subnet", subnet, subnetFormFromSubnet(subnet), "")
+}
+
+func (a *App) subnetUpdate(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, form, err := subnetInputFromRequest(r)
+	if err != nil {
+		a.renderSubnetForm(w, r, session, "Edit Subnet", subnet, form, err.Error())
+		return
+	}
+	updated, err := a.store.UpdateSubnet(r.Context(), subnet.ID, input)
+	if err != nil {
+		a.renderSubnetForm(w, r, session, "Edit Subnet", subnet, form, subnetError(err))
+		return
+	}
+	a.audit(r, &session.User.ID, "subnet.updated", "subnet", updated.ID)
+	http.Redirect(w, r, "/subnets/"+updated.ID, http.StatusSeeOther)
+}
+
+func (a *App) subnetDelete(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := a.store.DeleteSubnet(r.Context(), subnet.ID); err != nil {
+		a.logger.Error("delete subnet", "error", err)
+		http.Error(w, "Unable to delete subnet", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "subnet.deleted", "subnet", subnet.ID)
+	http.Redirect(w, r, "/subnets", http.StatusSeeOther)
+}
+
+func (a *App) addressCreate(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, err := addressInputFromRequest(r)
+	if err != nil {
+		a.renderSubnetDetailError(w, r, session, subnet, err.Error())
+		return
+	}
+	address, err := a.store.CreateAddress(r.Context(), subnet, input)
+	if err != nil {
+		a.renderSubnetDetailError(w, r, session, subnet, addressError(err))
+		return
+	}
+	a.audit(r, &session.User.ID, "address.created", "ip_address", address.ID)
+	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
+}
+
+func (a *App) addressDelete(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	addressID := r.PathValue("id")
+	subnetID := strings.TrimSpace(r.FormValue("subnet_id"))
+	if err := a.store.DeleteAddress(r.Context(), addressID); err != nil {
+		a.logger.Error("delete address", "error", err)
+		http.Error(w, "Unable to delete address", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "address.deleted", "ip_address", addressID)
+	if subnetID == "" {
+		http.Redirect(w, r, "/subnets", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/subnets/"+subnetID, http.StatusSeeOther)
 }
 
 func (a *App) bootstrapForm(w http.ResponseWriter, r *http.Request) {
@@ -290,6 +485,174 @@ func (a *App) renderBootstrapError(w http.ResponseWriter, message string) {
 		Error: message,
 		CSRF:  csrf,
 	})
+}
+
+func (a *App) renderSubnetForm(w http.ResponseWriter, r *http.Request, session store.Session, title string, subnet store.Subnet, form map[string]string, message string) {
+	sites, err := a.store.ListSites(r.Context())
+	if err != nil {
+		a.logger.Error("list sites", "error", err)
+		http.Error(w, "Unable to load form", http.StatusInternalServerError)
+		return
+	}
+	if form == nil {
+		form = map[string]string{"site_id": "default"}
+	}
+	_ = ui.Render(w, "subnet_form.html", ui.PageData{
+		Title:     title,
+		Error:     message,
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		Sites:     sites,
+		Subnet:    subnet,
+		Form:      form,
+		ActiveNav: "subnets",
+	})
+}
+
+func (a *App) renderSubnetDetailError(w http.ResponseWriter, r *http.Request, session store.Session, subnet store.Subnet, message string) {
+	addresses, err := a.store.ListAddresses(r.Context(), subnet.ID)
+	if err != nil {
+		a.logger.Error("list addresses", "error", err)
+		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "subnet_detail.html", ui.PageData{
+		Title:         subnet.Name,
+		Error:         message,
+		User:          session.User,
+		CSRF:          session.CSRFToken,
+		Subnet:        subnet,
+		Addresses:     addresses,
+		AddressStates: addressStates(),
+		ActiveNav:     "subnets",
+	})
+}
+
+func (a *App) loadSubnetPage(w http.ResponseWriter, r *http.Request) (store.Session, store.Subnet, bool) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return store.Session{}, store.Subnet{}, false
+	}
+	subnet, err := a.store.GetSubnet(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return store.Session{}, store.Subnet{}, false
+		}
+		a.logger.Error("get subnet", "error", err)
+		http.Error(w, "Unable to load subnet", http.StatusInternalServerError)
+		return store.Session{}, store.Subnet{}, false
+	}
+	return session, subnet, true
+}
+
+func (a *App) verifySessionCSRF(r *http.Request, session store.Session) bool {
+	return session.CSRFToken != "" && session.CSRFToken == r.FormValue("csrf_token")
+}
+
+func (a *App) audit(r *http.Request, actorUserID *string, action, subjectType, subjectID string) {
+	if err := a.store.CreateAuditLog(r.Context(), actorUserID, action, subjectType, subjectID, "{}"); err != nil {
+		a.logger.Error("create audit log", "error", err, "action", action)
+	}
+}
+
+func subnetInputFromRequest(r *http.Request) (store.SubnetInput, map[string]string, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.SubnetInput{}, nil, err
+	}
+	form := map[string]string{
+		"site_id":     strings.TrimSpace(r.FormValue("site_id")),
+		"name":        strings.TrimSpace(r.FormValue("name")),
+		"cidr":        strings.TrimSpace(r.FormValue("cidr")),
+		"vlan":        strings.TrimSpace(r.FormValue("vlan")),
+		"description": strings.TrimSpace(r.FormValue("description")),
+	}
+	if form["name"] == "" {
+		return store.SubnetInput{}, form, errors.New("Subnet name is required.")
+	}
+	cidr, err := ipam.NormalizeCIDR(form["cidr"])
+	if err != nil {
+		return store.SubnetInput{}, form, errors.New("Enter a valid IPv4 CIDR such as 192.168.10.0/24.")
+	}
+	vlan, err := store.ParseVLAN(form["vlan"])
+	if err != nil {
+		return store.SubnetInput{}, form, err
+	}
+	form["cidr"] = cidr
+	return store.SubnetInput{
+		SiteID:      form["site_id"],
+		Name:        form["name"],
+		CIDR:        cidr,
+		VLAN:        vlan,
+		Description: form["description"],
+	}, form, nil
+}
+
+func subnetFormFromSubnet(subnet store.Subnet) map[string]string {
+	form := map[string]string{
+		"site_id":     subnet.SiteID,
+		"name":        subnet.Name,
+		"cidr":        subnet.CIDR,
+		"description": subnet.Description,
+	}
+	if subnet.VLAN != nil {
+		form["vlan"] = intString(*subnet.VLAN)
+	}
+	return form
+}
+
+func addressInputFromRequest(r *http.Request) (store.AddressInput, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.AddressInput{}, err
+	}
+	address, err := ipam.NormalizeIPv4(strings.TrimSpace(r.FormValue("address")))
+	if err != nil {
+		return store.AddressInput{}, errors.New("Enter a valid IPv4 address.")
+	}
+	state := strings.TrimSpace(r.FormValue("state"))
+	if !validAddressState(state) {
+		return store.AddressInput{}, errors.New("Choose a valid address state.")
+	}
+	return store.AddressInput{
+		Address:  address,
+		State:    state,
+		Hostname: strings.TrimSpace(r.FormValue("hostname")),
+		Notes:    strings.TrimSpace(r.FormValue("notes")),
+	}, nil
+}
+
+func subnetError(err error) string {
+	if errors.Is(err, store.ErrOverlap) {
+		return "That subnet overlaps an existing subnet. Overlapping subnets are globally blocked."
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return "That subnet could not be found."
+	}
+	return "Unable to save subnet."
+}
+
+func addressError(err error) string {
+	if errors.Is(err, store.ErrAddressOutOfCIDR) {
+		return "That address is outside this subnet."
+	}
+	return "Unable to save address. Check for duplicates and try again."
+}
+
+func addressStates() []string {
+	return []string{"available", "reserved", "assigned", "deprecated", "conflict"}
+}
+
+func validAddressState(state string) bool {
+	for _, allowed := range addressStates() {
+		if state == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func intString(value int) string {
+	return strconv.Itoa(value)
 }
 
 func securityHeaders(next http.Handler) http.Handler {

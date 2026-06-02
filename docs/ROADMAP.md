@@ -3,7 +3,7 @@
 ## Phase 1: Manual IPAM MVP
 
 - Authentication, sessions, and admin bootstrap.
-- Sites, optional simple VLANs, subnets, and address records.
+- Default site, optional VLAN metadata, subnets, and sparse address records.
 - Address status workflow: available, reserved, assigned, deprecated, conflict.
 - Devices, MAC addresses, tags, and custom fields.
 - Subnet utilization and address grid.

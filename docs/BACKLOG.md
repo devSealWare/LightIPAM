@@ -22,9 +22,10 @@ Create the PostgreSQL schema for manual IPAM.
 Acceptance criteria:
 
 - Embedded Go migration runner.
-- Tables for sites, VLANs, subnets, IPv4 addresses, devices, MAC addresses, tags, and custom fields.
+- Tables for the default site, optional VLAN metadata, subnets, sparse IPv4 addresses, devices, MAC addresses, tags, and custom fields.
 - Address states: available, reserved, assigned, deprecated, conflict.
 - Audit log table.
+- Global subnet overlap blocking.
 
 ## 3. Build the Dashboard Shell
 
@@ -46,7 +47,7 @@ Acceptance criteria:
 
 - Create, edit, and delete subnets.
 - View subnet utilization.
-- Address grid with filtering.
+- Sparse address table for touched/reserved/assigned/discovered records.
 - Create, reserve, assign, deprecate, and mark conflict states.
 - Bulk edit foundation.
 

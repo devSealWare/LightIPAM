@@ -18,8 +18,8 @@ Light IPAM should support small business deployments first while keeping the arc
 
 Initial IPAM objects:
 
-- Sites.
-- VLANs, if they remain simple to support.
+- A default site created automatically.
+- VLAN as optional subnet metadata for MVP.
 - Subnets.
 - IPv4 addresses.
 - Devices.
@@ -35,6 +35,12 @@ Initial address states:
 - Conflict.
 
 Bulk edit and import/export should be available in the UI early. CSV support can be deferred until the data model is stable.
+
+Subnet rules:
+
+- IPv4-only, including `/31` and `/32`.
+- Overlapping subnets are globally blocked for MVP.
+- Address records are sparse: Light IPAM stores only touched, reserved, assigned, deprecated, conflicted, or discovered addresses.
 
 ## Discovery
 
