@@ -92,31 +92,38 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 ## Scanner Components
 
 - `internal/scanner`: versioned protocol types and allowlist validation
-  (issue #7, merged). `ValidateJobForAgent` enforces the dual job/agent
-  allowlist contract.
+  (issue #7). `ValidateJobForAgent` is the app-side check; `ValidateAgentScope`
+  is the agent-side check.
 - `internal/scanner/agent`: no-op agent receive/report handler plus mTLS
-  server/client TLS config builders.
+  server/client TLS config builders (issue #8).
 - `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
   certificates.
 - `cmd/scanner-agent`: the agent process (mTLS HTTPS, `GET /healthz`,
   `POST /jobs`). No active scanning yet.
+- `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs to
+  agents (issue #9).
+- `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
+  dispatch async, record lifecycle + audit, and an in-process schedule ticker.
+- App routes `/scans`, `/agents`, `/schedules` manage scans, agents, and
+  schedules. Migration 5 adds `scan_agents`, `scan_schedules`, `scan_jobs`.
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile) build and run the agent unprivileged.
 
-See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, and ADRs 0002/0003.
+See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, and ADRs 0002/0003/0004.
 
 ## Current Branch Plan
 
-Issue #8 is in progress: scanner-agent container with a no-op receive/report
-loop over mTLS. The app stays unprivileged; the agent drops all capabilities
-and performs no scanning.
+Issue #9 is in progress: app-side scan orchestration. The app manages agents,
+dispatches manual and scheduled jobs over mTLS, tracks the job lifecycle, and
+records a scan audit trail. The app remains unprivileged (it is only an mTLS
+client); active scanning still does not exist.
 
-## After Issue #8
+## After Issue #9
 
-Proceed to issue #9: app-side scan orchestration.
+Proceed to issue #10: Nmap Discovery MVP.
 
-- App-side manual and scheduled scan job dispatch.
-- App acts as the mTLS client to the agent.
-- Scan status lifecycle and immutable scan audit trail.
-- Still no active Nmap probing (issue #10).
+- Implement active discovery in the agent (Nmap), gated by scan mode.
+- Grant `NET_RAW` to the agent image/Compose service only.
+- Host discovery, TCP service detection, OS probing; rate limits.
+- Convert agent observations into auto-created or review-queued IPAM records.
 

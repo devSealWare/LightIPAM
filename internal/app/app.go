@@ -11,6 +11,7 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/auth"
 	"github.com/devSealWare/LightIPAM/internal/config"
 	"github.com/devSealWare/LightIPAM/internal/ipam"
+	"github.com/devSealWare/LightIPAM/internal/scanner/orchestrator"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,12 +26,14 @@ type Options struct {
 	Config config.Config
 	DB     *pgxpool.Pool
 	Logger *slog.Logger
+	Scans  *orchestrator.Service
 }
 
 type App struct {
 	cfg    config.Config
 	store  *store.Store
 	logger *slog.Logger
+	scans  *orchestrator.Service
 }
 
 func New(options Options) http.Handler {
@@ -38,6 +41,7 @@ func New(options Options) http.Handler {
 		cfg:    options.Config,
 		store:  store.New(options.DB),
 		logger: options.Logger,
+		scans:  options.Scans,
 	}
 
 	mux := http.NewServeMux()
@@ -74,6 +78,28 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /macs/{id}/delete", app.macDeleteConfirm)
 	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
 	mux.HandleFunc("GET /audit", app.auditIndex)
+
+	mux.HandleFunc("GET /scans", app.scansIndex)
+	mux.HandleFunc("GET /scans/new", app.scanNew)
+	mux.HandleFunc("POST /scans", app.scanCreate)
+	mux.HandleFunc("GET /scans/{id}", app.scanShow)
+
+	mux.HandleFunc("GET /agents", app.agentsIndex)
+	mux.HandleFunc("GET /agents/new", app.agentNew)
+	mux.HandleFunc("POST /agents", app.agentCreate)
+	mux.HandleFunc("GET /agents/{id}/edit", app.agentEdit)
+	mux.HandleFunc("POST /agents/{id}", app.agentUpdate)
+	mux.HandleFunc("GET /agents/{id}/delete", app.agentDeleteConfirm)
+	mux.HandleFunc("POST /agents/{id}/delete", app.agentDelete)
+
+	mux.HandleFunc("GET /schedules", app.schedulesIndex)
+	mux.HandleFunc("GET /schedules/new", app.scheduleNew)
+	mux.HandleFunc("POST /schedules", app.scheduleCreate)
+	mux.HandleFunc("GET /schedules/{id}/edit", app.scheduleEdit)
+	mux.HandleFunc("POST /schedules/{id}", app.scheduleUpdate)
+	mux.HandleFunc("POST /schedules/{id}/run", app.scheduleRunNow)
+	mux.HandleFunc("GET /schedules/{id}/delete", app.scheduleDeleteConfirm)
+	mux.HandleFunc("POST /schedules/{id}/delete", app.scheduleDelete)
 
 	return securityHeaders(mux)
 }

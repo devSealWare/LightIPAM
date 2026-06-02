@@ -106,7 +106,7 @@ func (a *Agent) processJob(job scanner.ScanJob) scanner.ScanResult {
 		Errors:          []scanner.ScanError{},
 	}
 
-	if err := scanner.ValidateJobForAgent(job, a.cfg.Registration); err != nil {
+	if err := scanner.ValidateAgentScope(job, a.cfg.Registration.AllowedCIDRs); err != nil {
 		result.Status = scanner.JobRejected
 		result.Errors = append(result.Errors, scanner.ScanError{
 			Code:    "job_rejected",
