@@ -107,6 +107,11 @@ func TestRenderTemplates(t *testing.T) {
 			"action":       "subnet.created",
 			"subject_type": "subnet",
 			"actor":        "user-1",
+			"heading":      "Confirm",
+			"message":      "This is a test confirmation.",
+			"subject":      "Office LAN",
+			"cancel":       "/",
+			"confirm_text": "Confirm",
 		},
 	}
 
@@ -121,6 +126,8 @@ func TestRenderTemplates(t *testing.T) {
 		"device_form.html",
 		"device_detail.html",
 		"audit.html",
+		"address_form.html",
+		"confirm.html",
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

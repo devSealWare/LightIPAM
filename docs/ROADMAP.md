@@ -7,6 +7,7 @@
 - Address status workflow: available, reserved, assigned, deprecated, conflict.
 - Devices, MAC addresses, private MAC tagging, basic OUI vendor matching, tags, and custom fields.
 - Subnet utilization and address grid.
+- Address editing, navigation shell, dashboard widgets, empty states, and confirmation flows.
 - Dashboard with global search, subnet widgets, review widget, recent changes, and scan status.
 - Bulk edit and import/export foundation.
 - Audit log.

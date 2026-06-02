@@ -246,6 +246,43 @@ RETURNING id, subnet_id, COALESCE(device_id, ''), address::text, state::text, ho
 	return address, nil
 }
 
+func (s *Store) GetAddress(ctx context.Context, id string) (IPAddress, error) {
+	var address IPAddress
+	if err := s.db.QueryRow(ctx, `
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+FROM ip_addresses ip
+LEFT JOIN devices d ON d.id = ip.device_id
+WHERE ip.id = $1`, id).Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return IPAddress{}, ErrNotFound
+		}
+		return IPAddress{}, fmt.Errorf("get address: %w", err)
+	}
+	return address, nil
+}
+
+func (s *Store) UpdateAddress(ctx context.Context, id string, subnet Subnet, input AddressInput) (IPAddress, error) {
+	contains, err := ipam.Contains(subnet.CIDR, input.Address)
+	if err != nil {
+		return IPAddress{}, err
+	}
+	if !contains {
+		return IPAddress{}, ErrAddressOutOfCIDR
+	}
+
+	tag, err := s.db.Exec(ctx, `
+UPDATE ip_addresses
+SET device_id = $2, address = $3::inet, state = $4::address_state, hostname = $5, notes = $6, updated_at = now()
+WHERE id = $1`, id, emptyToNil(input.DeviceID), input.Address, input.State, input.Hostname, input.Notes)
+	if err != nil {
+		return IPAddress{}, fmt.Errorf("update address: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return IPAddress{}, ErrNotFound
+	}
+	return s.GetAddress(ctx, id)
+}
+
 func (s *Store) DeleteAddress(ctx context.Context, id string) error {
 	tag, err := s.db.Exec(ctx, "DELETE FROM ip_addresses WHERE id = $1", id)
 	if err != nil {

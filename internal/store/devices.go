@@ -152,6 +152,20 @@ ORDER BY address`, deviceID)
 	return addresses, rows.Err()
 }
 
+func (s *Store) GetMACAddress(ctx context.Context, id string) (MACAddress, error) {
+	var address MACAddress
+	if err := s.db.QueryRow(ctx, `
+SELECT id, device_id, address::text, vendor, is_private, created_at
+FROM mac_addresses
+WHERE id = $1`, id).Scan(&address.ID, &address.DeviceID, &address.Address, &address.Vendor, &address.IsPrivate, &address.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MACAddress{}, ErrNotFound
+		}
+		return MACAddress{}, fmt.Errorf("get mac address: %w", err)
+	}
+	return address, nil
+}
+
 func (s *Store) ListDeviceIPAddresses(ctx context.Context, deviceID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at

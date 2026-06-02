@@ -48,7 +48,9 @@ Acceptance criteria:
 - Create, edit, and delete subnets.
 - View subnet utilization.
 - Sparse address table for touched/reserved/assigned/discovered records.
-- Create, reserve, assign, deprecate, and mark conflict states.
+- Create, edit, reserve, assign, deprecate, and mark conflict states.
+- Confirmation screens for destructive subnet, address, device, and MAC actions.
+- Navigation shell/sidebar for manual IPAM workflows.
 - Bulk edit foundation.
 
 ## 5. Build Device and MAC Address Tracking

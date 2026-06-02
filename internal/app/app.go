@@ -55,8 +55,12 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /subnets/{id}", app.subnetShow)
 	mux.HandleFunc("GET /subnets/{id}/edit", app.subnetEdit)
 	mux.HandleFunc("POST /subnets/{id}", app.subnetUpdate)
+	mux.HandleFunc("GET /subnets/{id}/delete", app.subnetDeleteConfirm)
 	mux.HandleFunc("POST /subnets/{id}/delete", app.subnetDelete)
 	mux.HandleFunc("POST /subnets/{id}/addresses", app.addressCreate)
+	mux.HandleFunc("GET /addresses/{id}/edit", app.addressEdit)
+	mux.HandleFunc("POST /addresses/{id}", app.addressUpdate)
+	mux.HandleFunc("GET /addresses/{id}/delete", app.addressDeleteConfirm)
 	mux.HandleFunc("POST /addresses/{id}/delete", app.addressDelete)
 	mux.HandleFunc("GET /devices", app.devicesIndex)
 	mux.HandleFunc("GET /devices/new", app.deviceNew)
@@ -64,8 +68,10 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /devices/{id}", app.deviceShow)
 	mux.HandleFunc("GET /devices/{id}/edit", app.deviceEdit)
 	mux.HandleFunc("POST /devices/{id}", app.deviceUpdate)
+	mux.HandleFunc("GET /devices/{id}/delete", app.deviceDeleteConfirm)
 	mux.HandleFunc("POST /devices/{id}/delete", app.deviceDelete)
 	mux.HandleFunc("POST /devices/{id}/macs", app.macCreate)
+	mux.HandleFunc("GET /macs/{id}/delete", app.macDeleteConfirm)
 	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
 	mux.HandleFunc("GET /audit", app.auditIndex)
 
@@ -305,6 +311,27 @@ func (a *App) subnetDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/subnets", http.StatusSeeOther)
 }
 
+func (a *App) subnetDeleteConfirm(w http.ResponseWriter, r *http.Request) {
+	session, subnet, ok := a.loadSubnetPage(w, r)
+	if !ok {
+		return
+	}
+	_ = ui.Render(w, "confirm.html", ui.PageData{
+		Title:     "Delete Subnet",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		ActiveNav: "subnets",
+		Form: map[string]string{
+			"heading":      "Delete subnet",
+			"message":      "This removes the subnet and detaches any touched address records from it.",
+			"subject":      subnet.Name + " (" + subnet.CIDR + ")",
+			"action":       "/subnets/" + subnet.ID + "/delete",
+			"cancel":       "/subnets/" + subnet.ID,
+			"confirm_text": "Delete subnet",
+		},
+	})
+}
+
 func (a *App) addressCreate(w http.ResponseWriter, r *http.Request) {
 	session, subnet, ok := a.loadSubnetPage(w, r)
 	if !ok {
@@ -326,6 +353,59 @@ func (a *App) addressCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	a.audit(r, &session.User.ID, "address.created", "ip_address", address.ID)
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
+}
+
+func (a *App) addressEdit(w http.ResponseWriter, r *http.Request) {
+	session, address, subnet, ok := a.loadAddressPage(w, r)
+	if !ok {
+		return
+	}
+	a.renderAddressForm(w, r, session, "Edit Address", subnet, address, addressFormFromAddress(address), "")
+}
+
+func (a *App) addressUpdate(w http.ResponseWriter, r *http.Request) {
+	session, address, subnet, ok := a.loadAddressPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, err := addressInputFromRequest(r)
+	if err != nil {
+		a.renderAddressForm(w, r, session, "Edit Address", subnet, address, addressFormFromInput(input), err.Error())
+		return
+	}
+	updated, err := a.store.UpdateAddress(r.Context(), address.ID, subnet, input)
+	if err != nil {
+		a.renderAddressForm(w, r, session, "Edit Address", subnet, address, addressFormFromInput(input), addressError(err))
+		return
+	}
+	a.audit(r, &session.User.ID, "address.updated", "ip_address", updated.ID)
+	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
+}
+
+func (a *App) addressDeleteConfirm(w http.ResponseWriter, r *http.Request) {
+	session, address, subnet, ok := a.loadAddressPage(w, r)
+	if !ok {
+		return
+	}
+	_ = ui.Render(w, "confirm.html", ui.PageData{
+		Title:     "Remove Address",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		ActiveNav: "subnets",
+		Form: map[string]string{
+			"heading":      "Remove address",
+			"message":      "This removes the sparse address record. The address can still be recreated later.",
+			"subject":      address.Address + " in " + subnet.Name,
+			"action":       "/addresses/" + address.ID + "/delete",
+			"cancel":       "/subnets/" + subnet.ID,
+			"confirm_text": "Remove address",
+			"subnet_id":    subnet.ID,
+		},
+	})
 }
 
 func (a *App) addressDelete(w http.ResponseWriter, r *http.Request) {
@@ -480,6 +560,27 @@ func (a *App) deviceDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/devices", http.StatusSeeOther)
 }
 
+func (a *App) deviceDeleteConfirm(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	_ = ui.Render(w, "confirm.html", ui.PageData{
+		Title:     "Delete Device",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		ActiveNav: "devices",
+		Form: map[string]string{
+			"heading":      "Delete device",
+			"message":      "This deletes the device, removes its MAC addresses, and leaves linked IP records unassigned.",
+			"subject":      device.Name,
+			"action":       "/devices/" + device.ID + "/delete",
+			"cancel":       "/devices/" + device.ID,
+			"confirm_text": "Delete device",
+		},
+	})
+}
+
 func (a *App) macCreate(w http.ResponseWriter, r *http.Request) {
 	session, device, ok := a.loadDevicePage(w, r)
 	if !ok {
@@ -524,6 +625,38 @@ func (a *App) macDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/devices/"+deviceID, http.StatusSeeOther)
+}
+
+func (a *App) macDeleteConfirm(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	mac, err := a.store.GetMACAddress(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		a.logger.Error("get mac", "error", err)
+		http.Error(w, "Unable to load MAC address", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "confirm.html", ui.PageData{
+		Title:     "Remove MAC",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		ActiveNav: "devices",
+		Form: map[string]string{
+			"heading":      "Remove MAC address",
+			"message":      "This removes the MAC address record from the device.",
+			"subject":      mac.Address,
+			"action":       "/macs/" + mac.ID + "/delete",
+			"cancel":       "/devices/" + mac.DeviceID,
+			"confirm_text": "Remove MAC",
+			"device_id":    mac.DeviceID,
+		},
+	})
 }
 
 func (a *App) bootstrapForm(w http.ResponseWriter, r *http.Request) {
@@ -792,6 +925,30 @@ func (a *App) renderSubnetDetailError(w http.ResponseWriter, r *http.Request, se
 	})
 }
 
+func (a *App) renderAddressForm(w http.ResponseWriter, r *http.Request, session store.Session, title string, subnet store.Subnet, address store.IPAddress, form map[string]string, message string) {
+	devices, err := a.store.ListDevices(r.Context())
+	if err != nil {
+		a.logger.Error("list devices", "error", err)
+		http.Error(w, "Unable to load devices", http.StatusInternalServerError)
+		return
+	}
+	if form == nil {
+		form = map[string]string{}
+	}
+	_ = ui.Render(w, "address_form.html", ui.PageData{
+		Title:         title,
+		Error:         message,
+		User:          session.User,
+		CSRF:          session.CSRFToken,
+		Subnet:        subnet,
+		Address:       address,
+		AddressStates: addressStates(),
+		Devices:       devices,
+		Form:          form,
+		ActiveNav:     "subnets",
+	})
+}
+
 func (a *App) renderDeviceForm(w http.ResponseWriter, session store.Session, title string, device store.Device, form map[string]string, message string) {
 	if form == nil {
 		form = map[string]string{}
@@ -848,6 +1005,30 @@ func (a *App) loadSubnetPage(w http.ResponseWriter, r *http.Request) (store.Sess
 		return store.Session{}, store.Subnet{}, false
 	}
 	return session, subnet, true
+}
+
+func (a *App) loadAddressPage(w http.ResponseWriter, r *http.Request) (store.Session, store.IPAddress, store.Subnet, bool) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return store.Session{}, store.IPAddress{}, store.Subnet{}, false
+	}
+	address, err := a.store.GetAddress(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return store.Session{}, store.IPAddress{}, store.Subnet{}, false
+		}
+		a.logger.Error("get address", "error", err)
+		http.Error(w, "Unable to load address", http.StatusInternalServerError)
+		return store.Session{}, store.IPAddress{}, store.Subnet{}, false
+	}
+	subnet, err := a.store.GetSubnet(r.Context(), address.SubnetID)
+	if err != nil {
+		a.logger.Error("get address subnet", "error", err)
+		http.Error(w, "Unable to load subnet", http.StatusInternalServerError)
+		return store.Session{}, store.IPAddress{}, store.Subnet{}, false
+	}
+	return session, address, subnet, true
 }
 
 func (a *App) loadDevicePage(w http.ResponseWriter, r *http.Request) (store.Session, store.Device, bool) {
@@ -942,6 +1123,26 @@ func addressInputFromRequest(r *http.Request) (store.AddressInput, error) {
 		Hostname: strings.TrimSpace(r.FormValue("hostname")),
 		Notes:    strings.TrimSpace(r.FormValue("notes")),
 	}, nil
+}
+
+func addressFormFromAddress(address store.IPAddress) map[string]string {
+	return map[string]string{
+		"address":   address.Address,
+		"state":     address.State,
+		"device_id": address.DeviceID,
+		"hostname":  address.Hostname,
+		"notes":     address.Notes,
+	}
+}
+
+func addressFormFromInput(input store.AddressInput) map[string]string {
+	return map[string]string{
+		"address":   input.Address,
+		"state":     input.State,
+		"device_id": input.DeviceID,
+		"hostname":  input.Hostname,
+		"notes":     input.Notes,
+	}
 }
 
 func deviceInputFromRequest(r *http.Request) (store.DeviceInput, map[string]string, error) {

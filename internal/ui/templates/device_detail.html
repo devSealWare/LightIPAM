@@ -1,6 +1,6 @@
-{{ define "content" }}
-<main class="min-h-screen bg-zinc-100 px-4 py-4 dark:bg-zinc-950 sm:px-6 lg:px-8">
-  <div class="mx-auto max-w-7xl">
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
     <header class="glass-panel rounded-[28px] px-5 py-4">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -15,10 +15,7 @@
         </div>
         <div class="flex gap-3">
           <a class="button-muted" href="/devices/{{ .Device.ID }}/edit">Edit</a>
-          <form method="post" action="/devices/{{ .Device.ID }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
-            <button class="button-muted" type="submit">Delete</button>
-          </form>
+          <a class="button-muted" href="/devices/{{ .Device.ID }}/delete">Delete</a>
         </div>
       </div>
     </header>
@@ -38,11 +35,7 @@
           <span class="font-mono text-zinc-900 dark:text-zinc-100">{{ .Address }}</span>
           <span class="text-zinc-600 dark:text-zinc-300">{{ if .Vendor }}{{ .Vendor }}{{ else }}Unknown{{ end }}</span>
           <span class="text-zinc-600 dark:text-zinc-300">{{ if .IsPrivate }}Yes{{ else }}No{{ end }}</span>
-          <form method="post" action="/macs/{{ .ID }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
-            <input type="hidden" name="device_id" value="{{ $.Device.ID }}">
-            <button class="text-sm font-medium text-zinc-500 hover:text-rose-600 dark:text-zinc-400" type="submit">Remove</button>
-          </form>
+          <a class="text-sm font-medium text-zinc-500 hover:text-rose-600 dark:text-zinc-400" href="/macs/{{ .ID }}/delete">Remove</a>
         </div>
         {{ end }}
         {{ else }}
@@ -83,5 +76,4 @@
       {{ end }}
     </section>
   </div>
-</main>
 {{ end }}

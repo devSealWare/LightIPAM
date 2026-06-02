@@ -21,6 +21,7 @@ type PageData struct {
 	Subnets        []store.Subnet
 	Subnet         store.Subnet
 	Addresses      []store.IPAddress
+	Address        store.IPAddress
 	AddressStates  []string
 	Devices        []store.Device
 	Device         store.Device
@@ -39,7 +40,10 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		"eq": func(a, b any) bool {
 			return a == b
 		},
-	}).ParseFS(assets, "templates/base.html", "templates/"+name)
+		"ne": func(a, b any) bool {
+			return a != b
+		},
+	}).ParseFS(assets, "templates/base.html", "templates/shell.html", "templates/"+name)
 	if err != nil {
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return err

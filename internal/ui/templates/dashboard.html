@@ -1,6 +1,6 @@
-{{ define "content" }}
-<main class="min-h-screen bg-zinc-100 px-4 py-4 dark:bg-zinc-950 sm:px-6 lg:px-8">
-  <div class="mx-auto max-w-7xl">
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
     <header class="glass-panel rounded-[28px] px-5 py-4">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -12,15 +12,30 @@
             <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">/</span>
             <input class="form-input pl-10" placeholder="Search IPs, subnets, devices, MACs">
           </label>
-          <form method="post" action="/logout">
-            <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
-            <button class="button-muted" type="submit">Sign out</button>
-          </form>
         </div>
       </div>
     </header>
 
-    <section class="mt-5 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+    <section class="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <a class="glass-panel rounded-[28px] p-5 transition hover:scale-[1.01]" href="/subnets">
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Subnets</p>
+        <p class="mt-3 text-3xl font-semibold">{{ .Stats.SubnetCount }}</p>
+      </a>
+      <a class="glass-panel rounded-[28px] p-5 transition hover:scale-[1.01]" href="/subnets">
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Touched Addresses</p>
+        <p class="mt-3 text-3xl font-semibold">{{ .Stats.AddressCount }}</p>
+      </a>
+      <a class="glass-panel rounded-[28px] p-5 transition hover:scale-[1.01]" href="/devices">
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Devices</p>
+        <p class="mt-3 text-3xl font-semibold">{{ .Stats.DeviceCount }}</p>
+      </a>
+      <a class="glass-panel rounded-[28px] p-5 transition hover:scale-[1.01]" href="/subnets">
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Conflicts</p>
+        <p class="mt-3 text-3xl font-semibold">{{ .Stats.ConflictCount }}</p>
+      </a>
+    </section>
+
+    <section class="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
       <div class="glass-panel rounded-[28px] p-5">
         <div class="flex items-start justify-between gap-4">
           <div>
@@ -28,20 +43,6 @@
             <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Manual IPAM data will appear here as subnets are added.</p>
           </div>
           <a class="button-primary" href="/subnets/new">Add subnet</a>
-        </div>
-        <div class="mt-6 grid gap-3 sm:grid-cols-3">
-          <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <p class="text-sm text-zinc-500 dark:text-zinc-400">Subnets</p>
-            <p class="mt-3 text-3xl font-semibold">{{ .Stats.SubnetCount }}</p>
-          </div>
-          <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <p class="text-sm text-zinc-500 dark:text-zinc-400">Addresses</p>
-            <p class="mt-3 text-3xl font-semibold">{{ .Stats.AddressCount }}</p>
-          </div>
-          <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <p class="text-sm text-zinc-500 dark:text-zinc-400">Conflicts</p>
-            <p class="mt-3 text-3xl font-semibold">{{ .Stats.ConflictCount }}</p>
-          </div>
         </div>
         <div class="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           {{ if .Subnets }}
@@ -55,7 +56,11 @@
           </a>
           {{ end }}
           {{ else }}
-          <div class="p-4 text-sm text-zinc-500 dark:text-zinc-400">No subnets yet. Add the first subnet to start tracking addresses.</div>
+          <div class="p-6">
+            <h3 class="text-sm font-semibold text-zinc-950 dark:text-white">No subnets yet</h3>
+            <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Add the first subnet to start tracking sparse address records.</p>
+            <a class="button-primary mt-4" href="/subnets/new">Add subnet</a>
+          </div>
           {{ end }}
         </div>
       </div>
@@ -93,9 +98,11 @@
       <div class="glass-panel rounded-[28px] p-5">
         <h2 class="text-lg font-semibold">Admin</h2>
         <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Signed in as {{ .User.DisplayName }}.</p>
-        <a class="button-muted mt-5" href="/devices">Devices: {{ .Stats.DeviceCount }}</a>
+        <div class="mt-5 flex gap-3">
+          <a class="button-muted" href="/devices">Devices</a>
+          <a class="button-muted" href="/audit">Audit</a>
+        </div>
       </div>
     </section>
   </div>
-</main>
 {{ end }}
