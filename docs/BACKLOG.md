@@ -61,6 +61,8 @@ Acceptance criteria:
 - MAC address records.
 - Address-to-device relationships.
 - Notes, tags, and custom fields.
+- Automatic `Private MAC` tagging for locally administered rotating MAC addresses.
+- Built-in OUI vendor matching where known, with room for future IEEE OUI import.
 
 ## 6. Implement Immutable Audit Logs
 

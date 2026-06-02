@@ -22,6 +22,9 @@ type PageData struct {
 	Subnet         store.Subnet
 	Addresses      []store.IPAddress
 	AddressStates  []string
+	Devices        []store.Device
+	Device         store.Device
+	MACAddresses   []store.MACAddress
 	Form           map[string]string
 	ActiveNav      string
 	SuccessMessage string

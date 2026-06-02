@@ -79,6 +79,7 @@
       <div class="glass-panel rounded-[28px] p-5">
         <h2 class="text-lg font-semibold">Admin</h2>
         <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Signed in as {{ .User.DisplayName }}.</p>
+        <a class="button-muted mt-5" href="/devices">Devices: {{ .Stats.DeviceCount }}</a>
       </div>
     </section>
   </div>

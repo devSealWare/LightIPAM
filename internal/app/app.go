@@ -58,6 +58,15 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /subnets/{id}/delete", app.subnetDelete)
 	mux.HandleFunc("POST /subnets/{id}/addresses", app.addressCreate)
 	mux.HandleFunc("POST /addresses/{id}/delete", app.addressDelete)
+	mux.HandleFunc("GET /devices", app.devicesIndex)
+	mux.HandleFunc("GET /devices/new", app.deviceNew)
+	mux.HandleFunc("POST /devices", app.deviceCreate)
+	mux.HandleFunc("GET /devices/{id}", app.deviceShow)
+	mux.HandleFunc("GET /devices/{id}/edit", app.deviceEdit)
+	mux.HandleFunc("POST /devices/{id}", app.deviceUpdate)
+	mux.HandleFunc("POST /devices/{id}/delete", app.deviceDelete)
+	mux.HandleFunc("POST /devices/{id}/macs", app.macCreate)
+	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
 
 	return securityHeaders(mux)
 }
@@ -89,6 +98,12 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
 		return
 	}
+	devices, err := a.store.ListDevices(r.Context())
+	if err != nil {
+		a.logger.Error("list devices", "error", err)
+		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
+		return
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
 		Title:     "Dashboard",
@@ -96,6 +111,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		CSRF:      session.CSRFToken,
 		Stats:     stats,
 		Subnets:   subnets,
+		Devices:   devices,
 		ActiveNav: "dashboard",
 	})
 }
@@ -162,6 +178,12 @@ func (a *App) subnetShow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
 		return
 	}
+	devices, err := a.store.ListDevices(r.Context())
+	if err != nil {
+		a.logger.Error("list devices", "error", err)
+		http.Error(w, "Unable to load devices", http.StatusInternalServerError)
+		return
+	}
 	_ = ui.Render(w, "subnet_detail.html", ui.PageData{
 		Title:         subnet.Name,
 		User:          session.User,
@@ -169,6 +191,7 @@ func (a *App) subnetShow(w http.ResponseWriter, r *http.Request) {
 		Subnet:        subnet,
 		Addresses:     addresses,
 		AddressStates: addressStates(),
+		Devices:       devices,
 		ActiveNav:     "subnets",
 	})
 }
@@ -267,6 +290,180 @@ func (a *App) addressDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/subnets/"+subnetID, http.StatusSeeOther)
+}
+
+func (a *App) devicesIndex(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	devices, err := a.store.ListDevices(r.Context())
+	if err != nil {
+		a.logger.Error("list devices", "error", err)
+		http.Error(w, "Unable to load devices", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "devices.html", ui.PageData{
+		Title:     "Devices",
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		Devices:   devices,
+		ActiveNav: "devices",
+	})
+}
+
+func (a *App) deviceNew(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	a.renderDeviceForm(w, session, "New Device", store.Device{}, nil, "")
+}
+
+func (a *App) deviceCreate(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, form, err := deviceInputFromRequest(r)
+	if err != nil {
+		a.renderDeviceForm(w, session, "New Device", store.Device{}, form, err.Error())
+		return
+	}
+	device, err := a.store.CreateDevice(r.Context(), input)
+	if err != nil {
+		a.renderDeviceForm(w, session, "New Device", store.Device{}, form, "Unable to create device.")
+		return
+	}
+	a.audit(r, &session.User.ID, "device.created", "device", device.ID)
+	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
+}
+
+func (a *App) deviceShow(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	macs, err := a.store.ListMACAddresses(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list macs", "error", err)
+		http.Error(w, "Unable to load MAC addresses", http.StatusInternalServerError)
+		return
+	}
+	addresses, err := a.store.ListDeviceIPAddresses(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list device addresses", "error", err)
+		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "device_detail.html", ui.PageData{
+		Title:        device.Name,
+		User:         session.User,
+		CSRF:         session.CSRFToken,
+		Device:       device,
+		MACAddresses: macs,
+		Addresses:    addresses,
+		ActiveNav:    "devices",
+	})
+}
+
+func (a *App) deviceEdit(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	a.renderDeviceForm(w, session, "Edit Device", device, deviceFormFromDevice(device), "")
+}
+
+func (a *App) deviceUpdate(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	input, form, err := deviceInputFromRequest(r)
+	if err != nil {
+		a.renderDeviceForm(w, session, "Edit Device", device, form, err.Error())
+		return
+	}
+	updated, err := a.store.UpdateDevice(r.Context(), device.ID, input)
+	if err != nil {
+		a.renderDeviceForm(w, session, "Edit Device", device, form, "Unable to update device.")
+		return
+	}
+	a.audit(r, &session.User.ID, "device.updated", "device", updated.ID)
+	http.Redirect(w, r, "/devices/"+updated.ID, http.StatusSeeOther)
+}
+
+func (a *App) deviceDelete(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := a.store.DeleteDevice(r.Context(), device.ID); err != nil {
+		a.logger.Error("delete device", "error", err)
+		http.Error(w, "Unable to delete device", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "device.deleted", "device", device.ID)
+	http.Redirect(w, r, "/devices", http.StatusSeeOther)
+}
+
+func (a *App) macCreate(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	mac, err := a.store.CreateMACAddress(r.Context(), device.ID, strings.TrimSpace(r.FormValue("address")))
+	if err != nil {
+		a.renderDeviceDetailError(w, r, session, device, "Enter a valid, unique MAC address.")
+		return
+	}
+	a.audit(r, &session.User.ID, "mac.created", "mac_address", mac.ID)
+	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
+}
+
+func (a *App) macDelete(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	macID := r.PathValue("id")
+	deviceID := strings.TrimSpace(r.FormValue("device_id"))
+	if err := a.store.DeleteMACAddress(r.Context(), macID); err != nil {
+		a.logger.Error("delete mac", "error", err)
+		http.Error(w, "Unable to delete MAC address", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "mac.deleted", "mac_address", macID)
+	if deviceID == "" {
+		http.Redirect(w, r, "/devices", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/devices/"+deviceID, http.StatusSeeOther)
 }
 
 func (a *App) bootstrapForm(w http.ResponseWriter, r *http.Request) {
@@ -516,6 +713,12 @@ func (a *App) renderSubnetDetailError(w http.ResponseWriter, r *http.Request, se
 		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
 		return
 	}
+	devices, err := a.store.ListDevices(r.Context())
+	if err != nil {
+		a.logger.Error("list devices", "error", err)
+		http.Error(w, "Unable to load devices", http.StatusInternalServerError)
+		return
+	}
 	_ = ui.Render(w, "subnet_detail.html", ui.PageData{
 		Title:         subnet.Name,
 		Error:         message,
@@ -524,7 +727,48 @@ func (a *App) renderSubnetDetailError(w http.ResponseWriter, r *http.Request, se
 		Subnet:        subnet,
 		Addresses:     addresses,
 		AddressStates: addressStates(),
+		Devices:       devices,
 		ActiveNav:     "subnets",
+	})
+}
+
+func (a *App) renderDeviceForm(w http.ResponseWriter, session store.Session, title string, device store.Device, form map[string]string, message string) {
+	if form == nil {
+		form = map[string]string{}
+	}
+	_ = ui.Render(w, "device_form.html", ui.PageData{
+		Title:     title,
+		Error:     message,
+		User:      session.User,
+		CSRF:      session.CSRFToken,
+		Device:    device,
+		Form:      form,
+		ActiveNav: "devices",
+	})
+}
+
+func (a *App) renderDeviceDetailError(w http.ResponseWriter, r *http.Request, session store.Session, device store.Device, message string) {
+	macs, err := a.store.ListMACAddresses(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list macs", "error", err)
+		http.Error(w, "Unable to load MAC addresses", http.StatusInternalServerError)
+		return
+	}
+	addresses, err := a.store.ListDeviceIPAddresses(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list device addresses", "error", err)
+		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "device_detail.html", ui.PageData{
+		Title:        device.Name,
+		Error:        message,
+		User:         session.User,
+		CSRF:         session.CSRFToken,
+		Device:       device,
+		MACAddresses: macs,
+		Addresses:    addresses,
+		ActiveNav:    "devices",
 	})
 }
 
@@ -544,6 +788,24 @@ func (a *App) loadSubnetPage(w http.ResponseWriter, r *http.Request) (store.Sess
 		return store.Session{}, store.Subnet{}, false
 	}
 	return session, subnet, true
+}
+
+func (a *App) loadDevicePage(w http.ResponseWriter, r *http.Request) (store.Session, store.Device, bool) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return store.Session{}, store.Device{}, false
+	}
+	device, err := a.store.GetDevice(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return store.Session{}, store.Device{}, false
+		}
+		a.logger.Error("get device", "error", err)
+		http.Error(w, "Unable to load device", http.StatusInternalServerError)
+		return store.Session{}, store.Device{}, false
+	}
+	return session, device, true
 }
 
 func (a *App) verifySessionCSRF(r *http.Request, session store.Session) bool {
@@ -616,9 +878,31 @@ func addressInputFromRequest(r *http.Request) (store.AddressInput, error) {
 	return store.AddressInput{
 		Address:  address,
 		State:    state,
+		DeviceID: strings.TrimSpace(r.FormValue("device_id")),
 		Hostname: strings.TrimSpace(r.FormValue("hostname")),
 		Notes:    strings.TrimSpace(r.FormValue("notes")),
 	}, nil
+}
+
+func deviceInputFromRequest(r *http.Request) (store.DeviceInput, map[string]string, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.DeviceInput{}, nil, err
+	}
+	form := map[string]string{
+		"name":        strings.TrimSpace(r.FormValue("name")),
+		"description": strings.TrimSpace(r.FormValue("description")),
+	}
+	if form["name"] == "" {
+		return store.DeviceInput{}, form, errors.New("Device name is required.")
+	}
+	return store.DeviceInput{Name: form["name"], Description: form["description"]}, form, nil
+}
+
+func deviceFormFromDevice(device store.Device) map[string]string {
+	return map[string]string{
+		"name":        device.Name,
+		"description": device.Description,
+	}
 }
 
 func subnetError(err error) string {

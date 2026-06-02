@@ -44,13 +44,14 @@
           <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Only reserved, assigned, deprecated, conflicted, or discovered addresses are stored.</p>
         </div>
         {{ if .Addresses }}
-        <div class="grid grid-cols-[1fr_0.8fr_1fr_1.4fr_0.4fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          <span>Address</span><span>State</span><span>Hostname</span><span>Notes</span><span></span>
+        <div class="grid grid-cols-[1fr_0.8fr_1fr_1fr_1.2fr_0.4fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          <span>Address</span><span>State</span><span>Device</span><span>Hostname</span><span>Notes</span><span></span>
         </div>
         {{ range .Addresses }}
-        <div class="grid grid-cols-[1fr_0.8fr_1fr_1.4fr_0.4fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <div class="grid grid-cols-[1fr_0.8fr_1fr_1fr_1.2fr_0.4fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
           <span class="font-mono text-zinc-900 dark:text-zinc-100">{{ .Address }}</span>
           <span class="capitalize text-zinc-600 dark:text-zinc-300">{{ .State }}</span>
+          <span class="text-zinc-600 dark:text-zinc-300">{{ if .DeviceName }}{{ .DeviceName }}{{ else }}-{{ end }}</span>
           <span class="text-zinc-600 dark:text-zinc-300">{{ if .Hostname }}{{ .Hostname }}{{ else }}-{{ end }}</span>
           <span class="truncate text-zinc-500 dark:text-zinc-400">{{ if .Notes }}{{ .Notes }}{{ else }}-{{ end }}</span>
           <form method="post" action="/addresses/{{ .ID }}/delete">
@@ -87,6 +88,15 @@
         <label class="mt-4 block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Hostname</span>
           <input class="form-input" name="hostname">
+        </label>
+        <label class="mt-4 block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Device</span>
+          <select class="form-input" name="device_id">
+            <option value="">Unassigned</option>
+            {{ range .Devices }}
+            <option value="{{ .ID }}">{{ .Name }}</option>
+            {{ end }}
+          </select>
         </label>
         <label class="mt-4 block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Notes</span>

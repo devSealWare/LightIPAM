@@ -22,6 +22,7 @@ type DashboardStats struct {
 	SubnetCount   int
 	AddressCount  int
 	ConflictCount int
+	DeviceCount   int
 }
 
 type Site struct {
@@ -46,14 +47,16 @@ type Subnet struct {
 }
 
 type IPAddress struct {
-	ID        string
-	SubnetID  string
-	Address   string
-	State     string
-	Hostname  string
-	Notes     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         string
+	SubnetID   string
+	DeviceID   string
+	DeviceName string
+	Address    string
+	State      string
+	Hostname   string
+	Notes      string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type SubnetInput struct {
@@ -67,6 +70,7 @@ type SubnetInput struct {
 type AddressInput struct {
 	Address  string
 	State    string
+	DeviceID string
 	Hostname string
 	Notes    string
 }
@@ -77,7 +81,8 @@ func (s *Store) DashboardStats(ctx context.Context) (DashboardStats, error) {
 SELECT
 	(SELECT count(*) FROM subnets),
 	(SELECT count(*) FROM ip_addresses),
-	(SELECT count(*) FROM ip_addresses WHERE state = 'conflict')`).Scan(&stats.SubnetCount, &stats.AddressCount, &stats.ConflictCount); err != nil {
+	(SELECT count(*) FROM ip_addresses WHERE state = 'conflict'),
+	(SELECT count(*) FROM devices)`).Scan(&stats.SubnetCount, &stats.AddressCount, &stats.ConflictCount, &stats.DeviceCount); err != nil {
 		return DashboardStats{}, fmt.Errorf("dashboard stats: %w", err)
 	}
 	return stats, nil
@@ -195,10 +200,11 @@ func (s *Store) DeleteSubnet(ctx context.Context, id string) error {
 
 func (s *Store) ListAddresses(ctx context.Context, subnetID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, subnet_id, address::text, state::text, hostname, notes, created_at, updated_at
-FROM ip_addresses
-WHERE subnet_id = $1
-ORDER BY address`, subnetID)
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+FROM ip_addresses ip
+LEFT JOIN devices d ON d.id = ip.device_id
+WHERE ip.subnet_id = $1
+ORDER BY ip.address`, subnetID)
 	if err != nil {
 		return nil, fmt.Errorf("list addresses: %w", err)
 	}
@@ -207,7 +213,7 @@ ORDER BY address`, subnetID)
 	var addresses []IPAddress
 	for rows.Next() {
 		var address IPAddress
-		if err := rows.Scan(&address.ID, &address.SubnetID, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
+		if err := rows.Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan address: %w", err)
 		}
 		addresses = append(addresses, address)
@@ -230,11 +236,11 @@ func (s *Store) CreateAddress(ctx context.Context, subnet Subnet, input AddressI
 	}
 	var address IPAddress
 	if err := s.db.QueryRow(ctx, `
-INSERT INTO ip_addresses (id, subnet_id, address, state, hostname, notes)
-VALUES ($1, $2, $3::inet, $4::address_state, $5, $6)
-RETURNING id, subnet_id, address::text, state::text, hostname, notes, created_at, updated_at`,
-		id, subnet.ID, input.Address, input.State, input.Hostname, input.Notes,
-	).Scan(&address.ID, &address.SubnetID, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
+INSERT INTO ip_addresses (id, subnet_id, device_id, address, state, hostname, notes)
+VALUES ($1, $2, $3, $4::inet, $5::address_state, $6, $7)
+RETURNING id, subnet_id, COALESCE(device_id, ''), address::text, state::text, hostname, notes, created_at, updated_at`,
+		id, subnet.ID, emptyToNil(input.DeviceID), input.Address, input.State, input.Hostname, input.Notes,
+	).Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
 		return IPAddress{}, fmt.Errorf("create address: %w", err)
 	}
 	return address, nil

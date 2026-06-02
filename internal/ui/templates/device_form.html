@@ -1,0 +1,30 @@
+{{ define "content" }}
+<main class="min-h-screen bg-zinc-100 px-4 py-4 dark:bg-zinc-950 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-3xl">
+    <header class="mb-5">
+      <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/devices">Devices</a>
+      <h1 class="mt-2 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">{{ .Title }}</h1>
+    </header>
+
+    <form method="post" action="{{ if .Device.ID }}/devices/{{ .Device.ID }}{{ else }}/devices{{ end }}" class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+      {{ if .Error }}
+      <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+      {{ end }}
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Name</span>
+        <input class="form-input" name="name" value="{{ index .Form "name" }}" required>
+      </label>
+      <label class="mt-5 block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Description</span>
+        <textarea class="form-input min-h-28 py-3" name="description">{{ index .Form "description" }}</textarea>
+      </label>
+      <div class="mt-7 flex items-center justify-between gap-3">
+        <a class="button-muted" href="{{ if .Device.ID }}/devices/{{ .Device.ID }}{{ else }}/devices{{ end }}">Cancel</a>
+        <button class="button-primary" type="submit">Save device</button>
+      </div>
+    </form>
+  </div>
+</main>
+{{ end }}
+

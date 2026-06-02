@@ -5,7 +5,7 @@
 - Authentication, sessions, and admin bootstrap.
 - Default site, optional VLAN metadata, subnets, and sparse address records.
 - Address status workflow: available, reserved, assigned, deprecated, conflict.
-- Devices, MAC addresses, tags, and custom fields.
+- Devices, MAC addresses, private MAC tagging, basic OUI vendor matching, tags, and custom fields.
 - Subnet utilization and address grid.
 - Dashboard with global search, subnet widgets, review widget, recent changes, and scan status.
 - Bulk edit and import/export foundation.

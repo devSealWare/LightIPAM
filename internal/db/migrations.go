@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS mac_addresses (
 	id text PRIMARY KEY,
 	device_id text REFERENCES devices(id) ON DELETE CASCADE,
 	address macaddr NOT NULL UNIQUE,
+	vendor text NOT NULL DEFAULT '',
+	is_private boolean NOT NULL DEFAULT false,
 	created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -136,6 +138,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
 CREATE INDEX IF NOT EXISTS idx_subnets_cidr ON subnets USING gist (cidr inet_ops);
 CREATE INDEX IF NOT EXISTS idx_ip_addresses_address ON ip_addresses USING gist (address inet_ops);
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_device_id ON ip_addresses (device_id);
+CREATE INDEX IF NOT EXISTS idx_mac_addresses_device_id ON mac_addresses (device_id);
 
 INSERT INTO sites (id, name, description)
 VALUES ('default', 'Default', 'Initial site for this Light IPAM installation.')
@@ -149,6 +153,20 @@ ALTER TABLE subnets ADD COLUMN IF NOT EXISTS vlan integer CHECK (vlan IS NULL OR
 
 INSERT INTO sites (id, name, description)
 VALUES ('default', 'Default', 'Initial site for this Light IPAM installation.')
+ON CONFLICT (id) DO NOTHING;
+`,
+	},
+	{
+		version: 3,
+		sql: `
+ALTER TABLE mac_addresses ADD COLUMN IF NOT EXISTS vendor text NOT NULL DEFAULT '';
+ALTER TABLE mac_addresses ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_device_id ON ip_addresses (device_id);
+CREATE INDEX IF NOT EXISTS idx_mac_addresses_device_id ON mac_addresses (device_id);
+
+INSERT INTO tags (id, name, color)
+VALUES ('private-mac', 'Private MAC', 'amber')
 ON CONFLICT (id) DO NOTHING;
 `,
 	},

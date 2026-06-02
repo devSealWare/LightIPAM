@@ -41,6 +41,9 @@ Subnet rules:
 - IPv4-only, including `/31` and `/32`.
 - Overlapping subnets are globally blocked for MVP.
 - Address records are sparse: Light IPAM stores only touched, reserved, assigned, deprecated, conflicted, or discovered addresses.
+- Devices can be linked to IP address records and MAC addresses.
+- Locally administered unicast MAC addresses are tagged as private rotating MACs.
+- MAC vendor matching is best-effort from built-in OUI data for MVP, with a future importer planned for the full IEEE OUI registry.
 
 ## Discovery
 
