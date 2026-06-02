@@ -69,7 +69,14 @@ Required fields:
 - `timeout_seconds`: job timeout.
 - `created_at`: creation time.
 
-Jobs must fail validation if any target is outside `allowed_cidrs`.
+### Allowlist validation
+
+Allowlists are enforced at two layers, both implemented in `internal/scanner/protocol.go`:
+
+- `ValidateJob` rejects a job whose required fields are missing, whose `scan_type`/`mode` are unknown, whose `timeout_seconds` is not positive, or whose any `target` falls outside the job's own `allowed_cidrs`.
+- `ValidateJobForAgent` is the check an agent runs before accepting work. It additionally requires that the agent is `active`, that the job is addressed to that agent, and that every entry in the job's `allowed_cidrs` is fully contained by the agent's registered `allowed_cidrs`.
+
+A job is only valid if it passes both layers, so the app cannot widen an agent's reach by submitting a broader allowlist than the agent was registered with.
 
 ## Scan Result
 
@@ -77,9 +84,10 @@ A scan result is the agent-to-app observation report.
 
 Required fields:
 
+- `protocol_version`: protocol version the agent reported under (current: `v1`).
 - `job_id`: source job.
 - `agent_id`: reporting agent.
-- `status`: `queued`, `running`, `succeeded`, `failed`, or `cancelled`.
+- `status`: `queued`, `running`, `succeeded`, `failed`, `cancelled`, or `rejected`.
 - `started_at`: optional.
 - `finished_at`: optional.
 - `observations`: list of observed hosts/services.
@@ -94,6 +102,7 @@ Observation fields:
 - `os_detail`: optional OS details.
 - `services`: optional service observations.
 - `evidence`: raw or normalized evidence references.
+- `observed_at`: time the observation was made.
 
 Service fields:
 

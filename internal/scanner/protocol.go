@@ -125,6 +125,83 @@ type ScanError struct {
 	Target  string `json:"target,omitempty"`
 }
 
+// Valid reports whether the scan type is a known protocol value.
+func (t ScanType) Valid() bool {
+	switch t {
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined:
+		return true
+	default:
+		return false
+	}
+}
+
+// Valid reports whether the scan mode is a known protocol value.
+func (m ScanMode) Valid() bool {
+	switch m {
+	case ModePassive, ModeLightActive, ModeStandardActive, ModeDeepActive:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateJob checks that a scan job is structurally well-formed in isolation:
+// required fields are present, enums are known, the timeout is positive, and
+// every target is contained by the job's own allowlist. It does not consult the
+// registered agent; use ValidateJobForAgent for the full agent-aware check.
+func ValidateJob(job ScanJob) error {
+	if job.ID == "" {
+		return fmt.Errorf("scan job requires an id")
+	}
+	if job.AgentID == "" {
+		return fmt.Errorf("scan job requires an agent_id")
+	}
+	if !job.Type.Valid() {
+		return fmt.Errorf("scan job has unknown scan_type %q", job.Type)
+	}
+	if !job.Mode.Valid() {
+		return fmt.Errorf("scan job has unknown mode %q", job.Mode)
+	}
+	if job.TimeoutSeconds <= 0 {
+		return fmt.Errorf("scan job requires a positive timeout_seconds")
+	}
+	return ValidateJobTargets(job)
+}
+
+// ValidateJobForAgent enforces the full app-and-agent allowlist contract: the
+// agent must be active, the job must be addressed to that agent, and the job's
+// allowlist must be fully contained by the agent's registered allowlist. This is
+// the check an agent runs before accepting work, so it also runs ValidateJob.
+func ValidateJobForAgent(job ScanJob, agent AgentRegistration) error {
+	if agent.Status != AgentActive {
+		return fmt.Errorf("agent %q is not active (status %q)", agent.ID, agent.Status)
+	}
+	if job.AgentID != agent.ID {
+		return fmt.Errorf("scan job agent_id %q does not match agent %q", job.AgentID, agent.ID)
+	}
+	if len(agent.AllowedCIDRs) == 0 {
+		return fmt.Errorf("agent %q has no allowed CIDRs", agent.ID)
+	}
+	if len(job.AllowedCIDRs) == 0 {
+		return fmt.Errorf("scan job requires at least one allowed CIDR")
+	}
+
+	agentPrefixes, err := parseAllowedPrefixes(agent.AllowedCIDRs)
+	if err != nil {
+		return fmt.Errorf("agent allowlist: %w", err)
+	}
+	jobPrefixes, err := parseAllowedPrefixes(job.AllowedCIDRs)
+	if err != nil {
+		return fmt.Errorf("job allowlist: %w", err)
+	}
+	for i, jobPrefix := range jobPrefixes {
+		if !withinAny(jobPrefix, agentPrefixes) {
+			return fmt.Errorf("job allowed CIDR %q is outside the agent allowlist", job.AllowedCIDRs[i])
+		}
+	}
+	return ValidateJob(job)
+}
+
 func ValidateJobTargets(job ScanJob) error {
 	if len(job.AllowedCIDRs) == 0 {
 		return fmt.Errorf("scan job requires at least one allowed CIDR")
@@ -144,6 +221,15 @@ func ValidateJobTargets(job ScanJob) error {
 		}
 	}
 	return nil
+}
+
+func withinAny(target netip.Prefix, allowed []netip.Prefix) bool {
+	for _, allowedPrefix := range allowed {
+		if prefixWithin(target, allowedPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseAllowedPrefixes(values []string) ([]netip.Prefix, error) {
