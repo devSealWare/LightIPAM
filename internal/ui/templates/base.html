@@ -1,0 +1,14 @@
+{{ define "base.html" }}
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if .Title }}{{ .Title }} - {{ end }}Light IPAM</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="min-h-full">
+  {{ template "content" . }}
+</body>
+</html>
+{{ end }}

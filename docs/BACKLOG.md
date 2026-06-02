@@ -9,6 +9,7 @@ Build the first local authentication flow with a single admin role.
 Acceptance criteria:
 
 - First-run admin bootstrap.
+- Web bootstrap page for first admin creation.
 - Secure password hashing.
 - Login and logout.
 - Secure session cookies.
@@ -20,7 +21,7 @@ Create the PostgreSQL schema for manual IPAM.
 
 Acceptance criteria:
 
-- Migration runner.
+- Embedded Go migration runner.
 - Tables for sites, VLANs, subnets, IPv4 addresses, devices, MAC addresses, tags, and custom fields.
 - Address states: available, reserved, assigned, deprecated, conflict.
 - Audit log table.
@@ -116,4 +117,3 @@ Acceptance criteria:
 - Rate limits.
 - Auto-create records by default.
 - Optional review mode.
-

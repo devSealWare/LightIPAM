@@ -11,6 +11,7 @@ Light IPAM should support small business deployments first while keeping the arc
 - IPv4 only.
 - PostgreSQL database.
 - Local username/password authentication.
+- First admin created through a web bootstrap page.
 - Single admin role for the first version.
 
 ## Manual IPAM
@@ -70,6 +71,8 @@ The first screen is a dashboard with:
 - Scan status.
 
 The UI should support dark mode from the start.
+
+Tailwind CSS is the styling system for the first release.
 
 ## Future Integrations
 
