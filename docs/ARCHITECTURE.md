@@ -2,7 +2,7 @@
 
 ## Goals
 
-Netventory should be small enough to run in a single Docker Compose stack, but structured enough to safely discover networks without giving the web application raw network privileges.
+Light IPAM should be small enough to run in a single Docker Compose stack, but structured enough to safely discover networks without giving the web application raw network privileges.
 
 ## Components
 
@@ -43,11 +43,13 @@ Use PostgreSQL as the source of truth. Prefer native `inet` and `cidr` columns f
 
 ## UI Direction
 
-The UI should be operational, dense, and fast:
+The UI should combine a beautiful dashboard with dense operational views:
 
+- Dashboard with global search, discovery review, subnet health, utilization, recent changes, and scan status widgets.
 - Subnet tree with utilization and conflict indicators.
 - Address grid with filters for status, device, owner, services, and last seen.
 - Device detail page with addresses, services, scan history, and evidence.
 - Scan policy editor with explicit scope, rate limits, and probe types.
 - Review queue for newly detected hosts, conflicts, and stale records.
 
+Visual direction: Apple-inspired restraint, strong spacing, polished dark mode, and database-style information density where operators need to compare many records.

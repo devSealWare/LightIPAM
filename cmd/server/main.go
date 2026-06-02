@@ -23,7 +23,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(healthResponse{
 			Status:  "ok",
-			Service: "netventory",
+			Service: "light-ipam",
 			Time:    time.Now().UTC().Format(time.RFC3339),
 		})
 	})
@@ -35,7 +35,7 @@ func main() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Netventory</title>
+  <title>Light IPAM</title>
   <style>
     :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; background: #f6f7f9; color: #1d252d; }
@@ -54,7 +54,7 @@ func main() {
 </head>
 <body>
   <main>
-    <h1>Netventory</h1>
+    <h1>Light IPAM</h1>
     <p>A lightweight IP address management and network discovery system. This starter app is ready for the API, auth, database migrations, and separate scanner agents.</p>
     <section class="panel">
       <div class="status"><span class="dot"></span> Web service running</div>
@@ -84,4 +84,3 @@ func getenv(key, fallback string) string {
 	}
 	return value
 }
-

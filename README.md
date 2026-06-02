@@ -1,11 +1,11 @@
-# Netventory
+# Light IPAM
 
-Netventory is a lightweight IP address management system with a web UI and controlled network discovery.
+Light IPAM is a lightweight IP address management system with a web UI and controlled network discovery.
 
 The core design is intentionally split:
 
 - `app`: unprivileged web UI, API, auth, inventory, audit logs, and scan orchestration.
-- `scanner-agent`: separately deployed network sensor with narrow privileges for discovery, OS probing, and service detection.
+- `scanner-agent`: optional privileged network sensor with narrow capabilities for discovery, OS probing, and service detection.
 - `db`: PostgreSQL storage using native network-aware types such as `inet` and `cidr`.
 
 ## Recommended Stack
@@ -30,5 +30,5 @@ This repository is at the planning and scaffold stage. See:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security Model](docs/SECURITY.md)
+- [MVP Requirements](docs/MVP.md)
 - [Roadmap](docs/ROADMAP.md)
-

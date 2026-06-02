@@ -36,7 +36,7 @@ Reasons:
 
 ## Discovery
 
-Use a separate scanner agent. Start with Nmap for OS and service fingerprinting, then add lighter custom probes where needed.
+Use a separate scanner agent, even when it runs on the same Docker host as the app. Start with Nmap for OS and service fingerprinting, then add lighter custom probes where needed.
 
 Initial discovery modes:
 
@@ -60,5 +60,4 @@ Minimum production controls:
 
 ## Deployment
 
-Use Docker Compose for the first release. The app service should be unprivileged. Scanner agents can run in separate containers or hosts with tightly scoped network access.
-
+Use Docker Compose for the first release. The app service should be unprivileged. Scanner agents can run in separate containers on the same host with tightly scoped network access.
