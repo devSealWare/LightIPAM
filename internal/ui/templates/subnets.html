@@ -1,0 +1,44 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Subnets</h1>
+        </div>
+        <a class="button-primary" href="/subnets/new">Add subnet</a>
+      </div>
+    </header>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      {{ if .Subnets }}
+      <div class="grid grid-cols-[1.3fr_1fr_0.7fr_0.7fr_0.7fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Name</span>
+        <span>CIDR</span>
+        <span>VLAN</span>
+        <span>Touched</span>
+        <span>Utilization</span>
+      </div>
+      {{ range .Subnets }}
+      <a class="grid grid-cols-[1.3fr_1fr_0.7fr_0.7fr_0.7fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80" href="/subnets/{{ .ID }}">
+        <span>
+          <span class="block font-semibold text-zinc-950 dark:text-white">{{ .Name }}</span>
+          <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ .SiteName }}</span>
+        </span>
+        <span class="font-mono text-zinc-700 dark:text-zinc-200">{{ .CIDR }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ with .VLAN }}{{ . }}{{ else }}-{{ end }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .AddressCount }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ printf "%.2f" .UtilizationPct }}%</span>
+      </a>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No subnets yet</h2>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Light IPAM stores only addresses that have been touched, reserved, assigned, or discovered. Add a subnet first, then add address records as needed.</p>
+        <a class="button-primary mt-5" href="/subnets/new">Add subnet</a>
+      </div>
+      {{ end }}
+    </section>
+  </div>
+{{ end }}

@@ -3,7 +3,7 @@ bin/
 dist/
 coverage/
 *.log
+node_modules/
 .env
 .env.*
 !.env.example
-
