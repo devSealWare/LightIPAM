@@ -1,0 +1,27 @@
+{{ define "content" }}
+<main class="relative min-h-screen overflow-hidden px-6 py-10">
+  <div class="absolute inset-0 -z-10 bg-[linear-gradient(135deg,#fafafa,#f1f5f9_48%,#eef2ff)] dark:bg-[linear-gradient(135deg,#09090b,#111827_55%,#18181b)]"></div>
+  <section class="mx-auto flex min-h-[calc(100vh-5rem)] max-w-md items-center">
+    <form method="post" action="/login" class="glass-panel w-full rounded-[28px] p-6 sm:p-8">
+      <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+      <div class="mb-7">
+        <h1 class="text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Light IPAM</h1>
+        <p class="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">Sign in to manage addresses, subnets, devices, and discovery.</p>
+      </div>
+      {{ if .Error }}
+      <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+      {{ end }}
+      <label class="mb-4 block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Username</span>
+        <input class="form-input" name="username" autocomplete="username" required>
+      </label>
+      <label class="mb-6 block">
+        <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Password</span>
+        <input class="form-input" type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="button-primary w-full" type="submit">Sign in</button>
+    </form>
+  </section>
+</main>
+{{ end }}
+

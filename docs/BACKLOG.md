@@ -9,6 +9,7 @@ Build the first local authentication flow with a single admin role.
 Acceptance criteria:
 
 - First-run admin bootstrap.
+- Web bootstrap page for first admin creation.
 - Secure password hashing.
 - Login and logout.
 - Secure session cookies.
@@ -20,10 +21,11 @@ Create the PostgreSQL schema for manual IPAM.
 
 Acceptance criteria:
 
-- Migration runner.
-- Tables for sites, VLANs, subnets, IPv4 addresses, devices, MAC addresses, tags, and custom fields.
+- Embedded Go migration runner.
+- Tables for the default site, optional VLAN metadata, subnets, sparse IPv4 addresses, devices, MAC addresses, tags, and custom fields.
 - Address states: available, reserved, assigned, deprecated, conflict.
 - Audit log table.
+- Global subnet overlap blocking.
 
 ## 3. Build the Dashboard Shell
 
@@ -45,8 +47,10 @@ Acceptance criteria:
 
 - Create, edit, and delete subnets.
 - View subnet utilization.
-- Address grid with filtering.
-- Create, reserve, assign, deprecate, and mark conflict states.
+- Sparse address table for touched/reserved/assigned/discovered records.
+- Create, edit, reserve, assign, deprecate, and mark conflict states.
+- Confirmation screens for destructive subnet, address, device, and MAC actions.
+- Navigation shell/sidebar for manual IPAM workflows.
 - Bulk edit foundation.
 
 ## 5. Build Device and MAC Address Tracking
@@ -59,6 +63,8 @@ Acceptance criteria:
 - MAC address records.
 - Address-to-device relationships.
 - Notes, tags, and custom fields.
+- Automatic `Private MAC` tagging for locally administered rotating MAC addresses.
+- Built-in OUI vendor matching where known, with room for future IEEE OUI import.
 
 ## 6. Implement Immutable Audit Logs
 
@@ -68,6 +74,7 @@ Acceptance criteria:
 
 - Audit entries for login, logout, IPAM mutations, and scan configuration changes.
 - Audit entries cannot be edited through normal app APIs.
+- Database trigger rejects direct audit row update/delete attempts.
 - Audit UI with filters.
 
 ## 7. Define Scanner Agent Protocol
@@ -116,4 +123,3 @@ Acceptance criteria:
 - Rate limits.
 - Auto-create records by default.
 - Optional review mode.
-

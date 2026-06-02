@@ -1,0 +1,33 @@
+{{ define "app_shell" }}
+<main class="min-h-screen bg-zinc-100 dark:bg-zinc-950">
+  <div class="mx-auto flex max-w-[1500px] gap-5 px-4 py-4 sm:px-6 lg:px-8">
+    <aside class="glass-panel sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 rounded-[28px] p-4 lg:block">
+      <a class="block rounded-2xl px-3 py-3" href="/">
+        <span class="block text-lg font-semibold text-zinc-950 dark:text-white">Light IPAM</span>
+        <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Manual IPAM MVP</span>
+      </a>
+      <nav class="mt-5 space-y-1">
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "dashboard" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/">Dashboard</a>
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "subnets" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/subnets">Subnets</a>
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "devices" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/devices">Devices</a>
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "audit" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/audit">Audit Log</a>
+      </nav>
+      <form class="absolute bottom-4 left-4 right-4" method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <button class="button-muted w-full" type="submit">Sign out</button>
+      </form>
+    </aside>
+    <section class="min-w-0 flex-1">
+      <div class="glass-panel mb-4 flex items-center justify-between rounded-[24px] px-4 py-3 lg:hidden">
+        <a class="font-semibold text-zinc-950 dark:text-white" href="/">Light IPAM</a>
+        <div class="flex gap-2">
+          <a class="button-muted" href="/subnets">Subnets</a>
+          <a class="button-muted" href="/devices">Devices</a>
+        </div>
+      </div>
+      {{ template "page" . }}
+    </section>
+  </div>
+</main>
+{{ end }}
+

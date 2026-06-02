@@ -1,7 +1,18 @@
-FROM golang:1.22-alpine AS build
+FROM node:22-alpine AS assets
+WORKDIR /src
+COPY package.json package-lock.json* tailwind.config.js ./
+COPY internal/ui ./internal/ui
+RUN npm ci
+RUN npm run build:css
+
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
+COPY go.sum* ./
+RUN go mod download
 COPY cmd ./cmd
+COPY internal ./internal
+COPY --from=assets /src/internal/ui/static/app.css ./internal/ui/static/app.css
 RUN go build -trimpath -ldflags="-s -w" -o /out/light-ipam ./cmd/server
 
 FROM alpine:3.20

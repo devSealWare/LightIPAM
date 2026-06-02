@@ -10,8 +10,8 @@ The core design is intentionally split:
 
 ## Recommended Stack
 
-- Backend: Go, standard `net/http` to start, `pgx` for PostgreSQL, `sqlc` for typed queries, `goose` for migrations.
-- Frontend: server-rendered HTML with HTMX and a small amount of TypeScript where needed.
+- Backend: Go, standard `net/http`, `pgx` for PostgreSQL, and embedded migrations.
+- Frontend: server-rendered HTML with Tailwind CSS and a small amount of TypeScript where needed.
 - Database: PostgreSQL.
 - Scanner agent: Go orchestration around approved scanners such as Nmap, plus passive collectors where available.
 - Deployment: Docker Compose for small installs, Kubernetes later if multi-site scale needs it.
@@ -22,7 +22,7 @@ The core design is intentionally split:
 docker compose up --build
 ```
 
-Then open `http://localhost:8080`.
+Then open `http://localhost:8080` and create the first admin from the bootstrap page.
 
 ## Project Status
 

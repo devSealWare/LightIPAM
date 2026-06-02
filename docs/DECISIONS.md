@@ -14,13 +14,13 @@ Reasons:
 
 ## Web Platform
 
-Use server-rendered HTML with HTMX.
+Use server-rendered HTML with Tailwind CSS.
 
 Reasons:
 
 - Keeps the UI fast and lightweight.
-- Avoids a separate frontend build pipeline at the start.
-- Still supports powerful interactions for address grids, filters, modals, and scan review queues.
+- Gives the product a polished interface without committing to a heavy single-page app.
+- Keeps app interactions server-owned while leaving room for HTMX or TypeScript when address grids, filters, modals, and scan review queues need richer behavior.
 
 Use TypeScript only where browser-side complexity is justified.
 
@@ -47,7 +47,7 @@ Initial discovery modes:
 
 ## Authentication
 
-Start with local auth for development and support OIDC for production.
+Start with local auth and a web-based first-admin bootstrap page. Support OIDC later for production environments that need centralized identity.
 
 Minimum production controls:
 
