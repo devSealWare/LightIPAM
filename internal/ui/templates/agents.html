@@ -1,0 +1,44 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Scanner Agents</h1>
+        </div>
+        <a class="button-primary" href="/agents/new">Register agent</a>
+      </div>
+    </header>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      {{ if .ScanAgents }}
+      <div class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Name</span>
+        <span>Endpoint</span>
+        <span>Allowed CIDRs</span>
+        <span>Status</span>
+        <span>Last seen</span>
+      </div>
+      {{ range .ScanAgents }}
+      <a class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80" href="/agents/{{ .ID }}/edit">
+        <span>
+          <span class="block font-semibold text-zinc-950 dark:text-white">{{ .Name }}</span>
+          {{ if .Version }}<span class="block text-xs text-zinc-400">v{{ .Version }}</span>{{ end }}
+        </span>
+        <span class="font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ .EndpointURL }}</span>
+        <span class="font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ join .AllowedCIDRs ", " }}</span>
+        <span>{{ template "status_badge" .Status }}</span>
+        <span class="text-zinc-500 dark:text-zinc-400">{{ datetimeptr .LastSeenAt }}</span>
+      </a>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No agents registered</h2>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent with its endpoint and allowlist. The app dispatches jobs to it over mTLS; the agent stays the only component allowed to touch the network.</p>
+        <a class="button-primary mt-5" href="/agents/new">Register agent</a>
+      </div>
+      {{ end }}
+    </section>
+  </div>
+{{ end }}

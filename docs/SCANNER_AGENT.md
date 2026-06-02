@@ -87,3 +87,14 @@ docker compose --profile scanner up -d --build
 
 The service drops all Linux capabilities and runs read-only. `NET_RAW` will be
 added here — and only here — when Nmap-based discovery lands.
+
+## App-side dispatch
+
+The app is the mTLS *client*: it dispatches scan jobs to agents (issue #9). The
+Compose `app` service mounts the same `deploy/scanner-certs` directory read-only
+and reads `app.crt`/`app.key`/`ca.crt` (via `SCANNER_CLIENT_CERT`,
+`SCANNER_CLIENT_KEY`, `SCANNER_CLIENT_CA`). If those files are absent the app
+still starts, but scan jobs fail with a configuration error instead of
+contacting an agent. Register an agent under `/agents` with its endpoint
+(e.g. `https://scanner-agent:8443`) and IPv4 allowlist, then run scans from
+`/scans` or schedule them under `/schedules`.

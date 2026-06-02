@@ -192,6 +192,64 @@ BEFORE DELETE ON audit_logs
 FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
 `,
 	},
+	{
+		version: 5,
+		sql: `
+CREATE TABLE IF NOT EXISTS scan_agents (
+	id text PRIMARY KEY,
+	name text NOT NULL,
+	site_id text REFERENCES sites(id) ON DELETE SET NULL,
+	endpoint_url text NOT NULL,
+	certificate_subject text NOT NULL DEFAULT '',
+	allowed_cidrs text[] NOT NULL DEFAULT '{}',
+	status text NOT NULL DEFAULT 'pending',
+	version text NOT NULL DEFAULT '',
+	last_seen_at timestamptz,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS scan_schedules (
+	id text PRIMARY KEY,
+	name text NOT NULL,
+	agent_id text NOT NULL REFERENCES scan_agents(id) ON DELETE CASCADE,
+	scan_type text NOT NULL,
+	mode text NOT NULL,
+	allowed_cidrs text[] NOT NULL DEFAULT '{}',
+	targets text[] NOT NULL DEFAULT '{}',
+	timeout_seconds integer NOT NULL DEFAULT 60,
+	interval_seconds integer NOT NULL,
+	enabled boolean NOT NULL DEFAULT true,
+	last_run_at timestamptz,
+	next_run_at timestamptz NOT NULL DEFAULT now(),
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS scan_jobs (
+	id text PRIMARY KEY,
+	agent_id text NOT NULL REFERENCES scan_agents(id) ON DELETE CASCADE,
+	schedule_id text REFERENCES scan_schedules(id) ON DELETE SET NULL,
+	requested_by text REFERENCES users(id) ON DELETE SET NULL,
+	scan_type text NOT NULL,
+	mode text NOT NULL,
+	allowed_cidrs text[] NOT NULL DEFAULT '{}',
+	targets text[] NOT NULL DEFAULT '{}',
+	timeout_seconds integer NOT NULL DEFAULT 60,
+	status text NOT NULL DEFAULT 'queued',
+	error text NOT NULL DEFAULT '',
+	result jsonb,
+	started_at timestamptz,
+	finished_at timestamptz,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_agent_id ON scan_jobs (agent_id);
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_at ON scan_jobs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scan_schedules_next_run ON scan_schedules (next_run_at) WHERE enabled;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

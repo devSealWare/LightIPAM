@@ -107,3 +107,19 @@ func TestValidateJobForAgentEnforcesAgentAllowlist(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateAgentScopeIgnoresAgentIDButEnforcesAllowlist(t *testing.T) {
+	// On the agent side, a job addressed to a different agent_id is acceptable
+	// as long as its allowlist is within the agent's own scope.
+	job := validJob()
+	job.AgentID = "some-other-id"
+	if err := ValidateAgentScope(job, []string{"192.168.0.0/16"}); err != nil {
+		t.Fatalf("expected in-scope job to pass regardless of agent_id: %v", err)
+	}
+
+	job.AllowedCIDRs = []string{"10.0.0.0/24"}
+	job.Targets = []string{"10.0.0.5"}
+	if err := ValidateAgentScope(job, []string{"192.168.0.0/16"}); err == nil {
+		t.Fatal("expected out-of-scope job to be rejected")
+	}
+}

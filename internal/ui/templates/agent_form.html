@@ -1,0 +1,53 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div class="mx-auto max-w-3xl">
+    <header class="mb-5 flex items-center justify-between">
+      <div>
+        <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/agents">Agents</a>
+        <h1 class="mt-2 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">{{ .Title }}</h1>
+      </div>
+      {{ if .ScanAgent.ID }}
+      <a class="text-sm font-medium text-rose-600 hover:text-rose-700 dark:text-rose-300" href="/agents/{{ .ScanAgent.ID }}/delete">Delete</a>
+      {{ end }}
+    </header>
+
+    <form method="post" action="{{ if .ScanAgent.ID }}/agents/{{ .ScanAgent.ID }}{{ else }}/agents{{ end }}" class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+      {{ if .Error }}
+      <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+      {{ end }}
+      <div class="grid gap-5 sm:grid-cols-2">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Name</span>
+          <input class="form-input" name="name" value="{{ index .Form "name" }}" required>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Status</span>
+          <select class="form-input" name="status">
+            {{ range .AgentStatuses }}
+            <option value="{{ . }}" {{ if eq . (index $.Form "status") }}selected{{ end }}>{{ . }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Endpoint URL</span>
+          <input class="form-input font-mono" name="endpoint_url" value="{{ index .Form "endpoint_url" }}" placeholder="https://scanner-agent:8443" required>
+        </label>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Certificate subject (CN)</span>
+          <input class="form-input font-mono" name="certificate_subject" value="{{ index .Form "certificate_subject" }}" placeholder="light-ipam-scanner-agent">
+          <span class="mt-1 block text-xs text-zinc-400">Expected mTLS identity of the agent. Optional today; used for stricter verification later.</span>
+        </label>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
+          <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="allowed_cidrs" placeholder="192.168.0.0/16&#10;10.0.0.0/8">{{ index .Form "allowed_cidrs" }}</textarea>
+          <span class="mt-1 block text-xs text-zinc-400">One per line. Every scan job is bounded by this allowlist.</span>
+        </label>
+      </div>
+      <div class="mt-7 flex items-center justify-between gap-3">
+        <a class="button-muted" href="/agents">Cancel</a>
+        <button class="button-primary" type="submit">Save agent</button>
+      </div>
+    </form>
+  </div>
+{{ end }}
