@@ -1,0 +1,68 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div class="mx-auto max-w-3xl">
+    <header class="mb-5">
+      <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/scans">Scans</a>
+      <h1 class="mt-2 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Run Scan</h1>
+    </header>
+
+    {{ if not .ScanAgents }}
+    <section class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No agents registered</h2>
+      <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent before running a scan. The agent's allowlist bounds what any job can target.</p>
+      <a class="button-primary mt-5" href="/agents/new">Register agent</a>
+    </section>
+    {{ else }}
+    <form method="post" action="/scans" class="glass-panel rounded-[28px] p-6 sm:p-8">
+      <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+      {{ if .Error }}
+      <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+      {{ end }}
+      <div class="grid gap-5 sm:grid-cols-2">
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Agent</span>
+          <select class="form-input" name="agent_id">
+            {{ range .ScanAgents }}
+            <option value="{{ .ID }}" {{ if eq .ID (index $.Form "agent_id") }}selected{{ end }}>{{ .Name }} ({{ .Status }})</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan type</span>
+          <select class="form-input" name="scan_type">
+            {{ range .ScanTypes }}
+            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ . }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Mode</span>
+          <select class="form-input" name="mode">
+            {{ range .ScanModes }}
+            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ . }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
+          <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="allowed_cidrs" placeholder="192.168.10.0/24">{{ index .Form "allowed_cidrs" }}</textarea>
+          <span class="mt-1 block text-xs text-zinc-400">One per line. Must be within the agent's allowlist.</span>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Targets</span>
+          <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="targets" placeholder="192.168.10.0/25&#10;192.168.10.20">{{ index .Form "targets" }}</textarea>
+          <span class="mt-1 block text-xs text-zinc-400">IPv4 addresses or CIDRs, one per line.</span>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timeout (seconds)</span>
+          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="60">
+        </label>
+      </div>
+      <div class="mt-7 flex items-center justify-between gap-3">
+        <a class="button-muted" href="/scans">Cancel</a>
+        <button class="button-primary" type="submit">Dispatch scan</button>
+      </div>
+    </form>
+    {{ end }}
+  </div>
+{{ end }}

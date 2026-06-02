@@ -74,9 +74,10 @@ Required fields:
 Allowlists are enforced at two layers, both implemented in `internal/scanner/protocol.go`:
 
 - `ValidateJob` rejects a job whose required fields are missing, whose `scan_type`/`mode` are unknown, whose `timeout_seconds` is not positive, or whose any `target` falls outside the job's own `allowed_cidrs`.
-- `ValidateJobForAgent` is the check an agent runs before accepting work. It additionally requires that the agent is `active`, that the job is addressed to that agent, and that every entry in the job's `allowed_cidrs` is fully contained by the agent's registered `allowed_cidrs`.
+- `ValidateJobForAgent` is the **app-side** check before dispatch. It additionally requires that the agent is `active`, that the job is addressed to that agent (by app-assigned ID), and that every entry in the job's `allowed_cidrs` is fully contained by the agent's registered `allowed_cidrs`.
+- `ValidateAgentScope` is the **agent-side** check before accepting work. The connecting app is already authenticated by mTLS, so the agent's own security boundary is its allowlist: it runs `ValidateJob` and requires the job's `allowed_cidrs` to be contained by the agent's allowlist, without re-checking the app-assigned agent identity or registration status (those are app concerns the agent cannot independently verify).
 
-A job is only valid if it passes both layers, so the app cannot widen an agent's reach by submitting a broader allowlist than the agent was registered with.
+A job is only dispatched if it passes the app-side check, and only acted on if it passes the agent-side check, so neither a buggy app nor a spoofed job can push an agent past its registered allowlist.
 
 ## Scan Result
 

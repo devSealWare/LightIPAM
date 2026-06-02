@@ -168,10 +168,9 @@ func ValidateJob(job ScanJob) error {
 	return ValidateJobTargets(job)
 }
 
-// ValidateJobForAgent enforces the full app-and-agent allowlist contract: the
-// agent must be active, the job must be addressed to that agent, and the job's
-// allowlist must be fully contained by the agent's registered allowlist. This is
-// the check an agent runs before accepting work, so it also runs ValidateJob.
+// ValidateJobForAgent is the app-side check before dispatching: the agent must
+// be active, the job must be addressed to that agent (by app-assigned ID), and
+// the job's allowlist must be contained by the agent's registered allowlist.
 func ValidateJobForAgent(job ScanJob, agent AgentRegistration) error {
 	if agent.Status != AgentActive {
 		return fmt.Errorf("agent %q is not active (status %q)", agent.ID, agent.Status)
@@ -179,14 +178,22 @@ func ValidateJobForAgent(job ScanJob, agent AgentRegistration) error {
 	if job.AgentID != agent.ID {
 		return fmt.Errorf("scan job agent_id %q does not match agent %q", job.AgentID, agent.ID)
 	}
-	if len(agent.AllowedCIDRs) == 0 {
-		return fmt.Errorf("agent %q has no allowed CIDRs", agent.ID)
+	return ValidateAgentScope(job, agent.AllowedCIDRs)
+}
+
+// ValidateAgentScope is the agent-side check before accepting work. The agent's
+// security boundary is its own allowlist (the connecting app is already
+// authenticated by mTLS), so this enforces job structure and that the job's
+// allowlist is fully contained by the agent's allowlist — without the
+// app-side concerns of agent identity or registration status.
+func ValidateAgentScope(job ScanJob, agentAllowedCIDRs []string) error {
+	if len(agentAllowedCIDRs) == 0 {
+		return fmt.Errorf("agent has no allowed CIDRs")
 	}
 	if len(job.AllowedCIDRs) == 0 {
 		return fmt.Errorf("scan job requires at least one allowed CIDR")
 	}
-
-	agentPrefixes, err := parseAllowedPrefixes(agent.AllowedCIDRs)
+	agentPrefixes, err := parseAllowedPrefixes(agentAllowedCIDRs)
 	if err != nil {
 		return fmt.Errorf("agent allowlist: %w", err)
 	}
