@@ -61,6 +61,11 @@ In the UI an operator either:
   IP (`ip_addresses`, state `assigned`, with hostname), and when a MAC is known a
   device + MAC record is created (or an existing device that owns the MAC is
   reused). Import is idempotent and refuses if no subnet contains the address.
+  A discovery **without a MAC imports as an address only** — no device is
+  created. Bridged agents usually cannot observe MACs; give the agent layer-2
+  visibility with the macvlan overlay (see
+  [`docs/SCANNER_AGENT.md`](SCANNER_AGENT.md#layer-2-discovery-mac-addresses-with-macvlan))
+  for device creation to happen automatically.
 - **Dismisses** it: it is marked reviewed and will not resurface.
 
 Every import/dismiss is audited.
