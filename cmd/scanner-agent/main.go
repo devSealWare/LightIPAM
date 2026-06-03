@@ -65,9 +65,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Active discovery is performed by nmap, which uses raw sockets granted to
+	// this container (and only this container) via the NET_RAW capability. The
+	// app never carries this risk profile.
+	discoverer := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"))
+
 	a := agent.New(agent.Config{
 		Registration:     registration,
 		ExpectedClientCN: getenv("APP_CLIENT_CN", pki.AppClientCN),
+		Discoverer:       discoverer,
 		Logger:           logger,
 	})
 
@@ -86,7 +92,7 @@ func main() {
 			"listen", listen,
 			"agent_id", registration.ID,
 			"allowed_cidrs", registration.AllowedCIDRs,
-			"active_scanning", false,
+			"active_scanning", true,
 		)
 		// Certificates are already in TLSConfig, so the file arguments are empty.
 		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {

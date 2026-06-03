@@ -22,6 +22,10 @@ type Config struct {
 	ScannerClientKey  string
 	ScannerCACert     string
 	ScanSchedulerTick time.Duration
+
+	// ScannerAgentEndpoint, when set, is the bundled agent the app auto-enrolls
+	// (as a pending agent) on boot by pulling its /register endpoint over mTLS.
+	ScannerAgentEndpoint string
 }
 
 func Load() Config {
@@ -36,14 +40,15 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:              getenv("PORT", "8080"),
-		DatabaseURL:       getenv("DATABASE_URL", "postgres://lightipam:lightipam@localhost:5432/lightipam?sslmode=disable"),
-		AppSecret:         []byte(secret),
-		CookieSecure:      getenv("COOKIE_SECURE", "false") == "true",
-		ScannerClientCert: getenv("SCANNER_CLIENT_CERT", "/certs/app.crt"),
-		ScannerClientKey:  getenv("SCANNER_CLIENT_KEY", "/certs/app.key"),
-		ScannerCACert:     getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
-		ScanSchedulerTick: schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
+		Port:                 getenv("PORT", "8080"),
+		DatabaseURL:          getenv("DATABASE_URL", "postgres://lightipam:lightipam@localhost:5432/lightipam?sslmode=disable"),
+		AppSecret:            []byte(secret),
+		CookieSecure:         getenv("COOKIE_SECURE", "false") == "true",
+		ScannerClientCert:    getenv("SCANNER_CLIENT_CERT", "/certs/app.crt"),
+		ScannerClientKey:     getenv("SCANNER_CLIENT_KEY", "/certs/app.key"),
+		ScannerCACert:        getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
+		ScanSchedulerTick:    schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
+		ScannerAgentEndpoint: os.Getenv("SCANNER_AGENT_ENDPOINT"),
 	}
 }
 

@@ -250,6 +250,32 @@ CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_at ON scan_jobs (created_at DES
 CREATE INDEX IF NOT EXISTS idx_scan_schedules_next_run ON scan_schedules (next_run_at) WHERE enabled;
 `,
 	},
+	{
+		version: 6,
+		sql: `
+CREATE TABLE IF NOT EXISTS scan_discoveries (
+	id text PRIMARY KEY,
+	job_id text REFERENCES scan_jobs(id) ON DELETE SET NULL,
+	agent_id text REFERENCES scan_agents(id) ON DELETE SET NULL,
+	ip inet NOT NULL UNIQUE,
+	mac macaddr,
+	hostname text NOT NULL DEFAULT '',
+	os_family text NOT NULL DEFAULT '',
+	os_detail text NOT NULL DEFAULT '',
+	services jsonb NOT NULL DEFAULT '[]'::jsonb,
+	status text NOT NULL DEFAULT 'pending',
+	imported_address_id text REFERENCES ip_addresses(id) ON DELETE SET NULL,
+	imported_device_id text REFERENCES devices(id) ON DELETE SET NULL,
+	first_seen_at timestamptz NOT NULL DEFAULT now(),
+	last_seen_at timestamptz NOT NULL DEFAULT now(),
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_discoveries_status ON scan_discoveries (status);
+CREATE INDEX IF NOT EXISTS idx_scan_discoveries_last_seen ON scan_discoveries (last_seen_at DESC);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
