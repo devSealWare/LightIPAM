@@ -90,6 +90,42 @@ docker compose --profile scanner up -d --build
 The service drops all Linux capabilities and runs read-only. `NET_RAW` will be
 added here — and only here — when Nmap-based discovery lands.
 
+## Layer-2 discovery (MAC addresses) with macvlan
+
+On a plain Docker bridge the agent reaches scan targets as NAT'd, routed TCP.
+Service/version detection (`-sV`) works, but nmap never sees the target's ARP
+reply, so observations come back with **no MAC address**. Because a discovery is
+imported into a device only when it carries a MAC
+(`importDiscoveryDevice` in `internal/store/discoveries.go` returns early when
+`discovery.MAC == ""`), bridged scans import as **address-only** records — they
+show up under a subnet but never on the Devices page.
+
+To populate devices automatically the agent needs **layer-2 (ARP) visibility**
+of the LAN. The `deploy/compose.scanner-macvlan.yaml` overlay provides it by
+attaching the agent to a **macvlan** network (a real LAN IP) *in addition to*
+the bridge:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.scanner-macvlan.yaml \
+  --profile scanner up -d
+```
+
+- The agent keeps its bridge connection, so the app still reaches it at
+  `https://scanner-agent:8443` — **no certificate/SAN change is required.**
+- nmap routes LAN-subnet targets out the macvlan interface (directly connected →
+  ARP works → MAC reported), while app↔agent mTLS stays on the bridge.
+
+Edit `parent` (the host NIC on the target LAN), `subnet`, `gateway`, and the
+agent's `ipv4_address` (a free LAN address) in the overlay to match your
+network, and ensure `AGENT_ALLOWED_CIDRS` includes the LAN subnet. By Docker's
+macvlan design the host itself cannot talk to the agent over the macvlan
+interface — that is expected and harmless, since the host/app use the bridge and
+the macvlan carries only the agent's outbound scans.
+
+After re-scanning over macvlan, observations include MACs; importing them (or
+auto-import on a trusted agent) then creates the device + MAC record and links
+the address to it.
+
 ## App-side dispatch
 
 The app is the mTLS *client*: it dispatches scan jobs to agents (issue #9). The
