@@ -45,9 +45,19 @@ func execCommand(ctx context.Context, name string, args []string) ([]byte, error
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		// nmap writes diagnostics to stderr; surface them when available.
+		// A blown supervising deadline hard-kills nmap (empty stderr); report it
+		// as a timeout rather than a bare "nmap failed:".
+		if ctx.Err() == context.DeadlineExceeded {
+			return out, fmt.Errorf("nmap timed out before completing; raise the scan timeout or narrow the targets")
+		}
+		// nmap writes diagnostics to stderr; surface them when available, and
+		// fall back to the exit/signal state so the message is never empty.
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return out, fmt.Errorf("nmap failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
+			stderr := strings.TrimSpace(string(exitErr.Stderr))
+			if stderr == "" {
+				stderr = exitErr.ProcessState.String()
+			}
+			return out, fmt.Errorf("nmap failed: %s", stderr)
 		}
 		return out, fmt.Errorf("run nmap: %w", err)
 	}
@@ -120,6 +130,10 @@ func nmapArgs(job scanner.ScanJob) ([]string, bool, error) {
 		args = append(args, "--max-parallelism", strconv.Itoa(job.RateLimit.Concurrency))
 	}
 	if job.TimeoutSeconds > 0 {
+		// --host-timeout is PER HOST: nmap caps each host at this budget and then
+		// moves on, exiting cleanly with partial results. The agent's supervising
+		// context (see scanBudget) allows for this across every target plus grace,
+		// so nmap self-limits instead of being hard-killed mid-write.
 		args = append(args, "--host-timeout", strconv.Itoa(job.TimeoutSeconds)+"s")
 	}
 
