@@ -1,9 +1,11 @@
 // Package agent implements the Light IPAM scanner agent's receive/report side
-// of the protocol defined in internal/scanner. At this stage the agent performs
-// no active scanning: it authenticates the app over mTLS, validates submitted
-// jobs against its registered allowlist, and reports an empty (no-op) result.
+// of the protocol defined in internal/scanner. It authenticates the app over
+// mTLS, validates submitted jobs against its registered allowlist, and for
+// non-passive jobs runs the configured Discoverer (nmap) to report
+// observations. Passive jobs return an empty, successful result.
 //
-// Active discovery (Nmap, host probing) is intentionally not implemented here.
+// Active discovery is the only privileged behavior in the system; it lives here
+// in the agent (granted NET_RAW), never in the unprivileged web app.
 package agent
 
 import (
@@ -14,7 +16,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
@@ -141,9 +145,9 @@ func (a *Agent) processJob(ctx context.Context, job scanner.ScanJob) scanner.Sca
 
 	if a.cfg.Discoverer != nil && job.Mode != scanner.ModePassive {
 		scanCtx := ctx
-		if job.TimeoutSeconds > 0 {
+		if budget := scanBudget(job); budget > 0 {
 			var cancel context.CancelFunc
-			scanCtx, cancel = context.WithTimeout(ctx, time.Duration(job.TimeoutSeconds)*time.Second)
+			scanCtx, cancel = context.WithTimeout(ctx, budget)
 			defer cancel()
 		}
 		observations, scanErrs, err := a.cfg.Discoverer.Discover(scanCtx, job)
@@ -168,6 +172,57 @@ func (a *Agent) processJob(ctx context.Context, job scanner.ScanJob) scanner.Sca
 	result.Status = scanner.JobSucceeded
 	finish()
 	return result
+}
+
+// scanBudget returns how long the agent allows the discoverer to run. nmap is
+// told to spend at most job.TimeoutSeconds PER HOST (--host-timeout), so the
+// supervising context must allow that budget across every target, plus grace
+// for nmap startup and output flushing. Without the grace the context fired at
+// the same instant as nmap's own host-timeout, hard-killing the process and
+// truncating its output instead of letting it return (partial) results.
+func scanBudget(job scanner.ScanJob) time.Duration {
+	if job.TimeoutSeconds <= 0 {
+		return 0
+	}
+	const (
+		grace     = 30 * time.Second
+		maxBudget = 2 * time.Hour
+	)
+	perHost := time.Duration(job.TimeoutSeconds) * time.Second
+	hosts := estimateTargetHosts(job.Targets)
+	// Guard against int64 overflow on very large ranges: if the per-host budget
+	// times the host count would exceed the cap, just use the cap.
+	if hosts > int(maxBudget/perHost) {
+		return maxBudget
+	}
+	budget := perHost*time.Duration(hosts) + grace
+	if budget > maxBudget {
+		return maxBudget
+	}
+	return budget
+}
+
+// estimateTargetHosts is an upper bound on the hosts the targets expand to: a
+// bare IP counts as one, a CIDR as its address count. The floor of one keeps a
+// single target from collapsing the budget to just the grace period.
+func estimateTargetHosts(targets []string) int {
+	total := 0
+	for _, t := range targets {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		if _, ipnet, err := net.ParseCIDR(t); err == nil {
+			ones, bits := ipnet.Mask.Size()
+			total += 1 << uint(bits-ones)
+		} else {
+			total++
+		}
+	}
+	if total < 1 {
+		return 1
+	}
+	return total
 }
 
 func (a *Agent) verifyClient(r *http.Request) error {
