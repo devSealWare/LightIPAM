@@ -59,6 +59,10 @@ docker compose up --build -d
 
 Open `http://localhost:8080` and create the first admin from the bootstrap page.
 
+> If host port 8080 is already taken, publish elsewhere without editing
+> `compose.yaml`: copy `.env.example` to `.env` and set e.g. `APP_PORT=31415`,
+> then `docker compose up -d`. The `.env` is gitignored, so it survives upgrades.
+
 With the scanner agent (active discovery):
 
 ```sh
