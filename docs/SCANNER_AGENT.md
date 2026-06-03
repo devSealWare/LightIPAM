@@ -126,6 +126,19 @@ After re-scanning over macvlan, observations include MACs; importing them (or
 auto-import on a trusted agent) then creates the device + MAC record and links
 the address to it.
 
+## Scan timeouts
+
+A job's timeout is nmap's **per-host** budget (`--host-timeout`): nmap caps each
+target at that many seconds, then moves on and exits cleanly with whatever it
+found. The agent's own supervising deadline is deliberately *larger* — the
+per-host budget across every target plus grace for startup/output, capped at two
+hours (`scanBudget`). This lets nmap self-limit and return partial results
+instead of being hard-killed at the exact moment its host-timeout fires (which
+truncates output and produces an empty `nmap failed:` error). If a heavy
+`standard_active`/`deep_active` scan still times out, raise the timeout on the
+scan form or narrow the targets; `host_discovery`/`light_active` (`-sn`) needs no
+port probing and returns near-instantly.
+
 ## App-side dispatch
 
 The app is the mTLS *client*: it dispatches scan jobs to agents (issue #9). The
