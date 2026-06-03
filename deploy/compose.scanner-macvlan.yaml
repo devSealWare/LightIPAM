@@ -20,14 +20,16 @@
 #   docker compose -f compose.yaml -f deploy/compose.scanner-macvlan.yaml \
 #     --profile scanner up -d
 #
-# Edit the four LAN-specific values below to match your network:
-#   - networks.scan_lan.driver_opts.parent : the host NIC on the LAN you scan
-#       (e.g. eth0, eno1, enp3s0 — `ip -br link` lists them; on TrueNAS SCALE
-#        check Network → Interfaces).
-#   - networks.scan_lan.ipam.config.subnet  : the LAN subnet in CIDR form.
-#   - networks.scan_lan.ipam.config.gateway : the LAN's gateway.
-#   - services.scanner-agent.networks.scan_lan.ipv4_address : a FREE address on
-#       that subnet, ideally outside the DHCP pool so nothing else claims it.
+# Set the four LAN-specific values in a .env file beside compose.yaml (it is
+# gitignored, so a later `git pull` will NOT clobber them). See .env.example:
+#   - SCAN_LAN_PARENT   : the host NIC on the LAN you scan (e.g. eth0, eno1,
+#       enp3s0, enx9c69d34b02e2 — `ip -br link` lists them). MUST be a real
+#       interface on this host, or Docker rejects the network with
+#       "invalid subinterface vlan name".
+#   - SCAN_LAN_SUBNET   : the LAN subnet in CIDR form (match your real LAN).
+#   - SCAN_LAN_GATEWAY  : the LAN's gateway.
+#   - SCAN_LAN_AGENT_IP : a FREE address on that subnet, ideally outside the DHCP
+#       pool so nothing else claims it.
 #
 # Make sure AGENT_ALLOWED_CIDRS (in compose.yaml) contains the LAN subnet; the
 # default "192.168.0.0/16,10.0.0.0/8" already covers most home/SMB ranges.
@@ -44,14 +46,14 @@ services:
       default: {}
       # Data-plane: real LAN presence so nmap can ARP and report MACs.
       scan_lan:
-        ipv4_address: 192.168.0.5
+        ipv4_address: ${SCAN_LAN_AGENT_IP:-192.168.0.250}
 
 networks:
   scan_lan:
     driver: macvlan
     driver_opts:
-      parent: eth0
+      parent: ${SCAN_LAN_PARENT:-eth0}
     ipam:
       config:
-        - subnet: 192.168.0.0/28
-          gateway: 192.168.0.1
+        - subnet: ${SCAN_LAN_SUBNET:-192.168.0.0/24}
+          gateway: ${SCAN_LAN_GATEWAY:-192.168.0.1}
