@@ -50,12 +50,12 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-Issue #10 is in progress on branch `codex/nmap-discovery-mvp`: the Nmap
-Discovery MVP. Issues #7 (protocol), #8 (no-op agent container), and #9 (scan
-orchestration) are merged to `main`. With #10, the agent now performs real
-active discovery and observations flow into a review queue.
+None in progress. The initial backlog (issues #1–#10) is fully merged to `main`;
+the latest is #10 (Nmap Discovery MVP, PR #15, commit `4f695c9`). Roadmap Phase 3
+is complete except conflict-aware reconciliation. Next candidate work is Roadmap
+Phase 4 (Network Context) or the Phase 3/5 follow-ups listed under "Next" below.
 
-Issue #10 scope (this branch):
+Issue #10 (merged) scope:
 
 - Agent runs nmap (`internal/scanner/agent/nmap.go`, `Discoverer` interface),
   depth bounded by scan mode (passive → none, light → `-sn`, standard → `-sV`,
@@ -87,7 +87,7 @@ is the app-side check (active + agent_id + allowlist containment);
 modes run nmap. `internal/scanner/pki` + `cmd/scanner-certs` generate the dev CA
 and certs. See `docs/SCANNER_AGENT.md`, ADR 0003.
 
-## Scanner Discovery (issue #10, this branch)
+## Scanner Discovery (merged, issue #10)
 
 `internal/scanner/agent/nmap.go` is the nmap-backed `Discoverer`. The
 orchestrator persists successful observations via `store.UpsertDiscovery`; the
@@ -120,13 +120,21 @@ The app auto-enrolls the bundled agent (pending) on boot; approve it under
 `/discoveries`. Agent allowlist is `AGENT_ALLOWED_CIDRS` (defaults
 `192.168.0.0/16,10.0.0.0/8`); scan targets must fall inside it.
 
-## Next After Issue #10
+## Next (after issue #10)
 
-After this branch is reviewed/merged, candidate follow-ups:
+The initial backlog is done. Candidate follow-ups, roughly in priority order:
 
+- **Conflict-aware reconciliation** (finishes Phase 3): reconcile discoveries
+  against existing addresses — flag IP/MAC conflicts and state changes instead of
+  a plain upsert + blind import.
 - Per-agent "auto-import trusted discoveries" setting (skip the review queue).
-- Reconcile discoveries against existing addresses (flag conflicts/state changes)
-  rather than plain upsert.
-- Managed certificate issuance/rotation (roadmap Phase 5), replacing the dev CA.
 - Scan result detail UI for service/OS evidence beyond the raw JSON.
+- **Phase 4 (Network Context):** SNMP inventory, LLDP/CDP neighbors, DHCP lease
+  ingestion, DNS enrichment, VLAN/interface mapping. Each new source should reuse
+  the discovery review-queue pattern and stay in the agent, not the app.
+- **Phase 5 (Production Hardening):** managed certificate issuance/rotation
+  (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
+
+When starting the next issue, branch from `main`, and confirm with the user
+which item to pick up (the backlog file no longer drives the order).
 
