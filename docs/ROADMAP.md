@@ -31,6 +31,12 @@
   flagged new/match/conflict (changed MAC, deprecated-but-responding, MAC seen
   on another address). ✅
 
+Follow-ups merged on top of Phase 3 (#18):
+
+- Per-agent auto-import for trusted agents (`scan_agents.auto_import`); conflicts
+  always stay in the review queue. ✅
+- Structured scan-result detail UI (per-host services/OS/evidence). ✅
+
 ## Phase 4: Network Context
 
 - SNMP device inventory.

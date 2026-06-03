@@ -106,10 +106,12 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 - `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
   dispatch async, record lifecycle + audit, run the schedule ticker, persist
   observations as discoveries, and auto-enroll the bundled agent.
-- App routes: `/scans`, `/agents` (+ `/agents/discover`, `/agents/{id}/approve`),
-  `/schedules`, and `/discoveries` (import/dismiss). Migration 5 adds
+- App routes: `/scans` (+ `/scans/{id}` structured detail), `/agents`
+  (+ `/agents/discover`, `/agents/{id}/approve`), `/schedules`, and
+  `/discoveries` (import/dismiss). Migration 5 adds
   `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds `scan_discoveries`
-  (migration 7 adds its reconciliation columns).
+  (migration 7 adds its reconciliation columns; migration 8 adds
+  `scan_agents.auto_import`).
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
   service stays at zero capabilities.
@@ -125,21 +127,27 @@ observations land in the `/discoveries` review queue, where an operator imports
 them into subnets/devices or dismisses them. Agents enroll by app-pull (auto on
 boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form) as `pending`
 for one-click approval. The app remains unprivileged (zero capabilities, no
-nmap). The initial backlog (issues #1–#10) is now complete.
+nmap). The initial backlog (issues #1–#10) is now complete. Two Phase 3
+follow-ups also merged (PR #18): per-agent auto-import and a structured
+scan-result detail UI.
 
 ## Next
 
 No issue is in progress. **Roadmap Phase 3 is complete** — conflict-aware
 reconciliation (migration 7: `scan_discoveries.reconcile_status`/`conflict`,
 `store.reconcileDiscovery`) finished it, flagging discoveries new/match/conflict
-and refreshing `last_seen_at` on managed addresses. Candidate follow-ups, roughly
-in priority order:
+and refreshing `last_seen_at` on managed addresses. Two Phase 3 follow-ups are
+**merged (#18)**:
 
-- Per-agent auto-import trust setting (done): `scan_agents.auto_import`
-  (migration 8); `maybeAutoImport` imports non-conflicting pending observations,
-  conflicts stay queued.
-- Richer scan-result detail UI (done): `/scans/{id}` parses the agent result into
-  per-host cards (MAC/OS/services/evidence), raw JSON collapsed.
+- Per-agent auto-import trust setting: `scan_agents.auto_import` (migration 8);
+  `orchestrator.maybeAutoImport` imports non-conflicting pending observations,
+  conflicts stay queued. Agent-form checkbox + `/agents` badge.
+- Scan-result detail UI: `/scans/{id}` parses the agent result
+  (`app.parseScanResult`) into per-host cards (MAC/OS/services/evidence), raw
+  JSON collapsed.
+
+Remaining candidate work, roughly in priority order:
+
 - Phase 4 (Network Context): SNMP, LLDP/CDP, DHCP, DNS enrichment, VLAN mapping —
   each reusing the discovery review-queue + reconciliation pattern, kept in the
   agent.
