@@ -1,7 +1,8 @@
 # Scanner agent image. Built separately from the web app so the two components
-# can be hardened and (later) granted capabilities independently. This no-op
-# agent needs no extra Linux capabilities; privileged discovery (Nmap) arrives
-# in a later issue and will be scoped to this image only.
+# can be hardened and granted capabilities independently. This image bundles
+# nmap for active discovery and runs with the NET_RAW capability (added in
+# compose for this service only) so it can send raw probes. The web app image
+# never carries nmap or any network capability.
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
@@ -12,9 +13,11 @@ COPY internal ./internal
 RUN go build -trimpath -ldflags="-s -w" -o /out/scanner-agent ./cmd/scanner-agent
 
 FROM alpine:3.20
-RUN addgroup -S scanner && adduser -S -G scanner scanner
-USER scanner
+RUN apk add --no-cache nmap nmap-scripts
 WORKDIR /app
 COPY --from=build /out/scanner-agent /app/scanner-agent
+# Runs as root so nmap can use the raw sockets granted by NET_RAW. The container
+# still drops every other capability (see compose), keeping the blast radius to
+# this isolated discovery component.
 EXPOSE 8443
 ENTRYPOINT ["/app/scanner-agent"]

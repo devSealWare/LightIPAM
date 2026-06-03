@@ -7,36 +7,65 @@
           <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
           <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Scanner Agents</h1>
         </div>
-        <a class="button-primary" href="/agents/new">Register agent</a>
+        <a class="button-muted" href="/agents/new">Register manually</a>
       </div>
     </header>
 
+    {{ if .Error }}
+    <div class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+    {{ end }}
+
+    {{ if not .DispatchReady }}
+    <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+      Scanner dispatch is not configured, so the app cannot reach agents yet. Mount the app's mTLS client certificate (see <span class="font-mono">docs/SCANNER_AGENT.md</span>) to enable discovery.
+    </div>
+    {{ end }}
+
+    <section class="glass-panel mt-5 rounded-[28px] p-6">
+      <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Discover an agent</h2>
+      <p class="mt-1 text-sm leading-6 text-zinc-500 dark:text-zinc-400">Paste an agent's mTLS endpoint. The app reads its identity and allowlist directly from the agent and adds it as <span class="font-semibold">pending</span> for you to approve — no retyping.</p>
+      <form class="mt-4 flex flex-col gap-3 sm:flex-row" method="post" action="/agents/discover">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <input class="form-input flex-1 font-mono" type="url" name="endpoint_url" placeholder="https://scanner-agent:8443" required>
+        <button class="button-primary" type="submit"{{ if not .DispatchReady }} disabled{{ end }}>Discover</button>
+      </form>
+    </section>
+
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       {{ if .ScanAgents }}
-      <div class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+      <div class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
         <span>Name</span>
         <span>Endpoint</span>
         <span>Allowed CIDRs</span>
         <span>Status</span>
         <span>Last seen</span>
+        <span class="text-right">Actions</span>
       </div>
       {{ range .ScanAgents }}
-      <a class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80" href="/agents/{{ .ID }}/edit">
-        <span>
-          <span class="block font-semibold text-zinc-950 dark:text-white">{{ .Name }}</span>
+      <div class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <a class="min-w-0" href="/agents/{{ .ID }}/edit">
+          <span class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white">{{ .Name }}</span>
           {{ if .Version }}<span class="block text-xs text-zinc-400">v{{ .Version }}</span>{{ end }}
-        </span>
-        <span class="font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ .EndpointURL }}</span>
+        </a>
+        <span class="truncate font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ .EndpointURL }}</span>
         <span class="font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ join .AllowedCIDRs ", " }}</span>
         <span>{{ template "status_badge" .Status }}</span>
         <span class="text-zinc-500 dark:text-zinc-400">{{ datetimeptr .LastSeenAt }}</span>
-      </a>
+        <div class="flex items-center justify-end gap-2">
+          {{ if eq .Status "pending" }}
+          <form method="post" action="/agents/{{ .ID }}/approve">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="button-primary h-9 px-3 text-xs" type="submit">Approve</button>
+          </form>
+          {{ end }}
+          <a class="button-muted h-9 px-3 text-xs" href="/agents/{{ .ID }}/edit">Edit</a>
+        </div>
+      </div>
       {{ end }}
       {{ else }}
       <div class="p-8">
         <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No agents registered</h2>
-        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent with its endpoint and allowlist. The app dispatches jobs to it over mTLS; the agent stays the only component allowed to touch the network.</p>
-        <a class="button-primary mt-5" href="/agents/new">Register agent</a>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Discover an agent with the form above, or register one manually. The app dispatches jobs over mTLS; the agent stays the only component allowed to touch the network.</p>
       </div>
       {{ end }}
     </section>

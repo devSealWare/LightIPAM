@@ -1,0 +1,75 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Discoveries</h1>
+        </div>
+        <div class="flex gap-2 text-sm">
+          <a class="{{ if eq .Form.status "" }}button-primary{{ else }}button-muted{{ end }} h-9 px-3" href="/discoveries">All</a>
+          <a class="{{ if eq .Form.status "pending" }}button-primary{{ else }}button-muted{{ end }} h-9 px-3" href="/discoveries?status=pending">Pending</a>
+          <a class="{{ if eq .Form.status "imported" }}button-primary{{ else }}button-muted{{ end }} h-9 px-3" href="/discoveries?status=imported">Imported</a>
+          <a class="{{ if eq .Form.status "dismissed" }}button-primary{{ else }}button-muted{{ end }} h-9 px-3" href="/discoveries?status=dismissed">Dismissed</a>
+        </div>
+      </div>
+    </header>
+
+    {{ if .Error }}
+    <div class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+    {{ end }}
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      {{ if .Discoveries }}
+      <div class="grid grid-cols-[1fr_1.1fr_1.2fr_1.3fr_0.7fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Address</span>
+        <span>Host</span>
+        <span>MAC / OS</span>
+        <span>Services</span>
+        <span>Status</span>
+        <span class="text-right">Actions</span>
+      </div>
+      {{ range .Discoveries }}
+      <div class="grid grid-cols-[1fr_1.1fr_1.2fr_1.3fr_0.7fr_auto] items-start gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="font-mono font-semibold text-zinc-950 dark:text-white">{{ .IP }}</span>
+        <span class="min-w-0 text-zinc-700 dark:text-zinc-200">
+          {{ if .Hostname }}<span class="block truncate">{{ .Hostname }}</span>{{ else }}<span class="text-zinc-400">—</span>{{ end }}
+          {{ if .AgentName }}<span class="block text-xs text-zinc-400">via {{ .AgentName }}</span>{{ end }}
+        </span>
+        <span class="min-w-0 text-xs text-zinc-600 dark:text-zinc-300">
+          {{ if .MAC }}<span class="block font-mono">{{ .MAC }}</span>{{ end }}
+          {{ if .OSDetail }}<span class="block">{{ .OSDetail }}</span>{{ else if .OSFamily }}<span class="block">{{ .OSFamily }}</span>{{ end }}
+          {{ if and (not .MAC) (not .OSDetail) (not .OSFamily) }}<span class="text-zinc-400">—</span>{{ end }}
+        </span>
+        <span class="min-w-0 text-xs text-zinc-600 dark:text-zinc-300">
+          {{ if .Services }}
+            {{ range .Services }}<span class="mb-1 mr-1 inline-block rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">{{ .Port }}/{{ .Protocol }}{{ if .ServiceName }} {{ .ServiceName }}{{ end }}</span>{{ end }}
+          {{ else }}<span class="text-zinc-400">no open ports</span>{{ end }}
+        </span>
+        <span>{{ template "status_badge" .Status }}</span>
+        <div class="flex items-center justify-end gap-2">
+          {{ if eq .Status "pending" }}
+          <form method="post" action="/discoveries/{{ .ID }}/import">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="button-primary h-9 px-3 text-xs" type="submit">Import</button>
+          </form>
+          <form method="post" action="/discoveries/{{ .ID }}/dismiss">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="button-muted h-9 px-3 text-xs" type="submit">Dismiss</button>
+          </form>
+          {{ else }}
+          <span class="text-xs text-zinc-400">{{ datetime .LastSeenAt }}</span>
+          {{ end }}
+        </div>
+      </div>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No discoveries yet</h2>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Run an active scan from <a class="font-medium text-zinc-700 underline dark:text-zinc-200" href="/scans">Scans</a>. Hosts the agent finds land here for review — import the ones you want into your subnets and devices, dismiss the rest. Nothing is written to your IPAM data until you import it.</p>
+      </div>
+      {{ end }}
+    </section>
+  </div>
+{{ end }}

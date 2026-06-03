@@ -121,5 +121,8 @@ Acceptance criteria:
 - TCP service detection.
 - OS probing where reliable and allowed.
 - Rate limits.
-- Auto-create records by default.
-- Optional review mode.
+- Review queue (`/discoveries`) by default: observations are imported on
+  approval rather than auto-created. See ADR 0005 for the rationale; a per-agent
+  auto-import trust setting is a follow-up.
+- App-pull agent enrollment (auto on boot + on-demand "Discover"), one-click
+  approval.

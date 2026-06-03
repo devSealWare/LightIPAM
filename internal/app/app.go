@@ -87,10 +87,16 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /agents", app.agentsIndex)
 	mux.HandleFunc("GET /agents/new", app.agentNew)
 	mux.HandleFunc("POST /agents", app.agentCreate)
+	mux.HandleFunc("POST /agents/discover", app.agentDiscover)
 	mux.HandleFunc("GET /agents/{id}/edit", app.agentEdit)
 	mux.HandleFunc("POST /agents/{id}", app.agentUpdate)
+	mux.HandleFunc("POST /agents/{id}/approve", app.agentApprove)
 	mux.HandleFunc("GET /agents/{id}/delete", app.agentDeleteConfirm)
 	mux.HandleFunc("POST /agents/{id}/delete", app.agentDelete)
+
+	mux.HandleFunc("GET /discoveries", app.discoveriesIndex)
+	mux.HandleFunc("POST /discoveries/{id}/import", app.discoveryImport)
+	mux.HandleFunc("POST /discoveries/{id}/dismiss", app.discoveryDismiss)
 
 	mux.HandleFunc("GET /schedules", app.schedulesIndex)
 	mux.HandleFunc("GET /schedules/new", app.scheduleNew)
@@ -143,16 +149,21 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
 		return
 	}
+	pendingDiscovery, err := a.store.CountPendingDiscoveries(r.Context())
+	if err != nil {
+		a.logger.Error("count pending discoveries", "error", err)
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
-		Title:     "Dashboard",
-		User:      session.User,
-		CSRF:      session.CSRFToken,
-		Stats:     stats,
-		Subnets:   subnets,
-		Devices:   devices,
-		AuditLogs: auditLogs,
-		ActiveNav: "dashboard",
+		Title:            "Dashboard",
+		User:             session.User,
+		CSRF:             session.CSRFToken,
+		Stats:            stats,
+		Subnets:          subnets,
+		Devices:          devices,
+		AuditLogs:        auditLogs,
+		PendingDiscovery: pendingDiscovery,
+		ActiveNav:        "dashboard",
 	})
 }
 
