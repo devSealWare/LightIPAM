@@ -15,7 +15,11 @@ services:
       # so an operator only has to approve it. Leave unset to disable auto-enroll.
       SCANNER_AGENT_ENDPOINT: https://scanner-agent:8443
     ports:
-      - "8080:8080"
+      # Host port is configurable so deployments whose 8080 is taken can publish
+      # elsewhere without editing this file (which a git pull would clobber). Set
+      # APP_PORT in a .env file next to this compose file; the container always
+      # listens on 8080 internally. Example: APP_PORT=31415
+      - "${APP_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
