@@ -50,10 +50,11 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-None in progress. The initial backlog (issues #1–#10) is fully merged to `main`;
-the latest is #10 (Nmap Discovery MVP, PR #15, commit `4f695c9`). Roadmap Phase 3
-is complete except conflict-aware reconciliation. Next candidate work is Roadmap
-Phase 4 (Network Context) or the Phase 3/5 follow-ups listed under "Next" below.
+None in progress. The initial backlog (issues #1–#10) is fully merged to `main`,
+and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-aware
+reconciliation (migration 7) finished the "last-seen tracking and conflict
+detection" item. Next candidate work is Roadmap Phase 4 (Network Context) or the
+follow-ups listed under "Next" below.
 
 Issue #10 (merged) scope:
 
@@ -120,18 +121,17 @@ The app auto-enrolls the bundled agent (pending) on boot; approve it under
 `/discoveries`. Agent allowlist is `AGENT_ALLOWED_CIDRS` (defaults
 `192.168.0.0/16,10.0.0.0/8`); scan targets must fall inside it.
 
-## Next (after issue #10)
+## Next (Phase 3 complete)
 
-The initial backlog is done. Candidate follow-ups, roughly in priority order:
+The initial backlog and Roadmap Phase 3 are done. Candidate follow-ups, roughly
+in priority order:
 
-- **Conflict-aware reconciliation** (finishes Phase 3): reconcile discoveries
-  against existing addresses — flag IP/MAC conflicts and state changes instead of
-  a plain upsert + blind import.
 - Per-agent "auto-import trusted discoveries" setting (skip the review queue).
 - Scan result detail UI for service/OS evidence beyond the raw JSON.
 - **Phase 4 (Network Context):** SNMP inventory, LLDP/CDP neighbors, DHCP lease
   ingestion, DNS enrichment, VLAN/interface mapping. Each new source should reuse
-  the discovery review-queue pattern and stay in the agent, not the app.
+  the discovery review-queue + reconciliation pattern and stay in the agent, not
+  the app.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
   (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 

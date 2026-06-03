@@ -108,7 +108,8 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   observations as discoveries, and auto-enroll the bundled agent.
 - App routes: `/scans`, `/agents` (+ `/agents/discover`, `/agents/{id}/approve`),
   `/schedules`, and `/discoveries` (import/dismiss). Migration 5 adds
-  `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds `scan_discoveries`.
+  `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds `scan_discoveries`
+  (migration 7 adds its reconciliation columns).
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
   service stays at zero capabilities.
@@ -128,15 +129,17 @@ nmap). The initial backlog (issues #1–#10) is now complete.
 
 ## Next
 
-No issue is in progress. Roadmap Phase 3 is complete except conflict-aware
-reconciliation. Candidate follow-ups, roughly in priority order:
+No issue is in progress. **Roadmap Phase 3 is complete** — conflict-aware
+reconciliation (migration 7: `scan_discoveries.reconcile_status`/`conflict`,
+`store.reconcileDiscovery`) finished it, flagging discoveries new/match/conflict
+and refreshing `last_seen_at` on managed addresses. Candidate follow-ups, roughly
+in priority order:
 
-- Conflict-aware reconciliation: flag IP/MAC conflicts and state changes when a
-  discovery overlaps an existing address, instead of a plain upsert/import.
 - Per-agent auto-import trust setting (skip the review queue).
 - Richer scan-result detail UI (service/OS evidence beyond raw JSON).
 - Phase 4 (Network Context): SNMP, LLDP/CDP, DHCP, DNS enrichment, VLAN mapping —
-  each reusing the discovery review-queue pattern, kept in the agent.
+  each reusing the discovery review-queue + reconciliation pattern, kept in the
+  agent.
 - Phase 5 (Production Hardening): managed cert issuance/rotation, OIDC/MFA.
 
 Branch from `main` and confirm the next item with the user before starting.

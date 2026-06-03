@@ -15,7 +15,8 @@ func (a *App) discoveriesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := r.URL.Query().Get("status")
-	discoveries, err := a.store.ListDiscoveries(r.Context(), status, 200)
+	reconcile := r.URL.Query().Get("reconcile")
+	discoveries, err := a.store.ListDiscoveries(r.Context(), status, reconcile, 200)
 	if err != nil {
 		a.logger.Error("list discoveries", "error", err)
 		http.Error(w, "Unable to load discoveries", http.StatusInternalServerError)
@@ -25,15 +26,20 @@ func (a *App) discoveriesIndex(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Error("count pending discoveries", "error", err)
 	}
+	conflicts, err := a.store.CountUnreviewedConflicts(r.Context())
+	if err != nil {
+		a.logger.Error("count conflict discoveries", "error", err)
+	}
 	_ = ui.Render(w, "discoveries.html", ui.PageData{
-		Title:            "Discoveries",
-		User:             session.User,
-		CSRF:             session.CSRFToken,
-		Discoveries:      discoveries,
-		PendingDiscovery: pending,
-		Error:            r.URL.Query().Get("error"),
-		Form:             map[string]string{"status": status},
-		ActiveNav:        "discoveries",
+		Title:             "Discoveries",
+		User:              session.User,
+		CSRF:              session.CSRFToken,
+		Discoveries:       discoveries,
+		PendingDiscovery:  pending,
+		ConflictDiscovery: conflicts,
+		Error:             r.URL.Query().Get("error"),
+		Form:              map[string]string{"status": status, "reconcile": reconcile},
+		ActiveNav:         "discoveries",
 	})
 }
 
