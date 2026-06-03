@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
@@ -128,6 +130,52 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 		out.Status = "failed"
 		out.Error = "agent returned no status"
 	}
+	if result.Status == scanner.JobSucceeded && len(result.Observations) > 0 {
+		s.recordDiscoveries(ctx, agent, job, result.Observations)
+	}
+	return out
+}
+
+// recordDiscoveries persists each observed host into the review queue. Nothing
+// here mutates IPAM records directly: an operator imports a discovery later.
+func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, job store.ScanJob, observations []scanner.Observation) {
+	recorded := 0
+	for _, obs := range observations {
+		if strings.TrimSpace(obs.IP) == "" {
+			continue
+		}
+		if err := s.store.UpsertDiscovery(ctx, store.DiscoveryInput{
+			JobID:    job.ID,
+			AgentID:  agent.ID,
+			IP:       obs.IP,
+			MAC:      obs.MAC,
+			Hostname: obs.Hostname,
+			OSFamily: obs.OSFamily,
+			OSDetail: obs.OSDetail,
+			Services: servicesFromObservation(obs.Services),
+		}); err != nil {
+			s.logger.Error("record discovery", "ip", obs.IP, "error", err)
+			continue
+		}
+		recorded++
+	}
+	if recorded > 0 {
+		s.audit(ctx, nil, "scan.discovery.recorded", job.ID, strconv.Itoa(recorded))
+	}
+}
+
+func servicesFromObservation(services []scanner.ServiceObservation) []store.DiscoveryService {
+	out := make([]store.DiscoveryService, 0, len(services))
+	for _, svc := range services {
+		out = append(out, store.DiscoveryService{
+			Protocol:    svc.Protocol,
+			Port:        svc.Port,
+			State:       svc.State,
+			ServiceName: svc.ServiceName,
+			Product:     svc.Product,
+			Version:     svc.Version,
+		})
+	}
 	return out
 }
 
@@ -188,9 +236,76 @@ func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// enroller is the subset of the dispatcher used for auto-enrollment. It is an
+// optional capability: a dispatcher that does not implement it simply disables
+// agent discovery without affecting the scan path.
+type enroller interface {
+	FetchRegistration(ctx context.Context, endpointURL string) (scanner.AgentRegistration, error)
+}
+
+// DiscoverAgent pulls an agent's self-reported identity from its /register
+// endpoint over mTLS and enrolls it (as a pending agent if new). The boolean
+// reports whether a new agent was created.
+func (s *Service) DiscoverAgent(ctx context.Context, endpointURL string) (store.ScanAgent, bool, error) {
+	e, ok := s.dispatcher.(enroller)
+	if !ok || !s.DispatchEnabled() {
+		return store.ScanAgent{}, false, fmt.Errorf("scanner dispatch is not configured")
+	}
+	reg, err := e.FetchRegistration(ctx, endpointURL)
+	if err != nil {
+		return store.ScanAgent{}, false, err
+	}
+	input := store.ScanAgentInput{
+		Name:               strings.TrimSpace(reg.Name),
+		CertificateSubject: reg.CertificateSubject,
+		AllowedCIDRs:       reg.AllowedCIDRs,
+	}
+	if input.Name == "" {
+		input.Name = endpointURL
+	}
+	agent, created, err := s.store.EnrollDiscoveredAgent(ctx, endpointURL, input)
+	if err != nil {
+		return store.ScanAgent{}, false, err
+	}
+	if created {
+		s.auditSubject(ctx, nil, "scan.agent.discovered", "scan_agent", agent.ID, agent.Status)
+	}
+	return agent, created, nil
+}
+
+// StartAutoEnroll attempts to enroll the bundled agent at endpointURL shortly
+// after boot, retrying a few times while the agent container is still starting.
+// It runs in its own goroutine and stops once the agent is enrolled (or it
+// exhausts its attempts); the operator can always enroll manually later.
+func (s *Service) StartAutoEnroll(ctx context.Context, endpointURL string) {
+	if strings.TrimSpace(endpointURL) == "" || !s.DispatchEnabled() {
+		return
+	}
+	go func() {
+		for attempt := 0; attempt < 10; attempt++ {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+			if _, _, err := s.DiscoverAgent(ctx, endpointURL); err != nil {
+				s.logger.Debug("auto-enroll retry", "endpoint", endpointURL, "attempt", attempt+1, "error", err)
+				continue
+			}
+			s.logger.Info("auto-enroll complete", "endpoint", endpointURL)
+			return
+		}
+		s.logger.Warn("auto-enroll gave up; enroll the agent manually from /agents", "endpoint", endpointURL)
+	}()
+}
+
 func (s *Service) audit(ctx context.Context, actor *string, action, subjectID, status string) {
+	s.auditSubject(ctx, actor, action, "scan_job", subjectID, status)
+}
+
+func (s *Service) auditSubject(ctx context.Context, actor *string, action, subjectType, subjectID, status string) {
 	metadata := fmt.Sprintf(`{"status":%q}`, status)
-	if err := s.store.CreateAuditLog(ctx, actor, action, "scan_job", subjectID, metadata); err != nil {
+	if err := s.store.CreateAuditLog(ctx, actor, action, subjectType, subjectID, metadata); err != nil {
 		s.logger.Error("create scan audit log", "action", action, "error", err)
 	}
 }

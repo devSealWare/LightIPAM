@@ -1,29 +1,31 @@
 # Scanner Agent
 
-The scanner agent is the isolated component that will perform active network
+The scanner agent is the isolated component that performs active network
 discovery for Light IPAM. It runs as a separate container so the web app can
-stay unprivileged. This first version (issue #8) is a **no-op agent**: it
-authenticates the app over mTLS and validates scan jobs, but performs no
-scanning. Active discovery (Nmap) arrives in a later issue and stays scoped to
-this component.
+stay unprivileged. Since issue #10 it performs **real active discovery** with
+nmap for non-passive jobs; the privilege to do so (`NET_RAW`) is scoped to this
+component only. See `docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flow.
 
 ## Responsibilities
 
 - Receive scan jobs from the app over mTLS (`POST /jobs`).
 - Verify the app's client certificate identity.
 - Validate every job against the agent's registered IPv4 allowlist using
-  `scanner.ValidateJobForAgent`.
-- Report a result. Today a valid job yields an empty, successful result.
+  `scanner.ValidateAgentScope` (allowlist containment).
+- Run nmap for active modes (depth bounded by mode) and report observations;
+  passive jobs return an empty, successful result.
+- Self-describe on `GET /register` so the app can enroll it automatically.
 
 The agent never trusts a job blindly: even if the app submits targets outside
 the agent's `AGENT_ALLOWED_CIDRS`, the agent rejects them.
 
 ## Endpoints
 
-| Method | Path       | Purpose                                         |
-| ------ | ---------- | ----------------------------------------------- |
-| GET    | `/healthz` | Liveness; reports service and protocol version. |
-| POST   | `/jobs`    | Receive a `ScanJob`, return a `ScanResult`.     |
+| Method | Path        | Purpose                                            |
+| ------ | ----------- | -------------------------------------------------- |
+| GET    | `/healthz`  | Liveness; reports service and protocol version.    |
+| GET    | `/register` | Self-reported identity + allowlist for enrollment. |
+| POST   | `/jobs`     | Receive a `ScanJob`, return a `ScanResult`.        |
 
 `POST /jobs` returns `200` with a `succeeded` result for a valid job, `422` with
 a `rejected` result for an allowlist/validation failure, and `400` for a

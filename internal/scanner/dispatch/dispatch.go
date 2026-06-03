@@ -85,6 +85,33 @@ func (d *Dispatcher) Dispatch(ctx context.Context, endpointURL string, job scann
 	}
 }
 
+// FetchRegistration pulls the agent's self-reported identity and allowlist from
+// its /register endpoint over mTLS. It is the app side of auto-enrollment: the
+// operator supplies only an endpoint URL and the app learns the rest.
+func (d *Dispatcher) FetchRegistration(ctx context.Context, endpointURL string) (scanner.AgentRegistration, error) {
+	if !d.Enabled() {
+		return scanner.AgentRegistration{}, fmt.Errorf("dispatcher is not configured")
+	}
+	url := strings.TrimRight(endpointURL, "/") + "/register"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return scanner.AgentRegistration{}, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return scanner.AgentRegistration{}, fmt.Errorf("contact agent: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return scanner.AgentRegistration{}, fmt.Errorf("agent register returned %d", resp.StatusCode)
+	}
+	var reg scanner.AgentRegistration
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&reg); err != nil {
+		return scanner.AgentRegistration{}, fmt.Errorf("decode agent registration: %w", err)
+	}
+	return reg, nil
+}
+
 // HealthCheck contacts the agent's health endpoint and returns its reported
 // version, confirming the mTLS path works end to end.
 func (d *Dispatcher) HealthCheck(ctx context.Context, endpointURL string) (string, error) {
