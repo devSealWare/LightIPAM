@@ -11,6 +11,9 @@
             {{ range .Device.Tags }}
             <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{{ . }}</span>
             {{ end }}
+            {{ if .Device.DiscoverySource }}
+            <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">Discovered via {{ .Device.DiscoverySource }}</span>
+            {{ end }}
           </div>
         </div>
         <div class="flex gap-3">
@@ -57,6 +60,37 @@
         <button class="button-primary mt-5 w-full" type="submit">Add MAC</button>
       </form>
     </section>
+
+    {{ if or .Device.OSFamily .Device.OSDetail .Device.Services }}
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Discovered inventory</h2>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Reported by the scanner agent and refreshed on each import. Not authoritative — verify before relying on it.</p>
+      </div>
+      {{ if or .Device.OSFamily .Device.OSDetail }}
+      <div class="grid grid-cols-[140px_1fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm dark:border-zinc-800">
+        <span class="font-medium text-zinc-500 dark:text-zinc-400">Operating system</span>
+        <span class="text-zinc-900 dark:text-zinc-100">
+          {{ if .Device.OSDetail }}{{ .Device.OSDetail }}{{ else }}{{ .Device.OSFamily }}{{ end }}
+          {{ if and .Device.OSDetail .Device.OSFamily }}<span class="text-zinc-400"> ({{ .Device.OSFamily }})</span>{{ end }}
+        </span>
+      </div>
+      {{ end }}
+      {{ if .Device.Services }}
+      <div class="grid grid-cols-[0.6fr_0.5fr_1fr_1.4fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Port</span><span>Proto</span><span>Service</span><span>Product / version</span>
+      </div>
+      {{ range .Device.Services }}
+      <div class="grid grid-cols-[0.6fr_0.5fr_1fr_1.4fr] gap-4 border-b border-zinc-100 px-5 py-3 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="font-mono text-zinc-900 dark:text-zinc-100">{{ .Port }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .Protocol }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ if .ServiceName }}{{ .ServiceName }}{{ else }}—{{ end }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ if .Product }}{{ .Product }}{{ if .Version }} {{ .Version }}{{ end }}{{ else }}—{{ end }}</span>
+      </div>
+      {{ end }}
+      {{ end }}
+    </section>
+    {{ end }}
 
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
