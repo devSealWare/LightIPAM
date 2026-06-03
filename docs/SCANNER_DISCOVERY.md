@@ -58,14 +58,17 @@ observation into `scan_discoveries` (`store.UpsertDiscovery`), keyed by IP:
 In the UI an operator either:
 
 - **Imports** a discovery: it is placed into the managed subnet that contains its
-  IP (`ip_addresses`, state `assigned`, with hostname), and when a MAC is known a
-  device + MAC record is created (or an existing device that owns the MAC is
-  reused). Import is idempotent and refuses if no subnet contains the address.
-  A discovery **without a MAC imports as an address only** — no device is
-  created. Bridged agents usually cannot observe MACs; give the agent layer-2
-  visibility with the macvlan overlay (see
-  [`docs/SCANNER_AGENT.md`](SCANNER_AGENT.md#layer-2-discovery-mac-addresses-with-macvlan))
-  for device creation to happen automatically.
+  IP (`ip_addresses`, state `assigned`, with hostname) and **always** creates a
+  device, stamped with everything the scan exposed — the OS guess (`os_family` /
+  `os_detail`), the open services, and the reporting agent (`discovery_source`).
+  When a MAC is known it is attached to that device with its OUI vendor and
+  private-rotating flag; an existing device that already owns the MAC (or a prior
+  import of the same discovery) is reused and refreshed instead of duplicated.
+  A MAC-less host (e.g. one scanned over bridged networking) still gets a device,
+  named from its hostname or `host-<ip>`. Import is idempotent and refuses only
+  if no subnet contains the address. For real MACs (and richer fingerprinting),
+  give the agent layer-2 visibility with the macvlan overlay (see
+  [`docs/SCANNER_AGENT.md`](SCANNER_AGENT.md#layer-2-discovery-mac-addresses-with-macvlan)).
 - **Dismisses** it: it is marked reviewed and will not resurface.
 
 Every import/dismiss is audited.
