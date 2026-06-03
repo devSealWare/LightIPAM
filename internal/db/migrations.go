@@ -276,6 +276,19 @@ CREATE INDEX IF NOT EXISTS idx_scan_discoveries_status ON scan_discoveries (stat
 CREATE INDEX IF NOT EXISTS idx_scan_discoveries_last_seen ON scan_discoveries (last_seen_at DESC);
 `,
 	},
+	{
+		version: 7,
+		sql: `
+-- Reconciliation of a discovery against existing IPAM records:
+--   new      = the address is not managed yet
+--   match    = the address is managed and consistent with the observation
+--   conflict = the observation disagrees with a managed record (MAC/state)
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS reconcile_status text NOT NULL DEFAULT 'new';
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS conflict text NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_scan_discoveries_reconcile ON scan_discoveries (reconcile_status);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

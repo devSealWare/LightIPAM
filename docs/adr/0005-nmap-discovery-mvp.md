@@ -59,3 +59,14 @@ write path need explicit decisions.
 - nmap accuracy (especially OS detection) varies; observations are advisory and
   an operator confirms them at import time.
 - Certificate issuance/rotation remains the dev-grade generator from ADR 0003.
+
+## Update — Phase 3 completion (conflict reconciliation)
+
+A follow-up to this issue (migration 7) adds reconciliation so the review queue
+is not blind. Each observation is compared to the managed records and tagged
+`new` / `match` / `conflict` (`store.reconcileDiscovery`): a conflict is a changed
+MAC on the address's device, a responding host marked `deprecated`, or a MAC
+already bound to a different address. Conflicts are surfaced in the UI before
+import. Reconciliation also refreshes `last_seen_at` on a matched/conflicting
+managed address — the only IPAM write a scan performs without an explicit import —
+which completes the roadmap's Phase 3 "last-seen tracking and conflict detection."
