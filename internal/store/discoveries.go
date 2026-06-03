@@ -68,16 +68,26 @@ type DiscoveryInput struct {
 	Services []DiscoveryService
 }
 
+// DiscoveryUpsert reports the persisted state of an observation: its row id, the
+// review status (pending/imported/dismissed, preserved across re-scans), and the
+// reconciliation classification. The orchestrator uses it to decide whether a
+// trusted agent's observation should be auto-imported.
+type DiscoveryUpsert struct {
+	ID              string
+	ReviewStatus    string
+	ReconcileStatus string
+}
+
 // UpsertDiscovery records (or refreshes) a discovered host keyed by IP. An
 // existing row's review status is preserved: imported and dismissed hosts are
 // not resurrected to pending when they are seen again. Each observation is
 // reconciled against the managed IPAM records (see reconcileDiscovery): the
 // resulting status/conflict note is stored, and a matching managed address has
 // its last_seen_at refreshed (the only IPAM write a scan performs on its own).
-func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) error {
+func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) (DiscoveryUpsert, error) {
 	id, err := auth.RandomToken(18)
 	if err != nil {
-		return err
+		return DiscoveryUpsert{}, err
 	}
 	services := input.Services
 	if services == nil {
@@ -85,15 +95,16 @@ func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) error
 	}
 	servicesJSON, err := json.Marshal(services)
 	if err != nil {
-		return fmt.Errorf("marshal discovery services: %w", err)
+		return DiscoveryUpsert{}, fmt.Errorf("marshal discovery services: %w", err)
 	}
 
 	status, conflict, err := s.reconcileDiscovery(ctx, input.IP, input.MAC)
 	if err != nil {
-		return err
+		return DiscoveryUpsert{}, err
 	}
 
-	if _, err := s.db.Exec(ctx, `
+	out := DiscoveryUpsert{ReconcileStatus: status}
+	if err := s.db.QueryRow(ctx, `
 INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, hostname, os_family, os_detail, services, reconcile_status, conflict, last_seen_at)
 VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9::jsonb, $10, $11, now())
 ON CONFLICT (ip) DO UPDATE SET
@@ -107,18 +118,19 @@ ON CONFLICT (ip) DO UPDATE SET
 	reconcile_status = EXCLUDED.reconcile_status,
 	conflict = EXCLUDED.conflict,
 	last_seen_at = now(),
-	updated_at = now()`,
+	updated_at = now()
+RETURNING id, status`,
 		id, emptyToNil(input.JobID), emptyToNil(input.AgentID), input.IP, emptyToNil(input.MAC),
-		input.Hostname, input.OSFamily, input.OSDetail, string(servicesJSON), status, conflict); err != nil {
-		return fmt.Errorf("upsert discovery: %w", err)
+		input.Hostname, input.OSFamily, input.OSDetail, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
+		return DiscoveryUpsert{}, fmt.Errorf("upsert discovery: %w", err)
 	}
 
 	if status != ReconcileNew {
 		if _, err := s.db.Exec(ctx, "UPDATE ip_addresses SET last_seen_at = now() WHERE address = $1::inet", input.IP); err != nil {
-			return fmt.Errorf("refresh address last_seen: %w", err)
+			return DiscoveryUpsert{}, fmt.Errorf("refresh address last_seen: %w", err)
 		}
 	}
-	return nil
+	return out, nil
 }
 
 // reconcileDiscovery compares an observation against the managed IPAM records

@@ -135,8 +135,11 @@ reconciliation (migration 7: `scan_discoveries.reconcile_status`/`conflict`,
 and refreshing `last_seen_at` on managed addresses. Candidate follow-ups, roughly
 in priority order:
 
-- Per-agent auto-import trust setting (skip the review queue).
-- Richer scan-result detail UI (service/OS evidence beyond raw JSON).
+- Per-agent auto-import trust setting (done): `scan_agents.auto_import`
+  (migration 8); `maybeAutoImport` imports non-conflicting pending observations,
+  conflicts stay queued.
+- Richer scan-result detail UI (done): `/scans/{id}` parses the agent result into
+  per-host cards (MAC/OS/services/evidence), raw JSON collapsed.
 - Phase 4 (Network Context): SNMP, LLDP/CDP, DHCP, DNS enrichment, VLAN mapping —
   each reusing the discovery review-queue + reconciliation pattern, kept in the
   agent.
