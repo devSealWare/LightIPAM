@@ -71,6 +71,12 @@
             <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
             <button class="button-muted h-9 px-3 text-xs" type="submit">Dismiss</button>
           </form>
+          {{ else if eq .Status "dismissed" }}
+          <form method="post" action="/discoveries/{{ .ID }}/import">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="{{ if eq .ReconcileStatus "conflict" }}button-muted{{ else }}button-primary{{ end }} h-9 px-3 text-xs" type="submit" title="Import this previously dismissed host into IPAM">Import</button>
+          </form>
+          <span class="text-xs text-zinc-400">{{ datetime .LastSeenAt }}</span>
           {{ else }}
           <span class="text-xs text-zinc-400">{{ datetime .LastSeenAt }}</span>
           {{ end }}
