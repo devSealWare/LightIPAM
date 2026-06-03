@@ -123,11 +123,20 @@ The app auto-enrolls the bundled agent (pending) on boot; approve it under
 
 ## Next (Phase 3 complete)
 
-The initial backlog and Roadmap Phase 3 are done. Candidate follow-ups, roughly
-in priority order:
+The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 
-- Per-agent "auto-import trusted discoveries" setting (skip the review queue).
-- Scan result detail UI for service/OS evidence beyond the raw JSON.
+- **Per-agent auto-import (done).** `scan_agents.auto_import` (migration 8). When
+  set, the orchestrator imports an agent's non-conflicting, still-pending
+  observations straight into IPAM (`maybeAutoImport`); conflicts always stay in
+  the `/discoveries` queue. Toggle it on the agent form; the agents list shows an
+  "Auto-import" badge.
+- **Scan result detail UI (done).** `/scans/{id}` parses the stored agent result
+  (`parseScanResult`) and renders per-host cards — MAC, OS, a services table
+  (port/state/service/product/version), and evidence — with the raw JSON kept in
+  a collapsed block.
+
+Remaining candidate follow-ups, roughly in priority order:
+
 - **Phase 4 (Network Context):** SNMP inventory, LLDP/CDP neighbors, DHCP lease
   ingestion, DNS enrichment, VLAN/interface mapping. Each new source should reuse
   the discovery review-queue + reconciliation pattern and stay in the agent, not

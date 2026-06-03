@@ -18,6 +18,7 @@ type ScanAgent struct {
 	CertificateSubject string
 	AllowedCIDRs       []string
 	Status             string
+	AutoImport         bool
 	Version            string
 	LastSeenAt         *time.Time
 	CreatedAt          time.Time
@@ -32,6 +33,7 @@ type ScanAgentInput struct {
 	CertificateSubject string
 	AllowedCIDRs       []string
 	Status             string
+	AutoImport         bool
 }
 
 // ScanJob is a single dispatched (or queued) scan.
@@ -125,9 +127,9 @@ func (s *Store) CreateScanAgent(ctx context.Context, input ScanAgentInput) (Scan
 		siteID = &input.SiteID
 	}
 	if _, err := s.db.Exec(ctx, `
-INSERT INTO scan_agents (id, name, site_id, endpoint_url, certificate_subject, allowed_cidrs, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		id, input.Name, siteID, input.EndpointURL, input.CertificateSubject, input.AllowedCIDRs, status); err != nil {
+INSERT INTO scan_agents (id, name, site_id, endpoint_url, certificate_subject, allowed_cidrs, status, auto_import)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		id, input.Name, siteID, input.EndpointURL, input.CertificateSubject, input.AllowedCIDRs, status, input.AutoImport); err != nil {
 		return ScanAgent{}, fmt.Errorf("create scan agent: %w", err)
 	}
 	return s.GetScanAgent(ctx, id)
@@ -140,9 +142,9 @@ func (s *Store) UpdateScanAgent(ctx context.Context, id string, input ScanAgentI
 	}
 	tag, err := s.db.Exec(ctx, `
 UPDATE scan_agents
-SET name = $2, site_id = $3, endpoint_url = $4, certificate_subject = $5, allowed_cidrs = $6, status = $7, updated_at = now()
+SET name = $2, site_id = $3, endpoint_url = $4, certificate_subject = $5, allowed_cidrs = $6, status = $7, auto_import = $8, updated_at = now()
 WHERE id = $1`,
-		id, input.Name, siteID, input.EndpointURL, input.CertificateSubject, input.AllowedCIDRs, input.Status)
+		id, input.Name, siteID, input.EndpointURL, input.CertificateSubject, input.AllowedCIDRs, input.Status, input.AutoImport)
 	if err != nil {
 		return ScanAgent{}, fmt.Errorf("update scan agent: %w", err)
 	}
@@ -156,9 +158,9 @@ func (s *Store) GetScanAgent(ctx context.Context, id string) (ScanAgent, error) 
 	var a ScanAgent
 	var siteID *string
 	if err := s.db.QueryRow(ctx, `
-SELECT id, name, COALESCE(site_id, ''), endpoint_url, certificate_subject, allowed_cidrs, status, version, last_seen_at, created_at, updated_at
+SELECT id, name, COALESCE(site_id, ''), endpoint_url, certificate_subject, allowed_cidrs, status, auto_import, version, last_seen_at, created_at, updated_at
 FROM scan_agents WHERE id = $1`, id).Scan(
-		&a.ID, &a.Name, &siteID, &a.EndpointURL, &a.CertificateSubject, &a.AllowedCIDRs, &a.Status, &a.Version, &a.LastSeenAt, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.Name, &siteID, &a.EndpointURL, &a.CertificateSubject, &a.AllowedCIDRs, &a.Status, &a.AutoImport, &a.Version, &a.LastSeenAt, &a.CreatedAt, &a.UpdatedAt,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return ScanAgent{}, ErrNotFound
@@ -173,7 +175,7 @@ FROM scan_agents WHERE id = $1`, id).Scan(
 
 func (s *Store) ListScanAgents(ctx context.Context) ([]ScanAgent, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, name, COALESCE(site_id, ''), endpoint_url, certificate_subject, allowed_cidrs, status, version, last_seen_at, created_at, updated_at
+SELECT id, name, COALESCE(site_id, ''), endpoint_url, certificate_subject, allowed_cidrs, status, auto_import, version, last_seen_at, created_at, updated_at
 FROM scan_agents ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list scan agents: %w", err)
@@ -184,7 +186,7 @@ FROM scan_agents ORDER BY name`)
 	for rows.Next() {
 		var a ScanAgent
 		var siteID *string
-		if err := rows.Scan(&a.ID, &a.Name, &siteID, &a.EndpointURL, &a.CertificateSubject, &a.AllowedCIDRs, &a.Status, &a.Version, &a.LastSeenAt, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &siteID, &a.EndpointURL, &a.CertificateSubject, &a.AllowedCIDRs, &a.Status, &a.AutoImport, &a.Version, &a.LastSeenAt, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan scan agent: %w", err)
 		}
 		if siteID != nil {

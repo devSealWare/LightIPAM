@@ -83,6 +83,31 @@ performs the one IPAM write a scan does on its own: refreshing `last_seen_at` on
 matched/conflicting managed address, giving live liveness tracking without an
 import. Assignments and records are never created or changed without an import.
 
+### Auto-import for trusted agents
+
+Each agent carries an `auto_import` flag (`scan_agents.auto_import`, migration 8;
+toggled on the agent form, shown as an "Auto-import" badge on `/agents`). When it
+is set, the orchestrator imports the agent's observations as soon as they are
+recorded (`maybeAutoImport`) instead of leaving them pending — but only when the
+observation is **new or match** and still **pending**. Conflicts are never
+auto-imported; they always stay in the queue for an operator. An observation
+whose address has no containing subnet is left pending rather than failing. Each
+auto-import is audited (`scan.discovery.imported`, actor system) alongside a
+per-job `scan.discovery.auto_imported` count.
+
+The default stays review-first: a freshly enrolled or manually registered agent
+has `auto_import` off until an operator opts in.
+
+## Scan result detail (`/scans/{id}`)
+
+A finished job stores the agent's full `ScanResult` JSON. The detail page parses
+it (`parseScanResult`) and renders, per discovered host, a card with the MAC, OS
+family/detail, a services table (port/protocol, state, service name, product,
+version), and any evidence the agent attached. Surfaced scan errors get their own
+section. The raw JSON remains available in a collapsed block for debugging. A
+job with no parseable result (e.g. a failed dispatch) falls back to just the error
+and the raw block.
+
 ## App-pull agent enrollment
 
 Enrollment keeps the mTLS direction (app = client) so the app gains no inbound
@@ -114,4 +139,6 @@ docker compose --profile scanner up -d
 3. Create a subnet covering the network you want to import into.
 4. Run a scan from `/scans` (targets must fall inside the agent's
    `AGENT_ALLOWED_CIDRS`, default `192.168.0.0/16,10.0.0.0/8`).
-5. Review hits under `/discoveries`; import the ones you want.
+5. Open a finished scan under `/scans` to inspect per-host services/OS evidence.
+6. Review hits under `/discoveries`; import the ones you want. To skip the queue
+   for a trusted agent, enable **Auto-import** on its agent form.
