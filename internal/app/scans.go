@@ -1,12 +1,14 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
 )
@@ -135,13 +137,30 @@ func (a *App) scanShow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load scan", http.StatusInternalServerError)
 		return
 	}
+	observations, scanErrors := parseScanResult(job.Result)
 	_ = ui.Render(w, "scan_detail.html", ui.PageData{
-		Title:     "Scan " + job.ID,
-		User:      session.User,
-		CSRF:      session.CSRFToken,
-		ScanJob:   job,
-		ActiveNav: "scans",
+		Title:            "Scan " + job.ID,
+		User:             session.User,
+		CSRF:             session.CSRFToken,
+		ScanJob:          job,
+		ScanObservations: observations,
+		ScanErrors:       scanErrors,
+		ActiveNav:        "scans",
 	})
+}
+
+// parseScanResult decodes the agent result JSON stored on a job into structured
+// observations and errors for the detail view. A missing or malformed result
+// yields nil slices so the template falls back to the raw JSON block.
+func parseScanResult(raw string) ([]scanner.Observation, []scanner.ScanError) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var result scanner.ScanResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil, nil
+	}
+	return result.Observations, result.Errors
 }
 
 func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
@@ -393,12 +412,16 @@ func agentInputFromRequest(r *http.Request) (store.ScanAgentInput, map[string]st
 	if err := r.ParseForm(); err != nil {
 		return store.ScanAgentInput{}, nil, err
 	}
+	autoImport := r.FormValue("auto_import") == "on" || r.FormValue("auto_import") == "true"
 	form := map[string]string{
 		"name":                strings.TrimSpace(r.FormValue("name")),
 		"endpoint_url":        strings.TrimSpace(r.FormValue("endpoint_url")),
 		"certificate_subject": strings.TrimSpace(r.FormValue("certificate_subject")),
 		"allowed_cidrs":       r.FormValue("allowed_cidrs"),
 		"status":              strings.TrimSpace(r.FormValue("status")),
+	}
+	if autoImport {
+		form["auto_import"] = "on"
 	}
 	if form["name"] == "" {
 		return store.ScanAgentInput{}, form, errors.New("Agent name is required.")
@@ -423,17 +446,22 @@ func agentInputFromRequest(r *http.Request) (store.ScanAgentInput, map[string]st
 		CertificateSubject: form["certificate_subject"],
 		AllowedCIDRs:       allowed,
 		Status:             status,
+		AutoImport:         autoImport,
 	}, form, nil
 }
 
 func agentFormFromAgent(agent store.ScanAgent) map[string]string {
-	return map[string]string{
+	form := map[string]string{
 		"name":                agent.Name,
 		"endpoint_url":        agent.EndpointURL,
 		"certificate_subject": agent.CertificateSubject,
 		"allowed_cidrs":       strings.Join(agent.AllowedCIDRs, "\n"),
 		"status":              agent.Status,
 	}
+	if agent.AutoImport {
+		form["auto_import"] = "on"
+	}
+	return form
 }
 
 func (a *App) renderAgentForm(w http.ResponseWriter, session store.Session, title string, agent store.ScanAgent, form map[string]string, message string) {

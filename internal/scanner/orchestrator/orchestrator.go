@@ -8,6 +8,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -136,15 +137,18 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 	return out
 }
 
-// recordDiscoveries persists each observed host into the review queue. Nothing
-// here mutates IPAM records directly: an operator imports a discovery later.
+// recordDiscoveries persists each observed host into the review queue. By
+// default nothing here mutates IPAM records directly: an operator imports a
+// discovery later. When the agent is trusted (auto_import), non-conflicting and
+// still-pending observations are imported immediately; conflicts always stay in
+// the queue for an operator to resolve.
 func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, job store.ScanJob, observations []scanner.Observation) {
-	recorded := 0
+	recorded, imported := 0, 0
 	for _, obs := range observations {
 		if strings.TrimSpace(obs.IP) == "" {
 			continue
 		}
-		if err := s.store.UpsertDiscovery(ctx, store.DiscoveryInput{
+		result, err := s.store.UpsertDiscovery(ctx, store.DiscoveryInput{
 			JobID:    job.ID,
 			AgentID:  agent.ID,
 			IP:       obs.IP,
@@ -153,15 +157,43 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 			OSFamily: obs.OSFamily,
 			OSDetail: obs.OSDetail,
 			Services: servicesFromObservation(obs.Services),
-		}); err != nil {
+		})
+		if err != nil {
 			s.logger.Error("record discovery", "ip", obs.IP, "error", err)
 			continue
 		}
 		recorded++
+		if s.maybeAutoImport(ctx, agent, result) {
+			imported++
+		}
 	}
 	if recorded > 0 {
 		s.audit(ctx, nil, "scan.discovery.recorded", job.ID, strconv.Itoa(recorded))
 	}
+	if imported > 0 {
+		s.audit(ctx, nil, "scan.discovery.auto_imported", job.ID, strconv.Itoa(imported))
+	}
+}
+
+// maybeAutoImport imports a freshly recorded observation when the agent is
+// trusted and the observation is pending review and free of conflicts. An
+// observation whose address has no containing subnet is left pending rather than
+// treated as an error. Returns whether an import happened.
+func (s *Service) maybeAutoImport(ctx context.Context, agent store.ScanAgent, result store.DiscoveryUpsert) bool {
+	if !agent.AutoImport || result.ReviewStatus != "pending" || result.ReconcileStatus == store.ReconcileConflict {
+		return false
+	}
+	discovery, err := s.store.ImportDiscovery(ctx, result.ID)
+	if err != nil {
+		if errors.Is(err, store.ErrNoContainingSubnet) {
+			s.logger.Debug("auto-import skipped: no containing subnet", "id", result.ID)
+			return false
+		}
+		s.logger.Error("auto-import discovery", "id", result.ID, "error", err)
+		return false
+	}
+	s.auditSubject(ctx, nil, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID, "auto")
+	return true
 }
 
 func servicesFromObservation(services []scanner.ServiceObservation) []store.DiscoveryService {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
 
@@ -36,6 +37,8 @@ type PageData struct {
 	ScanAgent         store.ScanAgent
 	ScanJobs          []store.ScanJob
 	ScanJob           store.ScanJob
+	ScanObservations  []scanner.Observation
+	ScanErrors        []scanner.ScanError
 	ScanSchedules     []store.ScanSchedule
 	ScanSchedule      store.ScanSchedule
 	ScanTypes         []string

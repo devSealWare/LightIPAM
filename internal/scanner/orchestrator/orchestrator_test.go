@@ -86,6 +86,28 @@ func TestDispatchRejectedSurfacesError(t *testing.T) {
 	}
 }
 
+func TestMaybeAutoImportGuards(t *testing.T) {
+	// A nil store would panic if maybeAutoImport tried to import, so these cases
+	// double as proof that the guard short-circuits before any store call.
+	s := testService(fakeDispatcher{enabled: true})
+	cases := []struct {
+		name   string
+		agent  store.ScanAgent
+		result store.DiscoveryUpsert
+	}{
+		{"trust disabled", store.ScanAgent{AutoImport: false}, store.DiscoveryUpsert{ReviewStatus: "pending", ReconcileStatus: store.ReconcileNew}},
+		{"already reviewed", store.ScanAgent{AutoImport: true}, store.DiscoveryUpsert{ReviewStatus: "imported", ReconcileStatus: store.ReconcileNew}},
+		{"conflict stays pending", store.ScanAgent{AutoImport: true}, store.DiscoveryUpsert{ReviewStatus: "pending", ReconcileStatus: store.ReconcileConflict}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if s.maybeAutoImport(context.Background(), tc.agent, tc.result) {
+				t.Fatal("expected no auto-import")
+			}
+		})
+	}
+}
+
 func TestRegistrationFromAgent(t *testing.T) {
 	reg := registrationFromAgent(store.ScanAgent{ID: "a1", Status: "active", AllowedCIDRs: []string{"10.0.0.0/8"}})
 	if reg.Status != scanner.AgentActive {
