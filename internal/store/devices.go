@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -19,6 +20,12 @@ type Device struct {
 	MACCount        int
 	PrivateMACCount int
 	Tags            []string
+	// Discovery-derived inventory, populated when a device is created or refreshed
+	// from a scan import. Empty for manually created devices.
+	OSFamily        string
+	OSDetail        string
+	Services        []DiscoveryService
+	DiscoverySource string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -44,6 +51,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id)::int,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
+	d.os_family, d.os_detail, d.services::text, d.discovery_source,
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -75,6 +83,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id)::int,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
+	d.os_family, d.os_detail, d.services::text, d.discovery_source,
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -244,6 +253,7 @@ ON CONFLICT DO NOTHING`, tagID, deviceID); err != nil {
 
 func scanDevice(scanner subnetScanner) (Device, error) {
 	var device Device
+	var servicesJSON string
 	if err := scanner.Scan(
 		&device.ID,
 		&device.Name,
@@ -252,10 +262,19 @@ func scanDevice(scanner subnetScanner) (Device, error) {
 		&device.MACCount,
 		&device.PrivateMACCount,
 		&device.Tags,
+		&device.OSFamily,
+		&device.OSDetail,
+		&servicesJSON,
+		&device.DiscoverySource,
 		&device.CreatedAt,
 		&device.UpdatedAt,
 	); err != nil {
 		return Device{}, fmt.Errorf("scan device: %w", err)
+	}
+	if servicesJSON != "" {
+		if err := json.Unmarshal([]byte(servicesJSON), &device.Services); err != nil {
+			return Device{}, fmt.Errorf("decode device services: %w", err)
+		}
 	}
 	return device, nil
 }
