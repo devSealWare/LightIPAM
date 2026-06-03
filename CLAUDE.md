@@ -53,7 +53,9 @@ The code avoids large frameworks. Continue using:
 None in progress. The initial backlog (issues #1–#10) is fully merged to `main`,
 and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-aware
 reconciliation (migration 7) finished the "last-seen tracking and conflict
-detection" item. Next candidate work is Roadmap Phase 4 (Network Context) or the
+detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
+(migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
+Next candidate work is Roadmap Phase 4 (Network Context) or the remaining
 follow-ups listed under "Next" below.
 
 Issue #10 (merged) scope:
@@ -95,6 +97,16 @@ orchestrator persists successful observations via `store.UpsertDiscovery`; the
 app exposes `/discoveries` (import/dismiss) plus app-pull agent enrollment
 (`/agents/discover`, `/agents/{id}/approve`, boot-time auto-enroll). See
 `docs/SCANNER_DISCOVERY.md`, ADR 0005.
+
+Phase 3 follow-ups (merged, #18):
+
+- **Per-agent auto-import** (`scan_agents.auto_import`, migration 8). When set,
+  `orchestrator.maybeAutoImport` imports an agent's non-conflicting, still-pending
+  observations straight into IPAM; conflicts and subnet-less hosts stay in the
+  `/discoveries` queue. Toggle on the agent form; "Auto-import" badge on `/agents`.
+- **Scan result detail UI.** `/scans/{id}` parses the stored agent result
+  (`app.parseScanResult`) into per-host cards (MAC, OS, services table, evidence);
+  raw JSON kept in a collapsed block.
 
 ## Verification
 
