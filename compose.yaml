@@ -10,6 +10,10 @@ services:
       SCANNER_CLIENT_CERT: /certs/app.crt
       SCANNER_CLIENT_KEY: /certs/app.key
       SCANNER_CLIENT_CA: /certs/ca.crt
+      # Endpoint of the bundled agent. On boot the app pulls the agent's
+      # self-reported identity over mTLS and auto-enrolls it as a pending agent,
+      # so an operator only has to approve it. Leave unset to disable auto-enroll.
+      SCANNER_AGENT_ENDPOINT: https://scanner-agent:8443
     ports:
       - "8080:8080"
     depends_on:
@@ -45,10 +49,13 @@ services:
     volumes:
       - ./deploy/scanner-certs:/certs:ro
     read_only: true
-    # No extra capabilities: the no-op agent does not scan yet. NET_RAW will be
-    # added here (and only here) when Nmap-based discovery lands.
+    # Active discovery needs raw sockets for ARP/SYN/OS probes. NET_RAW is
+    # granted here — and only here — while every other capability stays dropped.
+    # The web app service above carries no capabilities.
     cap_drop:
       - ALL
+    cap_add:
+      - NET_RAW
     security_opt:
       - no-new-privileges:true
 

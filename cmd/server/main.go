@@ -46,6 +46,7 @@ func main() {
 
 	scanService := orchestrator.NewService(store.New(pool), dispatcher, logger)
 	go scanService.StartScheduler(ctx, cfg.ScanSchedulerTick)
+	scanService.StartAutoEnroll(ctx, cfg.ScannerAgentEndpoint)
 
 	handler := app.New(app.Options{
 		Config: cfg,

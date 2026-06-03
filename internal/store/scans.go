@@ -206,6 +206,54 @@ func (s *Store) DeleteScanAgent(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetScanAgentByEndpoint looks up an agent by its endpoint URL.
+func (s *Store) GetScanAgentByEndpoint(ctx context.Context, endpointURL string) (ScanAgent, error) {
+	var id string
+	if err := s.db.QueryRow(ctx, "SELECT id FROM scan_agents WHERE endpoint_url = $1 LIMIT 1", endpointURL).Scan(&id); err != nil {
+		if err == pgx.ErrNoRows {
+			return ScanAgent{}, ErrNotFound
+		}
+		return ScanAgent{}, fmt.Errorf("get scan agent by endpoint: %w", err)
+	}
+	return s.GetScanAgent(ctx, id)
+}
+
+// EnrollDiscoveredAgent registers an agent the app pulled from its /register
+// endpoint. If an agent already exists for the endpoint it is left untouched
+// (so operator edits to status/allowlist are preserved) and returned with
+// created=false; otherwise a new pending agent is created.
+func (s *Store) EnrollDiscoveredAgent(ctx context.Context, endpointURL string, input ScanAgentInput) (ScanAgent, bool, error) {
+	existing, err := s.GetScanAgentByEndpoint(ctx, endpointURL)
+	if err == nil {
+		return existing, false, nil
+	}
+	if err != ErrNotFound {
+		return ScanAgent{}, false, err
+	}
+	input.EndpointURL = endpointURL
+	input.Status = string(scanAgentPending)
+	agent, err := s.CreateScanAgent(ctx, input)
+	if err != nil {
+		return ScanAgent{}, false, err
+	}
+	return agent, true, nil
+}
+
+const scanAgentPending = "pending"
+
+// SetScanAgentStatus transitions an agent's lifecycle status (e.g. approving a
+// pending agent by setting it active).
+func (s *Store) SetScanAgentStatus(ctx context.Context, id, status string) error {
+	tag, err := s.db.Exec(ctx, "UPDATE scan_agents SET status = $2, updated_at = now() WHERE id = $1", id, status)
+	if err != nil {
+		return fmt.Errorf("set scan agent status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // TouchScanAgent records a successful contact and the agent's reported version.
 func (s *Store) TouchScanAgent(ctx context.Context, id, version string) error {
 	if _, err := s.db.Exec(ctx, `

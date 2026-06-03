@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -220,10 +221,71 @@ func (a *App) agentsIndex(w http.ResponseWriter, r *http.Request) {
 		Title:         "Scanner Agents",
 		User:          session.User,
 		CSRF:          session.CSRFToken,
+		Error:         r.URL.Query().Get("error"),
 		ScanAgents:    agents,
 		DispatchReady: a.scans != nil && a.scans.DispatchEnabled(),
 		ActiveNav:     "agents",
 	})
+}
+
+// agentDiscover enrolls an agent by pulling its self-reported identity from the
+// endpoint URL the operator supplies. The app connects over mTLS, reads the
+// agent's name/allowlist, and creates a pending agent to approve.
+func (a *App) agentDiscover(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	endpoint := strings.TrimSpace(r.FormValue("endpoint_url"))
+	if endpoint == "" || !strings.HasPrefix(endpoint, "https://") {
+		a.redirectAgents(w, r, "Enter an https:// endpoint URL to discover an agent.")
+		return
+	}
+	if a.scans == nil {
+		a.redirectAgents(w, r, "Scanner dispatch is not configured; mount the app's mTLS client certificate first.")
+		return
+	}
+	agent, created, err := a.scans.DiscoverAgent(r.Context(), endpoint)
+	if err != nil {
+		a.logger.Warn("discover agent", "endpoint", endpoint, "error", err)
+		a.redirectAgents(w, r, "Could not reach an agent at that endpoint over mTLS.")
+		return
+	}
+	if created {
+		a.audit(r, &session.User.ID, "scan.agent.discovered", "scan_agent", agent.ID)
+	}
+	http.Redirect(w, r, "/agents", http.StatusSeeOther)
+}
+
+// agentApprove transitions a pending agent to active so it can receive jobs.
+func (a *App) agentApprove(w http.ResponseWriter, r *http.Request) {
+	session, agent, ok := a.loadAgentPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := a.store.SetScanAgentStatus(r.Context(), agent.ID, "active"); err != nil {
+		a.logger.Error("approve agent", "error", err)
+		http.Error(w, "Unable to approve agent", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "scan.agent.approved", "scan_agent", agent.ID)
+	http.Redirect(w, r, "/agents", http.StatusSeeOther)
+}
+
+func (a *App) redirectAgents(w http.ResponseWriter, r *http.Request, message string) {
+	if message == "" {
+		http.Redirect(w, r, "/agents", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/agents?error="+url.QueryEscape(message), http.StatusSeeOther)
 }
 
 func (a *App) agentNew(w http.ResponseWriter, r *http.Request) {

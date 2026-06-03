@@ -50,19 +50,26 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-Issue #9 is in progress: app-side scan orchestration (manual + scheduled scan
-jobs, app-as-mTLS-client, lifecycle, scan audit trail). Issues #7 (protocol) and
-#8 (no-op agent container) are merged to `main`. Still no active Nmap scanning.
+Issue #10 is in progress on branch `codex/nmap-discovery-mvp`: the Nmap
+Discovery MVP. Issues #7 (protocol), #8 (no-op agent container), and #9 (scan
+orchestration) are merged to `main`. With #10, the agent now performs real
+active discovery and observations flow into a review queue.
 
-Issue #9 scope:
+Issue #10 scope (this branch):
 
-- DB migration 5: `scan_agents`, `scan_schedules`, `scan_jobs`.
-- `internal/scanner/dispatch`: app-side mTLS client that POSTs jobs to agents.
-- `internal/scanner/orchestrator`: validates, enqueues, dispatches async, records
-  lifecycle + audit, and runs an in-process schedule ticker.
-- App UI: `/scans` (list + run), `/agents` (CRUD), `/schedules` (CRUD + run-now).
-- App mounts its mTLS client cert (`/certs/app.crt` etc.); dispatch disables
-  cleanly if absent.
+- Agent runs nmap (`internal/scanner/agent/nmap.go`, `Discoverer` interface),
+  depth bounded by scan mode (passive → none, light → `-sn`, standard → `-sV`,
+  deep → `+ -O`). Injectable command runner keeps arg-building/XML-parsing tests
+  hermetic.
+- `NET_RAW` granted to the agent compose service only; agent image bundles nmap
+  and runs as root. App image stays nmap-free with zero capabilities.
+- DB migration 6: `scan_discoveries`. Observations upsert into a **review
+  queue** (`/discoveries`); an operator imports (→ address + optional device/MAC
+  in the containing subnet) or dismisses. Nothing auto-mutates IPAM.
+- **App-pull enrollment.** Agent `GET /register` self-describes; the app
+  auto-enrolls the bundled agent on boot (`SCANNER_AGENT_ENDPOINT`) and offers a
+  `/agents` "Discover" form, both creating a `pending` agent for one-click
+  approval. See ADR 0005, `docs/SCANNER_DISCOVERY.md`.
 
 ## Scanner Protocol (merged, issue #7)
 
@@ -73,11 +80,20 @@ is the app-side check (active + agent_id + allowlist containment);
 `ValidateAgentScope` is the agent-side check (allowlist containment only). See
 `docs/SCANNER_PROTOCOL.md`.
 
-## Scanner Agent (merged, issue #8)
+## Scanner Agent (merged, issue #8; discovery added in #10)
 
-`cmd/scanner-agent` + `internal/scanner/agent` run a no-op mTLS agent
-(`GET /healthz`, `POST /jobs`). `internal/scanner/pki` + `cmd/scanner-certs`
-generate the dev CA and certs. See `docs/SCANNER_AGENT.md`, ADR 0003.
+`cmd/scanner-agent` + `internal/scanner/agent` run the mTLS agent
+(`GET /healthz`, `GET /register`, `POST /jobs`). It is no longer a no-op: active
+modes run nmap. `internal/scanner/pki` + `cmd/scanner-certs` generate the dev CA
+and certs. See `docs/SCANNER_AGENT.md`, ADR 0003.
+
+## Scanner Discovery (issue #10, this branch)
+
+`internal/scanner/agent/nmap.go` is the nmap-backed `Discoverer`. The
+orchestrator persists successful observations via `store.UpsertDiscovery`; the
+app exposes `/discoveries` (import/dismiss) plus app-pull agent enrollment
+(`/agents/discover`, `/agents/{id}/approve`, boot-time auto-enroll). See
+`docs/SCANNER_DISCOVERY.md`, ADR 0005.
 
 ## Verification
 
@@ -91,20 +107,26 @@ docker compose up -d
 docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 ```
 
-For the scanner agent (issue #8):
+For the scanner agent + discovery (issues #8/#10):
 
 ```sh
 go run ./cmd/scanner-certs -dir deploy/scanner-certs
-docker compose --profile scanner up -d --build
+docker compose --profile scanner build   # builds the nmap agent image
+docker compose --profile scanner up -d
 ```
 
-## Next After Issue #9
+The app auto-enrolls the bundled agent (pending) on boot; approve it under
+`/agents`, then run a scan from `/scans`. Discovered hosts appear under
+`/discoveries`. Agent allowlist is `AGENT_ALLOWED_CIDRS` (defaults
+`192.168.0.0/16,10.0.0.0/8`); scan targets must fall inside it.
 
-After scan orchestration is reviewed/merged, start issue #10 (Nmap Discovery MVP):
+## Next After Issue #10
 
-- Implement active discovery inside the scanner agent (Nmap), gated by scan mode.
-- Add `NET_RAW` to the agent image/Compose service only — app stays unprivileged.
-- IPv4 host discovery, TCP service detection, OS probing where reliable.
-- Rate limits; turn agent observations into auto-created or review-queued IPAM
-  records (the app already stores raw results in `scan_jobs.result`).
+After this branch is reviewed/merged, candidate follow-ups:
+
+- Per-agent "auto-import trusted discoveries" setting (skip the review queue).
+- Reconcile discoveries against existing addresses (flag conflicts/state changes)
+  rather than plain upsert.
+- Managed certificate issuance/rotation (roadmap Phase 5), replacing the dev CA.
+- Scan result detail UI for service/OS evidence beyond the raw JSON.
 

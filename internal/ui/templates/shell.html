@@ -11,6 +11,10 @@
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "subnets" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/subnets">Subnets</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "devices" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/devices">Devices</a>
         <p class="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Discovery</p>
+        <a class="flex items-center justify-between rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "discoveries" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/discoveries">
+          <span>Discoveries</span>
+          {{ if .PendingDiscovery }}<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-sky-500 px-1.5 text-xs font-semibold text-white">{{ .PendingDiscovery }}</span>{{ end }}
+        </a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "scans" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/scans">Scans</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "agents" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/agents">Agents</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "schedules" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/schedules">Schedules</a>

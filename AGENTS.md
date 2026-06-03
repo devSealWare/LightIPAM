@@ -94,36 +94,40 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 - `internal/scanner`: versioned protocol types and allowlist validation
   (issue #7). `ValidateJobForAgent` is the app-side check; `ValidateAgentScope`
   is the agent-side check.
-- `internal/scanner/agent`: no-op agent receive/report handler plus mTLS
-  server/client TLS config builders (issue #8).
+- `internal/scanner/agent`: agent receive/report handler (`GET /healthz`,
+  `GET /register`, `POST /jobs`) plus mTLS TLS config builders. `nmap.go` is the
+  nmap-backed `Discoverer`; passive jobs stay no-op (issues #8/#10).
 - `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
   certificates.
-- `cmd/scanner-agent`: the agent process (mTLS HTTPS, `GET /healthz`,
-  `POST /jobs`). No active scanning yet.
-- `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs to
-  agents (issue #9).
+- `cmd/scanner-agent`: the agent process (mTLS HTTPS). Bundles nmap and runs
+  with `NET_RAW` only (issue #10).
+- `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs and
+  pulls `/register` for enrollment (issues #9/#10).
 - `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
-  dispatch async, record lifecycle + audit, and an in-process schedule ticker.
-- App routes `/scans`, `/agents`, `/schedules` manage scans, agents, and
-  schedules. Migration 5 adds `scan_agents`, `scan_schedules`, `scan_jobs`.
+  dispatch async, record lifecycle + audit, run the schedule ticker, persist
+  observations as discoveries, and auto-enroll the bundled agent.
+- App routes: `/scans`, `/agents` (+ `/agents/discover`, `/agents/{id}/approve`),
+  `/schedules`, and `/discoveries` (import/dismiss). Migration 5 adds
+  `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds `scan_discoveries`.
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
-  `scanner` profile) build and run the agent unprivileged.
+  `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
+  service stays at zero capabilities.
 
-See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, and ADRs 0002/0003/0004.
+See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, `docs/SCANNER_DISCOVERY.md`,
+and ADRs 0002/0003/0004/0005.
 
 ## Current Branch Plan
 
-Issue #9 is in progress: app-side scan orchestration. The app manages agents,
-dispatches manual and scheduled jobs over mTLS, tracks the job lifecycle, and
-records a scan audit trail. The app remains unprivileged (it is only an mTLS
-client); active scanning still does not exist.
+Issue #10 (Nmap Discovery MVP) is implemented on `codex/nmap-discovery-mvp`.
+The agent runs real nmap scans (depth bounded by mode); successful observations
+land in the `/discoveries` review queue, where an operator imports them into
+subnets/devices or dismisses them. Agents enroll by app-pull (auto on boot via
+`SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form) as `pending` for
+one-click approval. The app remains unprivileged (zero capabilities, no nmap).
 
-## After Issue #9
+## After Issue #10
 
-Proceed to issue #10: Nmap Discovery MVP.
-
-- Implement active discovery in the agent (Nmap), gated by scan mode.
-- Grant `NET_RAW` to the agent image/Compose service only.
-- Host discovery, TCP service detection, OS probing; rate limits.
-- Convert agent observations into auto-created or review-queued IPAM records.
+Candidate follow-ups: per-agent auto-import trust setting; conflict-aware
+reconciliation of discoveries against existing addresses; managed certificate
+issuance/rotation (roadmap Phase 5); richer scan-result detail UI.
 
