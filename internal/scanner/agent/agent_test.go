@@ -9,10 +9,60 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/scanner/pki"
 )
+
+func TestEstimateTargetHosts(t *testing.T) {
+	cases := []struct {
+		targets []string
+		want    int
+	}{
+		{nil, 1},
+		{[]string{"192.168.1.1"}, 1},
+		{[]string{"192.168.1.1", "192.168.1.2"}, 2},
+		{[]string{"192.168.1.0/24"}, 256},
+		{[]string{"10.0.0.0/30", "192.168.1.5"}, 5},
+	}
+	for _, c := range cases {
+		if got := estimateTargetHosts(c.targets); got != c.want {
+			t.Errorf("estimateTargetHosts(%v) = %d, want %d", c.targets, got, c.want)
+		}
+	}
+}
+
+func TestScanBudgetExceedsPerHostTimeout(t *testing.T) {
+	// Single host: budget must be the per-host timeout PLUS grace, so nmap's own
+	// --host-timeout fires first and it is never hard-killed at the same instant.
+	job := validJob()
+	job.TimeoutSeconds = 60
+	job.Targets = []string{"192.168.1.1"}
+	budget := scanBudget(job)
+	if budget <= 60*time.Second {
+		t.Fatalf("budget %v must exceed the 60s per-host timeout to leave grace", budget)
+	}
+
+	// Multi-host budget scales with the target count.
+	job.Targets = []string{"192.168.1.0/24"}
+	if scaled := scanBudget(job); scaled <= budget {
+		t.Fatalf("expected a /24 budget (%v) to exceed a single-host budget (%v)", scaled, budget)
+	}
+
+	// A huge range is capped rather than unbounded.
+	job.TimeoutSeconds = 600
+	job.Targets = []string{"10.0.0.0/8"}
+	if capped := scanBudget(job); capped != 2*time.Hour {
+		t.Fatalf("expected budget capped at 2h, got %v", capped)
+	}
+
+	// Zero timeout means no supervising deadline.
+	job.TimeoutSeconds = 0
+	if got := scanBudget(job); got != 0 {
+		t.Fatalf("expected no budget for zero timeout, got %v", got)
+	}
+}
 
 func testRegistration() scanner.AgentRegistration {
 	return scanner.AgentRegistration{
