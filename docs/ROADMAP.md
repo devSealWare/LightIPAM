@@ -43,6 +43,10 @@ Follow-ups merged on top of Phase 3 (#18):
 - LLDP/CDP neighbor ingestion.
 - DHCP lease ingestion.
 - DNS forward/reverse enrichment.
+- NetBIOS and mDNS/Bonjour hostname resolution (agent-side), so SMB, Apple, and
+  IoT devices without a DNS PTR record still resolve to a name. Reuses the
+  discovery review-queue + reconciliation pattern and stays in the scanner
+  agent (e.g. nmap `nbstat` NSE / mDNS probe), never the web app.
 - VLAN and interface mapping.
 
 ## Phase 5: Production Hardening
