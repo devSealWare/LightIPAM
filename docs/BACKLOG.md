@@ -2,6 +2,10 @@
 
 These are the first GitHub issues to create once repository issue automation is available.
 
+**Status: all items below (issues #1–#10) are merged to `main`.** The initial
+backlog is complete; further work is driven by `docs/ROADMAP.md` (Phase 4+) and
+the "Next" sections of `CLAUDE.md` / `AGENTS.md`, not by adding items here.
+
 ## 1. Implement Admin Bootstrap and Local Login
 
 Build the first local authentication flow with a single admin role.

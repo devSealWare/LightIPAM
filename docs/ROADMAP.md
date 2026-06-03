@@ -23,10 +23,12 @@
 
 ## Phase 3: Nmap Discovery MVP
 
-- ICMP and TCP host discovery.
-- Nmap-backed OS and service detection.
-- Findings review queue.
-- Last-seen tracking and conflict detection.
+Delivered in issue #10 (PR #15) except conflict detection:
+
+- ICMP and TCP host discovery. ✅
+- Nmap-backed OS and service detection. ✅
+- Findings review queue (`/discoveries`). ✅
+- Last-seen tracking ✅; conflict detection — not yet (next candidate).
 
 ## Phase 4: Network Context
 
