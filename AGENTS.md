@@ -116,18 +116,28 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, `docs/SCANNER_DISCOVERY.md`,
 and ADRs 0002/0003/0004/0005.
 
-## Current Branch Plan
+## Current State of the Scanner Track
 
-Issue #10 (Nmap Discovery MVP) is implemented on `codex/nmap-discovery-mvp`.
-The agent runs real nmap scans (depth bounded by mode); successful observations
-land in the `/discoveries` review queue, where an operator imports them into
-subnets/devices or dismisses them. Agents enroll by app-pull (auto on boot via
-`SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form) as `pending` for
-one-click approval. The app remains unprivileged (zero capabilities, no nmap).
+Issue #10 (Nmap Discovery MVP) is **merged to `main`** (PR #15, commit
+`4f695c9`). The agent runs real nmap scans (depth bounded by mode); successful
+observations land in the `/discoveries` review queue, where an operator imports
+them into subnets/devices or dismisses them. Agents enroll by app-pull (auto on
+boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form) as `pending`
+for one-click approval. The app remains unprivileged (zero capabilities, no
+nmap). The initial backlog (issues #1–#10) is now complete.
 
-## After Issue #10
+## Next
 
-Candidate follow-ups: per-agent auto-import trust setting; conflict-aware
-reconciliation of discoveries against existing addresses; managed certificate
-issuance/rotation (roadmap Phase 5); richer scan-result detail UI.
+No issue is in progress. Roadmap Phase 3 is complete except conflict-aware
+reconciliation. Candidate follow-ups, roughly in priority order:
+
+- Conflict-aware reconciliation: flag IP/MAC conflicts and state changes when a
+  discovery overlaps an existing address, instead of a plain upsert/import.
+- Per-agent auto-import trust setting (skip the review queue).
+- Richer scan-result detail UI (service/OS evidence beyond raw JSON).
+- Phase 4 (Network Context): SNMP, LLDP/CDP, DHCP, DNS enrichment, VLAN mapping —
+  each reusing the discovery review-queue pattern, kept in the agent.
+- Phase 5 (Production Hardening): managed cert issuance/rotation, OIDC/MFA.
+
+Branch from `main` and confirm the next item with the user before starting.
 
