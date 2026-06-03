@@ -298,6 +298,19 @@ CREATE INDEX IF NOT EXISTS idx_scan_discoveries_reconcile ON scan_discoveries (r
 ALTER TABLE scan_agents ADD COLUMN IF NOT EXISTS auto_import boolean NOT NULL DEFAULT false;
 `,
 	},
+	{
+		version: 9,
+		sql: `
+-- Discovery-derived inventory carried on the device record itself, so an
+-- imported host surfaces everything the scan exposed (OS guess, open services,
+-- and which agent first reported it) on the Devices page, not just under
+-- Subnets. These are populated on import and refreshed on re-import.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS os_family text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS os_detail text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS services jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS discovery_source text NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

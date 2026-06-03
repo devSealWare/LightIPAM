@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
+	"github.com/devSealWare/LightIPAM/internal/macaddr"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -340,47 +341,113 @@ WHERE id = $1`, discovery.ID, addressID, emptyToNil(deviceID)); err != nil {
 	return s.GetDiscovery(ctx, id)
 }
 
-// importDiscoveryDevice reuses an existing device that already owns the MAC, or
-// creates a new device plus MAC record. Returns an empty id when no MAC is known.
+// importDiscoveryDevice creates (or reuses) the device a discovery imports into
+// and stamps it with everything the scan exposed: the OS guess, the open
+// services, the reporting agent, and — when known — the MAC with its OUI vendor.
+// Unlike the earlier behavior, a device is ALWAYS created, even for a MAC-less
+// host (e.g. one scanned over bridged networking), so every imported address
+// also appears under Devices. The device is reused on re-import, identified
+// first by the discovery's prior import, then by the observed MAC.
 func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) (string, error) {
-	if discovery.MAC == "" {
-		return "", nil
-	}
-
-	var existing string
-	err := tx.QueryRow(ctx, "SELECT device_id FROM mac_addresses WHERE address = $1::macaddr", discovery.MAC).Scan(&existing)
-	if err == nil && existing != "" {
-		return existing, nil
-	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("look up mac: %w", err)
-	}
-
-	name := discovery.Hostname
-	if name == "" {
-		name = "host-" + discovery.IP
-	}
-	deviceID, err := auth.RandomToken(18)
+	deviceID, err := resolveImportDevice(ctx, tx, discovery)
 	if err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(ctx, `
-INSERT INTO devices (id, name, description)
-VALUES ($1, $2, 'Created from scan discovery')`, deviceID, name); err != nil {
-		return "", fmt.Errorf("create discovery device: %w", err)
+
+	servicesJSON, err := json.Marshal(discovery.Services)
+	if err != nil {
+		return "", fmt.Errorf("marshal discovery services: %w", err)
+	}
+	source := discovery.AgentName
+	if source == "" {
+		source = "scan"
 	}
 
-	macID, err := auth.RandomToken(18)
-	if err != nil {
-		return "", err
+	if deviceID == "" {
+		name := discovery.Hostname
+		if name == "" {
+			name = "host-" + discovery.IP
+		}
+		deviceID, err = auth.RandomToken(18)
+		if err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO devices (id, name, description, os_family, os_detail, services, discovery_source)
+VALUES ($1, $2, 'Created from scan discovery', $3, $4, $5::jsonb, $6)`,
+			deviceID, name, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+			return "", fmt.Errorf("create discovery device: %w", err)
+		}
+	} else {
+		// Refresh the discovered facts on an existing device. The operator-visible
+		// name is left untouched; OS, services, and source always reflect the
+		// latest observation (empty OS values do not clobber an earlier guess).
+		if _, err := tx.Exec(ctx, `
+UPDATE devices SET
+	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
+	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
+	services = $4::jsonb,
+	discovery_source = $5,
+	updated_at = now()
+WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+			return "", fmt.Errorf("update discovery device: %w", err)
+		}
 	}
-	if _, err := tx.Exec(ctx, `
-INSERT INTO mac_addresses (id, device_id, address)
-VALUES ($1, $2, $3::macaddr)
-ON CONFLICT (address) DO NOTHING`, macID, deviceID, discovery.MAC); err != nil {
-		return "", fmt.Errorf("create discovery mac: %w", err)
+
+	if discovery.MAC != "" {
+		if err := attachDiscoveryMAC(ctx, tx, deviceID, discovery.MAC); err != nil {
+			return "", err
+		}
 	}
 	return deviceID, nil
+}
+
+// resolveImportDevice finds an existing device to reuse for an import: the one a
+// prior import of this same discovery created, or any device already owning the
+// observed MAC. It returns an empty id when a new device should be created.
+func resolveImportDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) (string, error) {
+	if discovery.ImportedDeviceID != "" {
+		var exists bool
+		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1)", discovery.ImportedDeviceID).Scan(&exists); err != nil {
+			return "", fmt.Errorf("look up imported device: %w", err)
+		}
+		if exists {
+			return discovery.ImportedDeviceID, nil
+		}
+	}
+	if discovery.MAC != "" {
+		var existing string
+		err := tx.QueryRow(ctx, "SELECT device_id FROM mac_addresses WHERE address = $1::macaddr", discovery.MAC).Scan(&existing)
+		if err == nil && existing != "" {
+			return existing, nil
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("look up mac: %w", err)
+		}
+	}
+	return "", nil
+}
+
+// attachDiscoveryMAC records the observed MAC on the device with its OUI vendor
+// and private-rotating flag, if it is not already present.
+func attachDiscoveryMAC(ctx context.Context, tx pgx.Tx, deviceID, mac string) error {
+	vendor, isPrivate := "", false
+	if analysis, err := macaddr.Analyze(mac); err == nil {
+		mac = analysis.Address
+		vendor = analysis.Vendor
+		isPrivate = analysis.IsPrivate
+	}
+	macID, err := auth.RandomToken(18)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO mac_addresses (id, device_id, address, vendor, is_private)
+VALUES ($1, $2, $3::macaddr, $4, $5)
+ON CONFLICT (address) DO NOTHING`, macID, deviceID, mac, vendor, isPrivate); err != nil {
+		return fmt.Errorf("create discovery mac: %w", err)
+	}
+	return nil
 }
 
 func scanDiscovery(row subnetScanner) (Discovery, error) {
