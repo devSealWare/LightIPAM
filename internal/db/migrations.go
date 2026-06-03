@@ -289,6 +289,15 @@ ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS conflict text NOT NULL DEF
 CREATE INDEX IF NOT EXISTS idx_scan_discoveries_reconcile ON scan_discoveries (reconcile_status);
 `,
 	},
+	{
+		version: 8,
+		sql: `
+-- Per-agent trust setting. When enabled, non-conflicting observations from this
+-- agent are imported into IPAM automatically instead of waiting in the review
+-- queue. Conflicts always stay pending for an operator to resolve.
+ALTER TABLE scan_agents ADD COLUMN IF NOT EXISTS auto_import boolean NOT NULL DEFAULT false;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
