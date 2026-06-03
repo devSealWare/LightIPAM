@@ -21,14 +21,15 @@
 - Immutable scan audit trail.
 - Optional review mode for detected changes.
 
-## Phase 3: Nmap Discovery MVP
-
-Delivered in issue #10 (PR #15) except conflict detection:
+## Phase 3: Nmap Discovery MVP — complete
 
 - ICMP and TCP host discovery. ✅
 - Nmap-backed OS and service detection. ✅
 - Findings review queue (`/discoveries`). ✅
-- Last-seen tracking ✅; conflict detection — not yet (next candidate).
+- Last-seen tracking on managed addresses. ✅
+- Conflict detection: discoveries are reconciled against managed records and
+  flagged new/match/conflict (changed MAC, deprecated-but-responding, MAC seen
+  on another address). ✅
 
 ## Phase 4: Network Context
 

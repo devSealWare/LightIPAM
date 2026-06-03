@@ -65,6 +65,24 @@ In the UI an operator either:
 
 Every import/dismiss is audited.
 
+### Reconciliation (conflict detection)
+
+Each observation is reconciled against the managed IPAM records and tagged with a
+`reconcile_status` that is independent of the review status:
+
+- **new** — the address is not managed yet.
+- **match** — the address is managed and consistent with the observation.
+- **conflict** — the observation disagrees with a managed record. Flagged when:
+  the observed MAC differs from the MAC already on the address's device; a
+  responding host is recorded as `deprecated`; or the observed MAC is already
+  bound to a different managed address (a likely IP change).
+
+Conflicts are surfaced in the queue (a "Conflicts" filter and a per-row badge +
+explanation), so an operator reviews them before importing. Reconciliation also
+performs the one IPAM write a scan does on its own: refreshing `last_seen_at` on a
+matched/conflicting managed address, giving live liveness tracking without an
+import. Assignments and records are never created or changed without an import.
+
 ## App-pull agent enrollment
 
 Enrollment keeps the mTLS direction (app = client) so the app gains no inbound
