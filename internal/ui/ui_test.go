@@ -157,6 +157,7 @@ func TestRenderTemplates(t *testing.T) {
 			ID:              "disc-1",
 			IP:              "192.168.10.42",
 			MAC:             "aa:bb:cc:dd:ee:ff",
+			Vendor:          "Hewlett Packard",
 			Hostname:        "printer.local",
 			OSFamily:        "Linux",
 			OSDetail:        "Linux 5.x",

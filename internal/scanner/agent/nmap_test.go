@@ -145,6 +145,9 @@ func TestParseNmapXML(t *testing.T) {
 	if len(obs.Evidence) != 1 || !strings.Contains(obs.Evidence[0].Summary, "Acme") {
 		t.Fatalf("expected MAC vendor evidence, got %+v", obs.Evidence)
 	}
+	if obs.Vendor != "Acme" {
+		t.Fatalf("expected structured MAC vendor %q, got %q", "Acme", obs.Vendor)
+	}
 }
 
 func TestParseNmapXMLEmpty(t *testing.T) {
