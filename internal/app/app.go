@@ -48,6 +48,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /healthz", app.health)
 	mux.HandleFunc("GET /static/app.css", ui.StaticCSS)
 	mux.HandleFunc("GET /", app.dashboard)
+	mux.HandleFunc("GET /search", app.search)
 	mux.HandleFunc("GET /bootstrap", app.bootstrapForm)
 	mux.HandleFunc("POST /bootstrap", app.bootstrapSubmit)
 	mux.HandleFunc("GET /login", app.loginForm)
@@ -164,6 +165,32 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		AuditLogs:        auditLogs,
 		PendingDiscovery: pendingDiscovery,
 		ActiveNav:        "dashboard",
+	})
+}
+
+func (a *App) search(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	var results store.SearchResults
+	if query != "" {
+		var err error
+		results, err = a.store.Search(r.Context(), query)
+		if err != nil {
+			a.logger.Error("search", "error", err)
+			http.Error(w, "Unable to run search", http.StatusInternalServerError)
+			return
+		}
+	}
+	_ = ui.Render(w, "search.html", ui.PageData{
+		Title:         "Search",
+		User:          session.User,
+		CSRF:          session.CSRFToken,
+		SearchQuery:   query,
+		SearchResults: results,
+		ActiveNav:     "search",
 	})
 }
 

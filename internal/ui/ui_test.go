@@ -182,6 +182,15 @@ func TestRenderTemplates(t *testing.T) {
 			"cancel":       "/",
 			"confirm_text": "Confirm",
 		},
+		SearchQuery: "192.168",
+		SearchResults: store.SearchResults{
+			Query:     "192.168",
+			Subnets:   []store.SearchResult{{Label: "Office LAN", Detail: "192.168.10.0/24", URL: "/subnets/subnet-1"}},
+			Addresses: []store.SearchResult{{Label: "192.168.10.5", Detail: "assigned · printer.local", URL: "/subnets/subnet-1"}},
+			Devices:   []store.SearchResult{{Label: "Printer", Detail: "Linux 5.x", URL: "/devices/device-1"}},
+			MACs:      []store.SearchResult{{Label: "aa:bb:cc:dd:ee:ff", Detail: "Acme · Printer", URL: "/devices/device-1"}},
+			Total:     4,
+		},
 	}
 
 	for _, name := range []string{
@@ -205,6 +214,7 @@ func TestRenderTemplates(t *testing.T) {
 		"schedules.html",
 		"schedule_form.html",
 		"discoveries.html",
+		"search.html",
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

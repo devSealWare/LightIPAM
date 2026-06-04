@@ -2,6 +2,7 @@ package ui
 
 import (
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -49,6 +50,8 @@ type PageData struct {
 	Discovery         store.Discovery
 	PendingDiscovery  int
 	ConflictDiscovery int
+	SearchQuery       string
+	SearchResults     store.SearchResults
 	Form              map[string]string
 	ActiveNav         string
 	SuccessMessage    string
@@ -64,6 +67,20 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		},
 		"join": func(values []string, sep string) string {
 			return strings.Join(values, sep)
+		},
+		"dict": func(pairs ...any) (map[string]any, error) {
+			if len(pairs)%2 != 0 {
+				return nil, fmt.Errorf("dict requires an even number of arguments")
+			}
+			m := make(map[string]any, len(pairs)/2)
+			for i := 0; i < len(pairs); i += 2 {
+				key, ok := pairs[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings")
+				}
+				m[key] = pairs[i+1]
+			}
+			return m, nil
 		},
 		"datetime": func(t time.Time) string {
 			if t.IsZero() {
