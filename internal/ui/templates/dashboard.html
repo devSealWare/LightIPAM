@@ -8,10 +8,7 @@
           <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Dashboard</h1>
         </div>
         <div class="flex items-center gap-3">
-          <label class="relative block w-full min-w-[260px] lg:w-[420px]">
-            <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">/</span>
-            <input class="form-input pl-10" placeholder="Search IPs, subnets, devices, MACs">
-          </label>
+          {{ template "search_box" . }}
         </div>
       </div>
     </header>
