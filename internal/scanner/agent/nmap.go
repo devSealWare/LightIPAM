@@ -24,21 +24,50 @@ type Discoverer interface {
 // parsing without a real nmap binary or raw-socket privileges.
 type commandRunner func(ctx context.Context, name string, args []string) ([]byte, error)
 
+// EgressOptions pins nmap's raw probes to a specific source interface and
+// address. On a dual-homed agent (control-plane bridge + macvlan LAN) the
+// default route points at the bridge, so without pinning, nmap's SYN/OS probes
+// to a directly-connected LAN target can egress (or have replies return on) the
+// wrong interface and never complete: the ARP ping succeeds — so the MAC is
+// reported — but service/OS detection silently comes back empty. Pinning every
+// scan to the LAN interface makes the results consistent regardless of whether
+// the target shares the agent's subnet. Both fields are empty by default, in
+// which case nmap chooses egress itself (the original bridge-only behavior).
+type EgressOptions struct {
+	Interface string // nmap -e <iface>
+	SourceIP  string // nmap -S <ip>
+}
+
+// args renders the egress pin as nmap flags, omitting any unset field.
+func (e EgressOptions) args() []string {
+	var out []string
+	if strings.TrimSpace(e.Interface) != "" {
+		out = append(out, "-e", e.Interface)
+	}
+	if strings.TrimSpace(e.SourceIP) != "" {
+		out = append(out, "-S", e.SourceIP)
+	}
+	return out
+}
+
 // NmapDiscoverer drives the nmap binary to perform host discovery, TCP service
 // detection, and OS probing. The depth of each scan is bounded by the job's
 // mode; passive jobs never reach here.
 type NmapDiscoverer struct {
 	binary string
+	egress EgressOptions
 	run    commandRunner
 }
 
 // NewNmapDiscoverer returns a discoverer that shells out to the nmap binary at
-// the given path (defaulting to "nmap" on PATH).
-func NewNmapDiscoverer(binary string) *NmapDiscoverer {
+// the given path (defaulting to "nmap" on PATH). egress optionally pins every
+// scan to a source interface/address (see EgressOptions); pass the zero value
+// to let nmap choose its own egress.
+func NewNmapDiscoverer(binary string, egress EgressOptions) *NmapDiscoverer {
 	if strings.TrimSpace(binary) == "" {
 		binary = "nmap"
 	}
-	return &NmapDiscoverer{binary: binary, run: execCommand}
+	return &NmapDiscoverer{binary: binary, egress: egress, run: execCommand}
 }
 
 func execCommand(ctx context.Context, name string, args []string) ([]byte, error) {
@@ -66,7 +95,7 @@ func execCommand(ctx context.Context, name string, args []string) ([]byte, error
 
 // Discover runs nmap for the job and parses its XML output into observations.
 func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
-	args, active, err := nmapArgs(job)
+	args, active, err := nmapArgs(job, n.egress)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -109,7 +138,7 @@ func topPortsForMode(mode scanner.ScanMode) int {
 // the job requires no active probing (passive mode), in which case nmap is not
 // run at all. Targets are appended last, after "--", and are already validated
 // to fall within the job allowlist before this point.
-func nmapArgs(job scanner.ScanJob) ([]string, bool, error) {
+func nmapArgs(job scanner.ScanJob, egress EgressOptions) ([]string, bool, error) {
 	if job.Mode == scanner.ModePassive {
 		return nil, false, nil
 	}
@@ -120,6 +149,9 @@ func nmapArgs(job scanner.ScanJob) ([]string, bool, error) {
 	// -oX - emits XML on stdout; --privileged tells nmap to use raw sockets,
 	// which the agent container grants via the NET_RAW capability.
 	args := []string{"-oX", "-", "--privileged"}
+	// Pin the source interface/address when configured, so a dual-homed agent's
+	// probes consistently leave the LAN interface (see EgressOptions).
+	args = append(args, egress.args()...)
 
 	rate := job.RateLimit.ProbesPerSecond
 	if rate <= 0 {

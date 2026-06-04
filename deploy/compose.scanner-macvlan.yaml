@@ -15,6 +15,14 @@
 # macvlan interface (directly connected → ARP works → MAC is reported), while
 # app↔agent traffic stays on the bridge.
 #
+# Because the agent is dual-homed, its DEFAULT route points at the bridge. Left
+# alone, nmap's SYN/OS probes to a *same-subnet* target can leave (or have their
+# replies return on) the bridge instead of the macvlan, so service/OS detection
+# silently comes back empty even though the ARP ping reports the MAC. To fix
+# that we pin nmap to the macvlan via AGENT_SCAN_SOURCE_IP (below): every scan
+# then egresses the LAN interface, so same- and cross-subnet targets report the
+# same fields (minus the MAC across an L3 boundary, which is inherent).
+#
 # Usage (alongside the base compose, not instead of it):
 #
 #   docker compose -f compose.yaml -f deploy/compose.scanner-macvlan.yaml \
@@ -41,6 +49,14 @@
 
 services:
   scanner-agent:
+    environment:
+      # Pin nmap's raw probes to the macvlan LAN interface. A dual-homed agent's
+      # default route points at the control-plane bridge, so without this a
+      # *same-subnet* target's service/OS detection silently returns nothing even
+      # though ARP/MAC succeeds (and a routed, *cross-subnet* target gets OS/
+      # services but no MAC). Pinning makes both consistent. The agent resolves
+      # the interface that owns this IP, so only the address is needed here.
+      AGENT_SCAN_SOURCE_IP: ${SCAN_LAN_AGENT_IP:-192.168.0.250}
     networks:
       # Control-plane: unchanged bridge reachability for app -> agent mTLS.
       default: {}
