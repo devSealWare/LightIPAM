@@ -10,6 +10,7 @@
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "dashboard" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/">Dashboard</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "subnets" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/subnets">Subnets</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "devices" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/devices">Devices</a>
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "search" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/search">Search</a>
         <p class="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Discovery</p>
         <a class="flex items-center justify-between rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "discoveries" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/discoveries">
           <span>Discoveries</span>
@@ -38,6 +39,13 @@
     </section>
   </div>
 </main>
+{{ end }}
+
+{{ define "search_box" }}
+<form class="relative block w-full min-w-[260px] lg:w-[420px]" method="get" action="/search" role="search">
+  <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">/</span>
+  <input class="form-input pl-10" type="search" name="q" value="{{ .SearchQuery }}" placeholder="Search IPs, subnets, devices, MACs" autocomplete="off" aria-label="Search">
+</form>
 {{ end }}
 
 {{ define "status_badge" }}
