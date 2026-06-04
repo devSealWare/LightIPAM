@@ -311,6 +311,16 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS services jsonb NOT NULL DEFAULT '[]
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS discovery_source text NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 10,
+		sql: `
+-- MAC vendor as reported by the scanner (nmap reads it from the OUI database
+-- bundled with the agent, which is far more complete than our small built-in
+-- table). Carried through the discovery so import can prefer it over the
+-- app's best-effort OUI match.
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS vendor text NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

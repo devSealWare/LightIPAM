@@ -96,6 +96,7 @@ type ScanResult struct {
 type Observation struct {
 	IP         string               `json:"ip"`
 	MAC        string               `json:"mac,omitempty"`
+	Vendor     string               `json:"vendor,omitempty"`
 	Hostname   string               `json:"hostname,omitempty"`
 	OSFamily   string               `json:"os_family,omitempty"`
 	OSDetail   string               `json:"os_detail,omitempty"`
