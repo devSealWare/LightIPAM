@@ -244,6 +244,7 @@ func parseNmapXML(data []byte) ([]scanner.Observation, error) {
 			case "mac":
 				obs.MAC = addr.Addr
 				vendor = addr.Vendor
+				obs.Vendor = addr.Vendor
 			}
 		}
 		if obs.IP == "" {

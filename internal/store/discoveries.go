@@ -44,6 +44,7 @@ type Discovery struct {
 	AgentName         string
 	IP                string
 	MAC               string
+	Vendor            string
 	Hostname          string
 	OSFamily          string
 	OSDetail          string
@@ -63,6 +64,7 @@ type DiscoveryInput struct {
 	AgentID  string
 	IP       string
 	MAC      string
+	Vendor   string
 	Hostname string
 	OSFamily string
 	OSDetail string
@@ -106,12 +108,13 @@ func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) (Disc
 
 	out := DiscoveryUpsert{ReconcileStatus: status}
 	if err := s.db.QueryRow(ctx, `
-INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, hostname, os_family, os_detail, services, reconcile_status, conflict, last_seen_at)
-VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9::jsonb, $10, $11, now())
+INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, vendor, hostname, os_family, os_detail, services, reconcile_status, conflict, last_seen_at)
+VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9, $10::jsonb, $11, $12, now())
 ON CONFLICT (ip) DO UPDATE SET
 	job_id = EXCLUDED.job_id,
 	agent_id = EXCLUDED.agent_id,
 	mac = COALESCE(EXCLUDED.mac, scan_discoveries.mac),
+	vendor = CASE WHEN EXCLUDED.vendor <> '' THEN EXCLUDED.vendor ELSE scan_discoveries.vendor END,
 	hostname = CASE WHEN EXCLUDED.hostname <> '' THEN EXCLUDED.hostname ELSE scan_discoveries.hostname END,
 	os_family = CASE WHEN EXCLUDED.os_family <> '' THEN EXCLUDED.os_family ELSE scan_discoveries.os_family END,
 	os_detail = CASE WHEN EXCLUDED.os_detail <> '' THEN EXCLUDED.os_detail ELSE scan_discoveries.os_detail END,
@@ -122,7 +125,7 @@ ON CONFLICT (ip) DO UPDATE SET
 	updated_at = now()
 RETURNING id, status`,
 		id, emptyToNil(input.JobID), emptyToNil(input.AgentID), input.IP, emptyToNil(input.MAC),
-		input.Hostname, input.OSFamily, input.OSDetail, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
+		input.Vendor, input.Hostname, input.OSFamily, input.OSDetail, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
 		return DiscoveryUpsert{}, fmt.Errorf("upsert discovery: %w", err)
 	}
 
@@ -221,7 +224,7 @@ func (s *Store) ListDiscoveries(ctx context.Context, status, reconcile string, l
 	}
 	rows, err := s.db.Query(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	d.ip::text, COALESCE(d.mac::text, ''), d.hostname, d.os_family, d.os_detail, d.services::text,
+	d.ip::text, COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -248,7 +251,7 @@ LIMIT $3`, status, reconcile, limit)
 func (s *Store) GetDiscovery(ctx context.Context, id string) (Discovery, error) {
 	discovery, err := scanDiscovery(s.db.QueryRow(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	d.ip::text, COALESCE(d.mac::text, ''), d.hostname, d.os_family, d.os_detail, d.services::text,
+	d.ip::text, COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -395,7 +398,7 @@ WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(service
 	}
 
 	if discovery.MAC != "" {
-		if err := attachDiscoveryMAC(ctx, tx, deviceID, discovery.MAC); err != nil {
+		if err := attachDiscoveryMAC(ctx, tx, deviceID, discovery.MAC, discovery.Vendor); err != nil {
 			return "", err
 		}
 	}
@@ -428,14 +431,19 @@ func resolveImportDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) (s
 	return "", nil
 }
 
-// attachDiscoveryMAC records the observed MAC on the device with its OUI vendor
-// and private-rotating flag, if it is not already present.
-func attachDiscoveryMAC(ctx context.Context, tx pgx.Tx, deviceID, mac string) error {
-	vendor, isPrivate := "", false
+// attachDiscoveryMAC records the observed MAC on the device with its vendor and
+// private-rotating flag, if it is not already present. The vendor reported by
+// the scanner (nmap's bundled OUI database) is preferred; the app's small
+// built-in OUI table is only a fallback when the scan gave no vendor. When the
+// MAC is already recorded, an empty stored vendor is backfilled from the scan.
+func attachDiscoveryMAC(ctx context.Context, tx pgx.Tx, deviceID, mac, reportedVendor string) error {
+	vendor, isPrivate := reportedVendor, false
 	if analysis, err := macaddr.Analyze(mac); err == nil {
 		mac = analysis.Address
-		vendor = analysis.Vendor
 		isPrivate = analysis.IsPrivate
+		if vendor == "" {
+			vendor = analysis.Vendor
+		}
 	}
 	macID, err := auth.RandomToken(18)
 	if err != nil {
@@ -444,7 +452,9 @@ func attachDiscoveryMAC(ctx context.Context, tx pgx.Tx, deviceID, mac string) er
 	if _, err := tx.Exec(ctx, `
 INSERT INTO mac_addresses (id, device_id, address, vendor, is_private)
 VALUES ($1, $2, $3::macaddr, $4, $5)
-ON CONFLICT (address) DO NOTHING`, macID, deviceID, mac, vendor, isPrivate); err != nil {
+ON CONFLICT (address) DO UPDATE SET
+	vendor = CASE WHEN mac_addresses.vendor = '' AND EXCLUDED.vendor <> '' THEN EXCLUDED.vendor ELSE mac_addresses.vendor END`,
+		macID, deviceID, mac, vendor, isPrivate); err != nil {
 		return fmt.Errorf("create discovery mac: %w", err)
 	}
 	return nil
@@ -455,7 +465,7 @@ func scanDiscovery(row subnetScanner) (Discovery, error) {
 	var servicesJSON string
 	if err := row.Scan(
 		&d.ID, &d.JobID, &d.AgentID, &d.AgentName,
-		&d.IP, &d.MAC, &d.Hostname, &d.OSFamily, &d.OSDetail, &servicesJSON,
+		&d.IP, &d.MAC, &d.Vendor, &d.Hostname, &d.OSFamily, &d.OSDetail, &servicesJSON,
 		&d.Status, &d.ReconcileStatus, &d.Conflict, &d.ImportedAddressID, &d.ImportedDeviceID, &d.FirstSeenAt, &d.LastSeenAt,
 	); err != nil {
 		return Discovery{}, fmt.Errorf("scan discovery: %w", err)

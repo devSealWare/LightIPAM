@@ -52,6 +52,7 @@
         </span>
         <span class="min-w-0 text-xs text-zinc-600 dark:text-zinc-300">
           {{ if .MAC }}<span class="block font-mono">{{ .MAC }}</span>{{ end }}
+          {{ if .Vendor }}<span class="block text-zinc-400">{{ .Vendor }}</span>{{ end }}
           {{ if .OSDetail }}<span class="block">{{ .OSDetail }}</span>{{ else if .OSFamily }}<span class="block">{{ .OSFamily }}</span>{{ end }}
           {{ if and (not .MAC) (not .OSDetail) (not .OSFamily) }}<span class="text-zinc-400">—</span>{{ end }}
         </span>
