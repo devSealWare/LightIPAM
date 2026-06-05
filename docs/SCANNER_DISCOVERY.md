@@ -84,6 +84,41 @@ filled at import time from the built-in OUI table (`macaddr.Analyze`).
 SNMP session, so OID/MAC decoding and allowlist filtering are unit-tested without
 a real device.
 
+## SNMP device inventory (`snmp_inventory`)
+
+Where `arp_table` recovers a device's view of its *neighbors*, `snmp_inventory`
+asks a device about *itself*: what it is, and the IP↔MAC mapping for its own
+interfaces. Most managed gear (routers, switches, printers, servers, hypervisors)
+self-reports this over the standard MIB-II groups — facts nmap cannot fingerprint
+reliably across a router.
+
+- **Targets are the device(s) to inventory** (their IPs), handled by the same SNMP
+  backend (the `DiscoveryRouter` routes both `arp_table` and `snmp_inventory` to
+  it). For each target the agent issues one `Get` for the system group
+  (`sysDescr`/`sysObjectID`/`sysUpTime`/`sysContact`/`sysName`/`sysLocation`) and
+  walks `ipAdEntIfIndex` (IP→ifIndex), `ifPhysAddress` (ifIndex→MAC) and `ifDescr`
+  (ifIndex→name).
+- **One observation per in-scope IP the device owns,** each enriched with the
+  device's name (→ hostname), `sysDescr` (→ OS detail) and a coarse OS-family
+  guess, plus the MAC of that IP's interface. sysLocation/contact/uptime and
+  `sysObjectID` ride along as evidence.
+- **Allowlist-scoped, deduped, best-effort.** Only owned IPs inside the job
+  allowlist are reported, deduped by IP across targets. A failed system `Get` is a
+  per-target `snmp_failed` (SNMP not answering); the table walks are best-effort,
+  so a device that hides `ifTable` still yields its identity. A reachable device
+  with no in-scope owned address records itself against the in-scope target IP.
+- **Vendor via OUI, not `sysObjectID`.** SNMP interfaces report real MACs, so
+  vendor is filled at import from the OUI table (`macaddr.Analyze`) as usual;
+  `sysObjectID` is surfaced as evidence rather than mapped through a brittle
+  enterprise-number table.
+
+Unprivileged (UDP/161, no `NET_RAW`), no new dependency, no schema change —
+observations flow through the **same** review queue and reconciliation as nmap and
+`arp_table`, so an inventory record, an ARP-harvested MAC, and an nmap service
+scan all merge onto one discovery row per IP. A multi-homed device imports as one
+device per distinct interface MAC under the existing MAC-keyed import (deduping by
+name is future VLAN/interface-mapping work). See ADR 0007.
+
 ## Review queue (`/discoveries`)
 
 The agent never mutates IPAM data. The orchestrator persists each successful
@@ -193,3 +228,8 @@ To recover MACs for a subnet the agent cannot reach at Layer 2, run an
 `arp_table` scan instead: set `AGENT_SNMP_COMMUNITY` to match your gateway, pick
 the **arp_table** scan type and any active mode, and put the **gateway IP(s)** in
 Targets. The discovered IP↔MAC pairs land in the same `/discoveries` queue.
+
+To learn what a device is (and the MACs of its own interfaces), run an
+**snmp_inventory** scan with the same community: pick the type and any active
+mode, and put the **SNMP device IP(s)** in Targets. Each device's name, OS, and
+interface IP↔MAC mapping land in the same `/discoveries` queue.

@@ -55,11 +55,12 @@ and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-a
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 (migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
-**Roadmap Phase 4 has started:** SNMP ARP-table harvesting (`arp_table` scan
-type, ADR 0006) is merged — see "Scanner SNMP ARP Discovery" below. Next
-candidate work is the rest of Phase 4 (SNMP inventory, LLDP/CDP, DHCP leases, DNS
-enrichment, NetBIOS/mDNS names, VLAN/interface mapping) or the follow-ups under
-"Next" below.
+**Roadmap Phase 4 is underway:** two SNMP sources are merged — ARP-table
+harvesting (`arp_table` scan type, ADR 0006) and device inventory
+(`snmp_inventory` scan type, ADR 0007) — see "Scanner SNMP ARP Discovery" and
+"Scanner SNMP Inventory" below. Next candidate work is the rest of Phase 4
+(LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names, VLAN/interface
+mapping) or the follow-ups under "Next" below.
 
 Issue #10 (merged) scope:
 
@@ -118,6 +119,28 @@ SNMP observations reuse the existing review-queue + reconciliation path; the
 `UpsertDiscovery` services column now preserves an earlier non-empty list when a
 new (MAC-only) observation has none, so SNMP + nmap merge on the same IP. See
 `docs/SCANNER_DISCOVERY.md`, ADR 0006.
+
+## Scanner SNMP Inventory (merged, Phase 4, ADR 0007)
+
+`internal/scanner/agent/snmp.go` gained a second SNMP behavior: the
+`snmp_inventory` scan type asks a device about *itself* (vs. `arp_table`, which
+asks about its neighbors). Per target it does one SNMP `Get` of the system group
+(`sysDescr/sysObjectID/sysUpTime/sysContact/sysName/sysLocation`) and walks
+`ipAdEntIfIndex` (IP→ifIndex), `ifPhysAddress` (ifIndex→MAC) and `ifDescr`
+(ifIndex→name), joining them into **one observation per in-scope IP the device
+owns** — name → hostname, sysDescr → OSDetail, a coarse `classifyOSFamily` guess,
+and the owning interface's MAC. sysLocation/contact/uptime + sysObjectID ride as
+evidence. `Discover` now shares the job preamble then dispatches by type
+(`discoverARP` / `discoverInventory`); the `DiscoveryRouter` registers the one
+`SNMPDiscoverer` for both `arp_table` and `snmp_inventory`. System-`Get` failure
+is a per-target `snmp_failed`; the table walks are best-effort; a reachable device
+owning no in-scope address records itself against the in-scope target IP. Vendor
+still comes from the import-time OUI lookup (real interface MACs), not a
+`sysObjectID` table. **No new privilege, no new dependency (gosnmp from #41), no
+DB migration** — observations reuse the same review-queue + reconciliation, so an
+inventory record, an ARP MAC, and an nmap service scan merge on one IP. New scan
+type added to `scanTypeOptions()` and the scan-form help text. See
+`docs/SCANNER_DISCOVERY.md`, ADR 0007.
 
 Phase 3 follow-ups (merged, #18):
 
@@ -192,9 +215,9 @@ The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 
 Remaining candidate follow-ups, roughly in priority order:
 
-- **Phase 4 (Network Context):** SNMP ARP-table harvesting is **done** (ADR
-  0006). Remaining: SNMP device inventory (interfaces/sysDescr), LLDP/CDP
-  neighbors, DHCP lease ingestion, DNS enrichment, NetBIOS/mDNS names,
+- **Phase 4 (Network Context):** SNMP ARP-table harvesting (ADR 0006) and SNMP
+  device inventory (interfaces/sysDescr, ADR 0007) are **done**. Remaining:
+  LLDP/CDP neighbors, DHCP lease ingestion, DNS enrichment, NetBIOS/mDNS names,
   VLAN/interface mapping. Each new source should reuse the discovery
   review-queue + reconciliation pattern and stay in the agent, not the app.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
