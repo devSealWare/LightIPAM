@@ -129,6 +129,28 @@ Phase 3 follow-ups (merged, #18):
   (`app.parseScanResult`) into per-host cards (MAC, OS, services table, evidence);
   raw JSON kept in a collapsed block.
 
+## Recent UI / IPAM work (merged to `main`)
+
+- **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
+  `store.Search`, `search.go`).
+- **#36 MAC vendor carry-through** — nmap's OUI vendor flows through discovery
+  into device/MAC records.
+- **#37 nmap egress pinning** — `EgressOptions` (`-e`/`-S`) pins probes to the
+  LAN interface for consistent cross-subnet scans on a dual-homed agent
+  (`AGENT_SCAN_SOURCE_IP` / `AGENT_SCAN_INTERFACE`).
+- **#38 Devices tab grouped by subnet** + name-at-import; per-device "lowest IP"
+  via `LEFT JOIN LATERAL` (`DeviceGroup`, `Device.PrimarySubnet*`).
+- **#39 Host IP display** — single-host `ip_addresses`/discovery `inet` render via
+  PostgreSQL `host()` (no redundant `/32`); real `subnets.cidr` keeps its prefix.
+  Devices tab gained a dedicated monospace IP column (`Device.PrimaryIP`, `+N`
+  badge, `sub` template func).
+- **#40 Selectable table columns** — per-table "Columns" dropdown on Subnets and
+  Devices, persisted in `localStorage`. Served JS `internal/ui/static/columns.js`
+  (`ui.StaticJS`, embedded; route `GET /static/columns.js`), referenced from
+  `base.html`. Progressive enhancement (all columns render server-side); strict
+  CSP unchanged (same-origin script, no inline JS). Menu markup lives in the
+  templates so Tailwind generates its classes.
+
 ## Verification
 
 Run:
