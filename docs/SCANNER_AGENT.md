@@ -72,6 +72,8 @@ rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
 | `AGENT_NAME`          | `local-scanner-agent`        | Human-readable name.                      |
 | `AGENT_SITE_ID`       | (unset)                      | Optional site association.                |
 | `AGENT_ALLOWED_CIDRS` | (required)                   | Comma-separated IPv4 CIDRs the agent may scan. |
+| `AGENT_SCAN_SOURCE_IP`| (unset)                      | Pin nmap's probes to the interface owning this IP (the macvlan LAN IP). See "Consistent scans across subnets". |
+| `AGENT_SCAN_INTERFACE`| (unset)                      | Name the egress interface directly instead of resolving it from the source IP. |
 | `APP_CLIENT_CN`       | `light-ipam-app`             | Required client certificate CommonName.   |
 | `SCANNER_TLS_CERT`    | `/certs/agent.crt`           | Agent server certificate.                 |
 | `SCANNER_TLS_KEY`     | `/certs/agent.key`           | Agent server key.                         |
@@ -125,6 +127,34 @@ the macvlan carries only the agent's outbound scans.
 After re-scanning over macvlan, observations include MACs; importing them (or
 auto-import on a trusted agent) then creates the device + MAC record and links
 the address to it.
+
+### Consistent scans across subnets
+
+The macvlan agent is **dual-homed**: the control-plane bridge and the LAN
+macvlan. Its *default route* points at the bridge, which creates an asymmetry:
+
+- **Same subnet as the agent** (L2-connected over macvlan): the ARP ping
+  succeeds — so hostname + MAC come back — but nmap's SYN/OS probes can leave
+  (or have replies return on) the bridge instead of the macvlan, so **service
+  and OS detection silently return nothing**.
+- **Different subnet** (routed): OS + services come back, but **no MAC** — this
+  half is inherent to crossing an L3 boundary and cannot be fixed.
+
+The overlay closes the same-subnet gap by pinning every scan to the LAN
+interface. It sets `AGENT_SCAN_SOURCE_IP` to the agent's macvlan IP; on startup
+the agent finds the interface owning that address and runs nmap with
+`-e <iface> -S <ip>`, so all probes egress the macvlan. Same- and cross-subnet
+targets then report the **same fields** (minus the MAC across a routed boundary).
+Set `AGENT_SCAN_INTERFACE` to name the interface directly if you prefer. With
+neither set (the plain bridge setup) nmap chooses its own egress, unchanged.
+
+Verify the pin from inside the container if a same-subnet scan still misses
+services:
+
+```sh
+docker compose exec scanner-agent ip route get <target-ip>   # should leave the macvlan iface
+docker compose exec scanner-agent ip -br addr                # confirm the macvlan IP/iface name
+```
 
 ## Scan timeouts
 
