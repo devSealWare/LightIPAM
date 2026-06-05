@@ -62,10 +62,11 @@
           {{ else }}<span class="text-zinc-400">no open ports</span>{{ end }}
         </span>
         <span>{{ template "status_badge" .Status }}</span>
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex flex-col items-end gap-2">
           {{ if eq .Status "pending" }}
-          <form method="post" action="/discoveries/{{ .ID }}/import">
+          <form method="post" action="/discoveries/{{ .ID }}/import" class="flex items-center gap-2">
             <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <input class="form-input h-9 w-32 text-xs" type="text" name="device_name" autocomplete="off" placeholder="{{ if .Hostname }}{{ .Hostname }}{{ else }}host-{{ .IP }}{{ end }}" aria-label="Device name" title="Optional device name. Leave blank to use the detected hostname or host-{{ .IP }}.">
             <button class="{{ if eq .ReconcileStatus "conflict" }}button-muted{{ else }}button-primary{{ end }} h-9 px-3 text-xs" type="submit">Import</button>
           </form>
           <form method="post" action="/discoveries/{{ .ID }}/dismiss">
@@ -73,8 +74,9 @@
             <button class="button-muted h-9 px-3 text-xs" type="submit">Dismiss</button>
           </form>
           {{ else if eq .Status "dismissed" }}
-          <form method="post" action="/discoveries/{{ .ID }}/import">
+          <form method="post" action="/discoveries/{{ .ID }}/import" class="flex items-center gap-2">
             <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <input class="form-input h-9 w-32 text-xs" type="text" name="device_name" autocomplete="off" placeholder="{{ if .Hostname }}{{ .Hostname }}{{ else }}host-{{ .IP }}{{ end }}" aria-label="Device name" title="Optional device name. Leave blank to use the detected hostname or host-{{ .IP }}.">
             <button class="{{ if eq .ReconcileStatus "conflict" }}button-muted{{ else }}button-primary{{ end }} h-9 px-3 text-xs" type="submit" title="Import this previously dismissed host into IPAM">Import</button>
           </form>
           <span class="text-xs text-zinc-400">{{ datetime .LastSeenAt }}</span>

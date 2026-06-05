@@ -75,6 +75,25 @@ func TestRenderTemplates(t *testing.T) {
 			PrivateMACCount: 1,
 			Tags:            []string{"Private MAC"},
 		},
+		DeviceGroups: []store.DeviceGroup{
+			{
+				SubnetID:   "subnet-1",
+				SubnetName: "Office LAN",
+				CIDR:       "192.168.10.0/24",
+				Devices: []store.Device{{
+					ID:              "device-1",
+					Name:            "NAS",
+					Description:     "Storage",
+					AddressCount:    1,
+					MACCount:        1,
+					PrivateMACCount: 1,
+					Tags:            []string{"Private MAC"},
+				}},
+			},
+			{
+				Devices: []store.Device{{ID: "device-2", Name: "Unknown host"}},
+			},
+		},
 		MACAddresses: []store.MACAddress{{
 			ID:        "mac-1",
 			DeviceID:  "device-1",

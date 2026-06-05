@@ -184,7 +184,9 @@ func (s *Service) maybeAutoImport(ctx context.Context, agent store.ScanAgent, re
 	if !agent.AutoImport || result.ReviewStatus != "pending" || result.ReconcileStatus == store.ReconcileConflict {
 		return false
 	}
-	discovery, err := s.store.ImportDiscovery(ctx, result.ID)
+	// Auto-import never sets a manual name; it falls back to the hostname or a
+	// generated "host-<ip>" name, which an operator can rename later.
+	discovery, err := s.store.ImportDiscovery(ctx, result.ID, "")
 	if err != nil {
 		if errors.Is(err, store.ErrNoContainingSubnet) {
 			s.logger.Debug("auto-import skipped: no containing subnet", "id", result.ID)
