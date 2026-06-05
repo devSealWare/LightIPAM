@@ -69,6 +69,9 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		"join": func(values []string, sep string) string {
 			return strings.Join(values, sep)
 		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
 		"dict": func(pairs ...any) (map[string]any, error) {
 			if len(pairs)%2 != 0 {
 				return nil, fmt.Errorf("dict requires an even number of arguments")

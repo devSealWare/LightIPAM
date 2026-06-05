@@ -167,7 +167,7 @@ WHERE ip.address = $1::inet`, ip, macArg).Scan(&deviceName, &state, &macCount, &
 		if macArg != nil {
 			var otherIP string
 			e := s.db.QueryRow(ctx, `
-SELECT ip.address::text
+SELECT host(ip.address)
 FROM mac_addresses m
 JOIN ip_addresses ip ON ip.device_id = m.device_id
 WHERE m.address = $1::macaddr AND ip.address <> $2::inet
@@ -225,7 +225,7 @@ func (s *Store) ListDiscoveries(ctx context.Context, status, reconcile string, l
 	}
 	rows, err := s.db.Query(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	d.ip::text, COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -252,7 +252,7 @@ LIMIT $3`, status, reconcile, limit)
 func (s *Store) GetDiscovery(ctx context.Context, id string) (Discovery, error) {
 	discovery, err := scanDiscovery(s.db.QueryRow(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	d.ip::text, COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id

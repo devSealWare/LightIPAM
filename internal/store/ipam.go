@@ -200,7 +200,7 @@ func (s *Store) DeleteSubnet(ctx context.Context, id string) error {
 
 func (s *Store) ListAddresses(ctx context.Context, subnetID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
 FROM ip_addresses ip
 LEFT JOIN devices d ON d.id = ip.device_id
 WHERE ip.subnet_id = $1
@@ -238,7 +238,7 @@ func (s *Store) CreateAddress(ctx context.Context, subnet Subnet, input AddressI
 	if err := s.db.QueryRow(ctx, `
 INSERT INTO ip_addresses (id, subnet_id, device_id, address, state, hostname, notes)
 VALUES ($1, $2, $3, $4::inet, $5::address_state, $6, $7)
-RETURNING id, subnet_id, COALESCE(device_id, ''), address::text, state::text, hostname, notes, created_at, updated_at`,
+RETURNING id, subnet_id, COALESCE(device_id, ''), host(address), state::text, hostname, notes, created_at, updated_at`,
 		id, subnet.ID, emptyToNil(input.DeviceID), input.Address, input.State, input.Hostname, input.Notes,
 	).Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
 		return IPAddress{}, fmt.Errorf("create address: %w", err)
@@ -249,7 +249,7 @@ RETURNING id, subnet_id, COALESCE(device_id, ''), address::text, state::text, ho
 func (s *Store) GetAddress(ctx context.Context, id string) (IPAddress, error) {
 	var address IPAddress
 	if err := s.db.QueryRow(ctx, `
-SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
 FROM ip_addresses ip
 LEFT JOIN devices d ON d.id = ip.device_id
 WHERE ip.id = $1`, id).Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
