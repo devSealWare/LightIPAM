@@ -1,10 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"sort"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -26,8 +29,23 @@ type Device struct {
 	OSDetail        string
 	Services        []DiscoveryService
 	DiscoverySource string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Primary subnet: the subnet of the device's lowest-numbered IP. Used to
+	// group the Devices list. All three are empty for a device with no address.
+	PrimarySubnetID   string
+	PrimarySubnetName string
+	PrimarySubnetCIDR string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// DeviceGroup is a set of devices that share a primary subnet (the subnet of
+// each device's lowest IP). Devices with no address fall into a group with an
+// empty SubnetID/CIDR, rendered as "Unassigned".
+type DeviceGroup struct {
+	SubnetID   string
+	SubnetName string
+	CIDR       string
+	Devices    []Device
 }
 
 type MACAddress struct {
@@ -52,13 +70,22 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
+	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
 LEFT JOIN mac_addresses m ON m.device_id = d.id
 LEFT JOIN taggings tg ON tg.entity_type = 'device' AND tg.entity_id = d.id
 LEFT JOIN tags t ON t.id = tg.tag_id
-GROUP BY d.id
+LEFT JOIN LATERAL (
+	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr
+	FROM ip_addresses ipx
+	JOIN subnets sub ON sub.id = ipx.subnet_id
+	WHERE ipx.device_id = d.id
+	ORDER BY ipx.address
+	LIMIT 1
+) ps ON true
+GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr
 ORDER BY d.name`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
@@ -76,6 +103,48 @@ ORDER BY d.name`)
 	return devices, rows.Err()
 }
 
+// ListDeviceGroups returns all devices bucketed by their primary subnet (the
+// subnet of each device's lowest IP). Groups are ordered by subnet CIDR, with
+// addressless devices collected in a trailing "Unassigned" group (empty
+// SubnetID). Within a group, devices keep ListDevices' by-name ordering.
+func (s *Store) ListDeviceGroups(ctx context.Context) ([]DeviceGroup, error) {
+	devices, err := s.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make(map[string]*DeviceGroup)
+	for i := range devices {
+		d := devices[i]
+		g, ok := groups[d.PrimarySubnetID]
+		if !ok {
+			g = &DeviceGroup{
+				SubnetID:   d.PrimarySubnetID,
+				SubnetName: d.PrimarySubnetName,
+				CIDR:       d.PrimarySubnetCIDR,
+			}
+			groups[d.PrimarySubnetID] = g
+		}
+		g.Devices = append(g.Devices, d)
+	}
+
+	out := make([]DeviceGroup, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, *g)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		// Unassigned (no subnet) always sorts last.
+		if (out[i].SubnetID == "") != (out[j].SubnetID == "") {
+			return out[j].SubnetID == ""
+		}
+		if out[i].CIDR != out[j].CIDR {
+			return lessCIDR(out[i].CIDR, out[j].CIDR)
+		}
+		return out[i].SubnetName < out[j].SubnetName
+	})
+	return out, nil
+}
+
 func (s *Store) GetDevice(ctx context.Context, id string) (Device, error) {
 	device, err := scanDevice(s.db.QueryRow(ctx, `
 SELECT d.id, d.name, d.description,
@@ -84,14 +153,23 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
+	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
 LEFT JOIN mac_addresses m ON m.device_id = d.id
 LEFT JOIN taggings tg ON tg.entity_type = 'device' AND tg.entity_id = d.id
 LEFT JOIN tags t ON t.id = tg.tag_id
+LEFT JOIN LATERAL (
+	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr
+	FROM ip_addresses ipx
+	JOIN subnets sub ON sub.id = ipx.subnet_id
+	WHERE ipx.device_id = d.id
+	ORDER BY ipx.address
+	LIMIT 1
+) ps ON true
 WHERE d.id = $1
-GROUP BY d.id`, id))
+GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr`, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Device{}, ErrNotFound
@@ -251,6 +329,29 @@ ON CONFLICT DO NOTHING`, tagID, deviceID); err != nil {
 	return nil
 }
 
+// lessCIDR orders two CIDR strings by network address, then prefix length, so
+// device-group sections read in natural subnet order. Unparseable values sort
+// after parseable ones (and then lexically) rather than panicking.
+func lessCIDR(a, b string) bool {
+	ipA, netA, errA := net.ParseCIDR(a)
+	ipB, netB, errB := net.ParseCIDR(b)
+	if errA != nil || errB != nil {
+		if errA == nil {
+			return true
+		}
+		if errB == nil {
+			return false
+		}
+		return a < b
+	}
+	if c := bytes.Compare(ipA.To16(), ipB.To16()); c != 0 {
+		return c < 0
+	}
+	sizeA, _ := netA.Mask.Size()
+	sizeB, _ := netB.Mask.Size()
+	return sizeA < sizeB
+}
+
 func scanDevice(scanner subnetScanner) (Device, error) {
 	var device Device
 	var servicesJSON string
@@ -266,6 +367,9 @@ func scanDevice(scanner subnetScanner) (Device, error) {
 		&device.OSDetail,
 		&servicesJSON,
 		&device.DiscoverySource,
+		&device.PrimarySubnetID,
+		&device.PrimarySubnetName,
+		&device.PrimarySubnetCIDR,
 		&device.CreatedAt,
 		&device.UpdatedAt,
 	); err != nil {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
@@ -53,7 +54,8 @@ func (a *App) discoveryImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	discovery, err := a.store.ImportDiscovery(r.Context(), id)
+	name := strings.TrimSpace(r.FormValue("device_name"))
+	discovery, err := a.store.ImportDiscovery(r.Context(), id, name)
 	if err != nil {
 		if errors.Is(err, store.ErrNoContainingSubnet) {
 			http.Redirect(w, r, "/discoveries?error="+url.QueryEscape("No managed subnet contains that address — create the subnet first, then import."), http.StatusSeeOther)

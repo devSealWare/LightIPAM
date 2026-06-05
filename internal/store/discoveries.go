@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -282,8 +283,12 @@ WHERE id = $1 AND status <> 'imported'`, id)
 
 // ImportDiscovery promotes a discovery into the IPAM records: it creates or
 // updates the IP address in its containing subnet and, when a MAC is known,
-// attaches it to a device. The whole import is one transaction.
-func (s *Store) ImportDiscovery(ctx context.Context, id string) (Discovery, error) {
+// attaches it to a device. The whole import is one transaction. An optional
+// name lets the operator label the device at import time (handy when the host
+// has no reverse-DNS hostname and would otherwise be named "host-<ip>"); a blank
+// name falls back to the hostname / generated name and never clobbers an
+// operator-set name on re-import.
+func (s *Store) ImportDiscovery(ctx context.Context, id, name string) (Discovery, error) {
 	discovery, err := s.GetDiscovery(ctx, id)
 	if err != nil {
 		return Discovery{}, err
@@ -304,7 +309,7 @@ SELECT id FROM subnets WHERE cidr >>= $1::inet ORDER BY masklen(cidr) DESC LIMIT
 		return Discovery{}, fmt.Errorf("find containing subnet: %w", err)
 	}
 
-	deviceID, err := importDiscoveryDevice(ctx, tx, discovery)
+	deviceID, err := importDiscoveryDevice(ctx, tx, discovery, name)
 	if err != nil {
 		return Discovery{}, err
 	}
@@ -351,7 +356,12 @@ WHERE id = $1`, discovery.ID, addressID, emptyToNil(deviceID)); err != nil {
 // host (e.g. one scanned over bridged networking), so every imported address
 // also appears under Devices. The device is reused on re-import, identified
 // first by the discovery's prior import, then by the observed MAC.
-func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) (string, error) {
+//
+// name is the operator's optional label from the import form. When provided it
+// wins, even on re-import (the operator is explicitly renaming). When blank, a
+// new device falls back to the hostname or a generated "host-<ip>" name, and an
+// existing device keeps whatever name it already has.
+func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery, name string) (string, error) {
 	deviceID, err := resolveImportDevice(ctx, tx, discovery)
 	if err != nil {
 		return "", err
@@ -365,11 +375,15 @@ func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) 
 	if source == "" {
 		source = "scan"
 	}
+	manualName := strings.TrimSpace(name)
 
 	if deviceID == "" {
-		name := discovery.Hostname
-		if name == "" {
-			name = "host-" + discovery.IP
+		deviceName := manualName
+		if deviceName == "" {
+			deviceName = discovery.Hostname
+		}
+		if deviceName == "" {
+			deviceName = "host-" + discovery.IP
 		}
 		deviceID, err = auth.RandomToken(18)
 		if err != nil {
@@ -378,21 +392,23 @@ func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery) 
 		if _, err := tx.Exec(ctx, `
 INSERT INTO devices (id, name, description, os_family, os_detail, services, discovery_source)
 VALUES ($1, $2, 'Created from scan discovery', $3, $4, $5::jsonb, $6)`,
-			deviceID, name, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+			deviceID, deviceName, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
 			return "", fmt.Errorf("create discovery device: %w", err)
 		}
 	} else {
-		// Refresh the discovered facts on an existing device. The operator-visible
-		// name is left untouched; OS, services, and source always reflect the
-		// latest observation (empty OS values do not clobber an earlier guess).
+		// Refresh the discovered facts on an existing device. OS, services, and
+		// source always reflect the latest observation (empty OS values do not
+		// clobber an earlier guess). The name is left untouched unless the operator
+		// supplied an explicit one with this import.
 		if _, err := tx.Exec(ctx, `
 UPDATE devices SET
+	name = CASE WHEN $6 <> '' THEN $6 ELSE name END,
 	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
 	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
 	services = $4::jsonb,
 	discovery_source = $5,
 	updated_at = now()
-WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source, manualName); err != nil {
 			return "", fmt.Errorf("update discovery device: %w", err)
 		}
 	}

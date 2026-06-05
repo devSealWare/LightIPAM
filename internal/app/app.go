@@ -501,18 +501,18 @@ func (a *App) devicesIndex(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	devices, err := a.store.ListDevices(r.Context())
+	groups, err := a.store.ListDeviceGroups(r.Context())
 	if err != nil {
-		a.logger.Error("list devices", "error", err)
+		a.logger.Error("list device groups", "error", err)
 		http.Error(w, "Unable to load devices", http.StatusInternalServerError)
 		return
 	}
 	_ = ui.Render(w, "devices.html", ui.PageData{
-		Title:     "Devices",
-		User:      session.User,
-		CSRF:      session.CSRFToken,
-		Devices:   devices,
-		ActiveNav: "devices",
+		Title:        "Devices",
+		User:         session.User,
+		CSRF:         session.CSRFToken,
+		DeviceGroups: groups,
+		ActiveNav:    "devices",
 	})
 }
 
