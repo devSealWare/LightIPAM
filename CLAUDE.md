@@ -55,8 +55,11 @@ and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-a
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 (migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
-Next candidate work is Roadmap Phase 4 (Network Context) or the remaining
-follow-ups listed under "Next" below.
+**Roadmap Phase 4 has started:** SNMP ARP-table harvesting (`arp_table` scan
+type, ADR 0006) is merged — see "Scanner SNMP ARP Discovery" below. Next
+candidate work is the rest of Phase 4 (SNMP inventory, LLDP/CDP, DHCP leases, DNS
+enrichment, NetBIOS/mDNS names, VLAN/interface mapping) or the follow-ups under
+"Next" below.
 
 Issue #10 (merged) scope:
 
@@ -97,6 +100,24 @@ orchestrator persists successful observations via `store.UpsertDiscovery`; the
 app exposes `/discoveries` (import/dismiss) plus app-pull agent enrollment
 (`/agents/discover`, `/agents/{id}/approve`, boot-time auto-enroll). See
 `docs/SCANNER_DISCOVERY.md`, ADR 0005.
+
+## Scanner SNMP ARP Discovery (merged, Phase 4, ADR 0006)
+
+`internal/scanner/agent/snmp.go` adds a second `Discoverer` backend: the
+`arp_table` scan type harvests IP↔MAC bindings from a gateway/L3 device's
+`ipNetToMediaTable` (`1.3.6.1.2.1.4.22.1.2`) over SNMP, recovering MACs for
+subnets the agent cannot reach at Layer 2 (ARP does not cross routers). A
+`DiscoveryRouter` (`router.go`) routes `arp_table` → SNMP and everything else →
+nmap. **Unprivileged: UDP/161, no `NET_RAW`** — the agent's capability set is
+unchanged. Targets are the gateway IPs to query; emitted observations are
+filtered to the job allowlist. gosnmp behind an injectable `snmpSession`/dialer
+keeps parsing/filtering hermetically testable. v2c read community lives on the
+agent (`AGENT_SNMP_COMMUNITY`, default `public`; also `AGENT_SNMP_VERSION/PORT/
+TIMEOUT/RETRIES`), never the app DB; `SNMPConfig` is shaped for SNMPv3 later.
+SNMP observations reuse the existing review-queue + reconciliation path; the
+`UpsertDiscovery` services column now preserves an earlier non-empty list when a
+new (MAC-only) observation has none, so SNMP + nmap merge on the same IP. See
+`docs/SCANNER_DISCOVERY.md`, ADR 0006.
 
 Phase 3 follow-ups (merged, #18):
 
@@ -149,10 +170,11 @@ The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 
 Remaining candidate follow-ups, roughly in priority order:
 
-- **Phase 4 (Network Context):** SNMP inventory, LLDP/CDP neighbors, DHCP lease
-  ingestion, DNS enrichment, VLAN/interface mapping. Each new source should reuse
-  the discovery review-queue + reconciliation pattern and stay in the agent, not
-  the app.
+- **Phase 4 (Network Context):** SNMP ARP-table harvesting is **done** (ADR
+  0006). Remaining: SNMP device inventory (interfaces/sysDescr), LLDP/CDP
+  neighbors, DHCP lease ingestion, DNS enrichment, NetBIOS/mDNS names,
+  VLAN/interface mapping. Each new source should reuse the discovery
+  review-queue + reconciliation pattern and stay in the agent, not the app.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
   (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 

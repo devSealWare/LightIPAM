@@ -1,8 +1,9 @@
-// Command scanner-agent runs the Light IPAM scanner agent. At this stage it is
-// a no-op agent: it authenticates the app over mTLS, validates submitted scan
-// jobs against its registered allowlist, and reports empty results. It performs
-// no active network scanning. Privileged discovery (Nmap) arrives in a later
-// issue and stays isolated to this component.
+// Command scanner-agent runs the Light IPAM scanner agent. It authenticates the
+// app over mTLS, validates submitted scan jobs against its registered allowlist,
+// and runs the discovery backend selected by scan type: nmap for active
+// host/service/OS probing (raw sockets, NET_RAW) and SNMP for ARP-table
+// harvesting (ordinary UDP/161, no extra privilege). All privileged behavior is
+// isolated to this component; the web app never carries it.
 package main
 
 import (
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -70,12 +72,18 @@ func main() {
 	// Active discovery is performed by nmap, which uses raw sockets granted to
 	// this container (and only this container) via the NET_RAW capability. The
 	// app never carries this risk profile.
-	discoverer := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
+	nmap := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
+
+	// SNMP ARP-table harvesting is a separate, unprivileged backend: it speaks
+	// UDP/161 from an ordinary socket (no NET_RAW) to read a gateway's neighbor
+	// cache. The router sends arp_table jobs to it and everything else to nmap.
+	router := agent.NewDiscoveryRouter(nmap).
+		Register(scanner.ScanARPTable, resolveSNMP(logger))
 
 	a := agent.New(agent.Config{
 		Registration:     registration,
 		ExpectedClientCN: getenv("APP_CLIENT_CN", pki.AppClientCN),
-		Discoverer:       discoverer,
+		Discoverer:       router,
 		Logger:           logger,
 	})
 
@@ -138,6 +146,39 @@ func resolveEgress(logger *slog.Logger) agent.EgressOptions {
 			"interface", egress.Interface, "source_ip", egress.SourceIP)
 	}
 	return egress
+}
+
+// resolveSNMP builds the SNMP ARP-table discovery backend from the agent's
+// environment. v2c is the only wired version today; the read community defaults
+// to "public". The SNMP read credential lives on the agent (here), never in the
+// app's job records or audit logs, keeping the secret on the scanning component.
+func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
+	cfg := agent.SNMPConfig{
+		Version:   agent.SNMPVersion(getenv("AGENT_SNMP_VERSION", "2c")),
+		Community: getenv("AGENT_SNMP_COMMUNITY", "public"),
+		Port:      uint16(atoiDefault(os.Getenv("AGENT_SNMP_PORT"), 161)),
+		Timeout:   time.Duration(atoiDefault(os.Getenv("AGENT_SNMP_TIMEOUT"), 5)) * time.Second,
+		Retries:   atoiDefault(os.Getenv("AGENT_SNMP_RETRIES"), 1),
+	}
+	logger.Info("SNMP ARP-table discovery enabled",
+		"version", cfg.Version,
+		"port", cfg.Port,
+		"timeout", cfg.Timeout.String(),
+	)
+	return agent.NewSNMPDiscoverer(cfg)
+}
+
+// atoiDefault parses s as a base-10 int, returning fallback when s is empty or
+// malformed.
+func atoiDefault(s string, fallback int) int {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 // interfaceForIP returns the name of the local interface that owns ip.
