@@ -50,6 +50,12 @@ services:
       SCANNER_TLS_CERT: /certs/agent.crt
       SCANNER_TLS_KEY: /certs/agent.key
       SCANNER_TLS_CA: /certs/ca.crt
+      # SNMP ARP-table harvesting (arp_table scan type): the agent queries a
+      # gateway/L3 device's neighbor cache over UDP/161 to recover IP↔MAC pairs
+      # for subnets it cannot reach at Layer 2. v2c read-only; set the community
+      # to match your gateways. The credential stays on the agent, never the app.
+      AGENT_SNMP_VERSION: "2c"
+      AGENT_SNMP_COMMUNITY: "public"
     volumes:
       - ./deploy/scanner-certs:/certs:ro
     read_only: true

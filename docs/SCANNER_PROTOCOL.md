@@ -60,10 +60,13 @@ Required fields:
 - `id`: stable job ID.
 - `agent_id`: intended agent.
 - `requested_by`: user ID or system.
-- `scan_type`: `host_discovery`, `service_detection`, `os_probe`, or `combined`.
+- `scan_type`: `host_discovery`, `service_detection`, `os_probe`, `combined`, or
+  `arp_table`.
 - `mode`: `passive`, `light_active`, `standard_active`, or `deep_active`.
 - `allowed_cidrs`: explicit IPv4 CIDRs for this job.
-- `targets`: IPv4 CIDRs or individual IPv4 addresses.
+- `targets`: IPv4 CIDRs or individual IPv4 addresses. For an `arp_table` scan
+  these are the gateway/L3 device IPs to query over SNMP (see ADR 0006); the
+  agent reports the cached IP↔MAC neighbors that fall within `allowed_cidrs`.
 - `ports`: optional TCP/UDP port selections.
 - `rate_limit`: packet/probe rate policy.
 - `timeout_seconds`: job timeout.

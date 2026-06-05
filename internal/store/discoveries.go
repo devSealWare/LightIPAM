@@ -119,7 +119,10 @@ ON CONFLICT (ip) DO UPDATE SET
 	hostname = CASE WHEN EXCLUDED.hostname <> '' THEN EXCLUDED.hostname ELSE scan_discoveries.hostname END,
 	os_family = CASE WHEN EXCLUDED.os_family <> '' THEN EXCLUDED.os_family ELSE scan_discoveries.os_family END,
 	os_detail = CASE WHEN EXCLUDED.os_detail <> '' THEN EXCLUDED.os_detail ELSE scan_discoveries.os_detail END,
-	services = EXCLUDED.services,
+	-- Preserve a richer earlier service list when this observation has none, so a
+	-- MAC-only source (SNMP ARP harvest) merging onto the same IP does not wipe
+	-- the services an nmap scan recorded. A non-empty list still replaces wholesale.
+	services = CASE WHEN jsonb_array_length(EXCLUDED.services) > 0 THEN EXCLUDED.services ELSE scan_discoveries.services END,
 	reconcile_status = EXCLUDED.reconcile_status,
 	conflict = EXCLUDED.conflict,
 	last_seen_at = now(),

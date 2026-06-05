@@ -39,7 +39,11 @@ Follow-ups merged on top of Phase 3 (#18):
 
 ## Phase 4: Network Context
 
-- SNMP device inventory.
+- SNMP ARP-table harvesting (**done**, ADR 0006). The `arp_table` scan type
+  queries a gateway/L3 device's `ipNetToMediaTable` over SNMP to recover IP↔MAC
+  bindings for subnets the agent cannot reach at Layer 2. Unprivileged (UDP/161,
+  no `NET_RAW`); reuses the discovery review-queue + reconciliation pattern.
+- SNMP device inventory (interfaces, sysDescr, etc.).
 - LLDP/CDP neighbor ingestion.
 - DHCP lease ingestion.
 - DNS forward/reverse enrichment.

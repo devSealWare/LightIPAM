@@ -10,3 +10,6 @@ node_modules/
 
 # Generated dev mTLS material for the scanner agent (never commit keys).
 deploy/scanner-certs/
+# Stray compiled binaries from `go build ./cmd/...` at the repo root.
+/scanner-agent
+/server
