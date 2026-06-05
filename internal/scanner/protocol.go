@@ -31,6 +31,15 @@ const (
 	// MAC addresses are recovered for hosts on subnets the agent cannot reach at
 	// Layer 2 (ARP does not cross routers).
 	ScanARPTable ScanType = "arp_table"
+	// ScanSNMPInventory queries an SNMP-capable device's own identity (system
+	// group: sysDescr/sysName/...) and its interface/IP-address tables, rather
+	// than probing other hosts. Targets are the device(s) to inventory; the agent
+	// emits one observation per in-scope IP the device owns, enriched with its
+	// name, OS guess, and the MAC of the owning interface. This is how LightIPAM
+	// learns what a device is (router, printer, server) and the MACs of its own
+	// interfaces — facts nmap cannot fingerprint reliably across subnets but a
+	// device readily self-reports over SNMP.
+	ScanSNMPInventory ScanType = "snmp_inventory"
 )
 
 type ScanMode string
@@ -136,7 +145,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory:
 		return true
 	default:
 		return false

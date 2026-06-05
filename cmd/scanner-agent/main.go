@@ -74,11 +74,14 @@ func main() {
 	// app never carries this risk profile.
 	nmap := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
 
-	// SNMP ARP-table harvesting is a separate, unprivileged backend: it speaks
-	// UDP/161 from an ordinary socket (no NET_RAW) to read a gateway's neighbor
-	// cache. The router sends arp_table jobs to it and everything else to nmap.
+	// SNMP is a separate, unprivileged backend: it speaks UDP/161 from an ordinary
+	// socket (no NET_RAW) to read a gateway's neighbor cache (arp_table) or a
+	// device's own identity and interface/IP tables (snmp_inventory). The router
+	// sends both SNMP job types to it and everything else to nmap.
+	snmp := resolveSNMP(logger)
 	router := agent.NewDiscoveryRouter(nmap).
-		Register(scanner.ScanARPTable, resolveSNMP(logger))
+		Register(scanner.ScanARPTable, snmp).
+		Register(scanner.ScanSNMPInventory, snmp)
 
 	a := agent.New(agent.Config{
 		Registration:     registration,
@@ -148,10 +151,11 @@ func resolveEgress(logger *slog.Logger) agent.EgressOptions {
 	return egress
 }
 
-// resolveSNMP builds the SNMP ARP-table discovery backend from the agent's
-// environment. v2c is the only wired version today; the read community defaults
-// to "public". The SNMP read credential lives on the agent (here), never in the
-// app's job records or audit logs, keeping the secret on the scanning component.
+// resolveSNMP builds the SNMP discovery backend (arp_table + snmp_inventory) from
+// the agent's environment. v2c is the only wired version today; the read community
+// defaults to "public". The SNMP read credential lives on the agent (here), never
+// in the app's job records or audit logs, keeping the secret on the scanning
+// component.
 func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 	cfg := agent.SNMPConfig{
 		Version:   agent.SNMPVersion(getenv("AGENT_SNMP_VERSION", "2c")),
@@ -160,7 +164,7 @@ func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 		Timeout:   time.Duration(atoiDefault(os.Getenv("AGENT_SNMP_TIMEOUT"), 5)) * time.Second,
 		Retries:   atoiDefault(os.Getenv("AGENT_SNMP_RETRIES"), 1),
 	}
-	logger.Info("SNMP ARP-table discovery enabled",
+	logger.Info("SNMP discovery enabled (arp_table + snmp_inventory)",
 		"version", cfg.Version,
 		"port", cfg.Port,
 		"timeout", cfg.Timeout.String(),

@@ -51,7 +51,7 @@
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Targets</span>
           <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="targets" placeholder="192.168.10.0/25&#10;192.168.10.20">{{ index .Form "targets" }}</textarea>
-          <span class="mt-1 block text-xs text-zinc-400">IPv4 addresses or CIDRs, one per line. For an <span class="font-mono">arp_table</span> scan, list the gateway/router IPs to query over SNMP — the agent reports the IP↔MAC pairs they have cached.</span>
+          <span class="mt-1 block text-xs text-zinc-400">IPv4 addresses or CIDRs, one per line. For an <span class="font-mono">arp_table</span> scan, list the gateway/router IPs to query over SNMP — the agent reports the IP↔MAC pairs they have cached. For an <span class="font-mono">snmp_inventory</span> scan, list the SNMP-enabled device IPs to inventory — the agent reports each device's name, OS, and the MACs of its own interfaces.</span>
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timeout (seconds)</span>
