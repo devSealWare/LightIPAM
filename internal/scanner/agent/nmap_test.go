@@ -20,7 +20,7 @@ func argsContain(args []string, want string) bool {
 func TestNmapArgsPassiveSkipsScan(t *testing.T) {
 	job := validJob()
 	job.Mode = scanner.ModePassive
-	_, active, err := nmapArgs(job)
+	_, active, err := nmapArgs(job, EgressOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestNmapArgsHostDiscoveryUsesPingSweep(t *testing.T) {
 	job := validJob()
 	job.Type = scanner.ScanHostDiscovery
 	job.Mode = scanner.ModeLightActive
-	args, active, err := nmapArgs(job)
+	args, active, err := nmapArgs(job, EgressOptions{})
 	if err != nil || !active {
 		t.Fatalf("expected active host discovery, err=%v active=%v", err, active)
 	}
@@ -56,7 +56,7 @@ func TestNmapArgsDeepCombinedProbesServicesAndOS(t *testing.T) {
 	job := validJob()
 	job.Type = scanner.ScanCombined
 	job.Mode = scanner.ModeDeepActive
-	args, active, err := nmapArgs(job)
+	args, active, err := nmapArgs(job, EgressOptions{})
 	if err != nil || !active {
 		t.Fatalf("expected active scan, err=%v active=%v", err, active)
 	}
@@ -71,7 +71,7 @@ func TestNmapArgsLightActiveStaysShallow(t *testing.T) {
 	job := validJob()
 	job.Type = scanner.ScanCombined
 	job.Mode = scanner.ModeLightActive
-	args, _, err := nmapArgs(job)
+	args, _, err := nmapArgs(job, EgressOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestNmapArgsRespectsRateLimit(t *testing.T) {
 	job := validJob()
 	job.Mode = scanner.ModeStandardActive
 	job.RateLimit = scanner.RateLimit{ProbesPerSecond: 25, Concurrency: 4}
-	args, _, err := nmapArgs(job)
+	args, _, err := nmapArgs(job, EgressOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,6 +96,44 @@ func TestNmapArgsRespectsRateLimit(t *testing.T) {
 	}
 	if !argsContain(args, "--max-parallelism") || !argsContain(args, "4") {
 		t.Fatalf("expected --max-parallelism 4, got %v", args)
+	}
+}
+
+func TestNmapArgsPinsEgressWhenConfigured(t *testing.T) {
+	job := validJob()
+	job.Mode = scanner.ModeStandardActive
+	job.Type = scanner.ScanCombined
+	egress := EgressOptions{Interface: "eth1", SourceIP: "192.168.0.250"}
+	args, active, err := nmapArgs(job, egress)
+	if err != nil || !active {
+		t.Fatalf("expected active scan, err=%v active=%v", err, active)
+	}
+	for _, want := range []string{"-e", "eth1", "-S", "192.168.0.250"} {
+		if !argsContain(args, want) {
+			t.Fatalf("expected egress pin %q in args, got %v", want, args)
+		}
+	}
+	// The pin must precede the option terminator so it applies to the scan.
+	for i, a := range args {
+		if a == "--" {
+			rest := args[:i]
+			if !argsContain(rest, "-e") || !argsContain(rest, "-S") {
+				t.Fatalf("egress flags must come before --, got %v", args)
+			}
+			break
+		}
+	}
+}
+
+func TestNmapArgsNoEgressByDefault(t *testing.T) {
+	job := validJob()
+	job.Mode = scanner.ModeStandardActive
+	args, _, err := nmapArgs(job, EgressOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if argsContain(args, "-e") || argsContain(args, "-S") {
+		t.Fatalf("expected no egress pin without configuration, got %v", args)
 	}
 }
 

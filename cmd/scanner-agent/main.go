@@ -7,7 +7,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -68,7 +70,7 @@ func main() {
 	// Active discovery is performed by nmap, which uses raw sockets granted to
 	// this container (and only this container) via the NET_RAW capability. The
 	// app never carries this risk profile.
-	discoverer := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"))
+	discoverer := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
 
 	a := agent.New(agent.Config{
 		Registration:     registration,
@@ -109,6 +111,57 @@ func main() {
 		logger.Error("shutdown scanner agent", "error", err)
 		os.Exit(1)
 	}
+}
+
+// resolveEgress decides which interface and source address nmap should pin its
+// raw probes to. On a dual-homed agent (control-plane bridge + macvlan LAN) the
+// LAN interface must be pinned, or same-subnet service/OS detection silently
+// fails while ARP/MAC still works (see agent.EgressOptions). The operator sets
+// AGENT_SCAN_SOURCE_IP (typically the agent's macvlan LAN IP) and the agent
+// finds the interface that owns it; AGENT_SCAN_INTERFACE can name it directly.
+// With neither set, nmap chooses its own egress (the bridge-only default).
+func resolveEgress(logger *slog.Logger) agent.EgressOptions {
+	egress := agent.EgressOptions{
+		Interface: os.Getenv("AGENT_SCAN_INTERFACE"),
+		SourceIP:  os.Getenv("AGENT_SCAN_SOURCE_IP"),
+	}
+	if egress.SourceIP != "" && egress.Interface == "" {
+		if iface, err := interfaceForIP(egress.SourceIP); err != nil {
+			logger.Warn("could not match scan source IP to a local interface; nmap will choose its own egress",
+				"source_ip", egress.SourceIP, "error", err)
+		} else {
+			egress.Interface = iface
+		}
+	}
+	if egress.Interface != "" || egress.SourceIP != "" {
+		logger.Info("pinning nmap egress for consistent cross-subnet scans",
+			"interface", egress.Interface, "source_ip", egress.SourceIP)
+	}
+	return egress
+}
+
+// interfaceForIP returns the name of the local interface that owns ip.
+func interfaceForIP(ip string) (string, error) {
+	target := net.ParseIP(ip)
+	if target == nil {
+		return "", fmt.Errorf("invalid AGENT_SCAN_SOURCE_IP %q", ip)
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.Equal(target) {
+				return iface.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no local interface has address %s", ip)
 }
 
 func getenv(key, fallback string) string {
