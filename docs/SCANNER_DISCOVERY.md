@@ -21,6 +21,10 @@ risk is isolated to the agent:
 
 The app only ever acts as an mTLS client; it never probes the network.
 
+SNMP ARP-table harvesting (below) is the exception that proves the rule: it is
+active discovery that needs **no** extra privilege — ordinary UDP/161, no
+`NET_RAW` — so it runs in the same agent without widening its capability set.
+
 ## Scan depth (mode → nmap)
 
 Scan **type** selects what to collect; scan **mode** selects intensity.
@@ -45,6 +49,40 @@ to `--host-timeout` and bounds the agent-side context.
 `internal/scanner/agent/nmap.go` builds the argument list and parses nmap's XML
 (`-oX -`). The command runner is injectable, so argument building and XML parsing
 are unit-tested without nmap or raw-socket privileges.
+
+## SNMP ARP-table harvesting (`arp_table`)
+
+nmap only learns a MAC from the ARP/NDP reply on the **local** segment; ARP does
+not cross a router. So a scan of a subnet the agent is not attached to returns
+services and OS (routed IP) but no MAC or link-layer hostname. The `arp_table`
+scan type closes that gap by asking the device that *does* know — the gateway.
+
+- **Targets are the gateway/L3 devices to query** (their IPs), not the host
+  range. The agent walks each device's `ipNetToMediaPhysAddress` column
+  (`1.3.6.1.2.1.4.22.1.2`) over SNMP, decoding the IP from the row index and the
+  MAC from the value, and emits one observation per cached neighbor.
+- **Allowlist-scoped.** Only entries whose IP falls inside the job allowlist are
+  reported, so a scan never surfaces addresses it was not authorized to learn.
+- **Unprivileged.** SNMP is UDP/161 from a normal socket — no `NET_RAW`, no
+  change to the agent's capabilities. A `DiscoveryRouter` sends `arp_table` jobs
+  to the SNMP backend and everything else to nmap.
+- **Credentials live on the agent.** v2c read community via
+  `AGENT_SNMP_COMMUNITY` (default `public`); also `AGENT_SNMP_VERSION` (`2c`),
+  `AGENT_SNMP_PORT` (161), `AGENT_SNMP_TIMEOUT` (s), `AGENT_SNMP_RETRIES`. The
+  secret never reaches the app's job records or audit log. The config is shaped
+  for SNMPv3 to drop in later. See ADR 0006.
+- **Mode.** `passive` runs no query (no packets); any active mode runs the walk
+  (mode does not change SNMP depth). A gateway that cannot be reached yields a
+  per-target `snmp_failed` error and the job still succeeds for the rest.
+
+SNMP observations flow through the **same** review queue and reconciliation as
+nmap's, keyed by IP — so an `arp_table` MAC merges onto the same discovery row an
+nmap service scan produced for that host, rather than replacing it. Vendor is
+filled at import time from the built-in OUI table (`macaddr.Analyze`).
+
+`internal/scanner/agent/snmp.go` walks and parses the table behind an injectable
+SNMP session, so OID/MAC decoding and allowlist filtering are unit-tested without
+a real device.
 
 ## Review queue (`/discoveries`)
 
@@ -150,3 +188,8 @@ docker compose --profile scanner up -d
 5. Open a finished scan under `/scans` to inspect per-host services/OS evidence.
 6. Review hits under `/discoveries`; import the ones you want. To skip the queue
    for a trusted agent, enable **Auto-import** on its agent form.
+
+To recover MACs for a subnet the agent cannot reach at Layer 2, run an
+`arp_table` scan instead: set `AGENT_SNMP_COMMUNITY` to match your gateway, pick
+the **arp_table** scan type and any active mode, and put the **gateway IP(s)** in
+Targets. The discovered IP↔MAC pairs land in the same `/discoveries` queue.

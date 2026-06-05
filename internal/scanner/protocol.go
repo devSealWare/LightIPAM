@@ -24,6 +24,13 @@ const (
 	ScanServiceDetect ScanType = "service_detection"
 	ScanOSProbe       ScanType = "os_probe"
 	ScanCombined      ScanType = "combined"
+	// ScanARPTable harvests IP↔MAC bindings from a gateway/L3 device's ARP
+	// (ipNetToMediaTable) cache over SNMP, rather than probing hosts directly.
+	// Targets are the gateway device(s) to query; the agent emits an observation
+	// for each cached neighbor that falls within the job allowlist. This is how
+	// MAC addresses are recovered for hosts on subnets the agent cannot reach at
+	// Layer 2 (ARP does not cross routers).
+	ScanARPTable ScanType = "arp_table"
 )
 
 type ScanMode string
@@ -129,7 +136,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable:
 		return true
 	default:
 		return false
