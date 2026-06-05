@@ -35,6 +35,25 @@ func TestDiscoveryRouterDispatchesByType(t *testing.T) {
 	}
 }
 
+func TestDiscoveryRouterRoutesInventory(t *testing.T) {
+	nmap := &stubDiscoverer{tag: "nmap"}
+	snmp := &stubDiscoverer{tag: "snmp"}
+	router := NewDiscoveryRouter(nmap).
+		Register(scanner.ScanARPTable, snmp).
+		Register(scanner.ScanSNMPInventory, snmp)
+
+	obs, _, err := router.Discover(context.Background(), scanner.ScanJob{Type: scanner.ScanSNMPInventory})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if !snmp.called || nmap.called {
+		t.Fatalf("snmp_inventory should route to snmp only (snmp=%v nmap=%v)", snmp.called, nmap.called)
+	}
+	if len(obs) != 1 || obs[0].IP != "snmp" {
+		t.Fatalf("unexpected observations: %+v", obs)
+	}
+}
+
 func TestDiscoveryRouterFallsBack(t *testing.T) {
 	nmap := &stubDiscoverer{tag: "nmap"}
 	snmp := &stubDiscoverer{tag: "snmp"}

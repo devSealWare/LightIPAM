@@ -14,7 +14,7 @@ import (
 )
 
 func scanTypeOptions() []string {
-	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table"}
+	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table", "snmp_inventory"}
 }
 
 func scanModeOptions() []string {
