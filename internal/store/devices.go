@@ -34,8 +34,12 @@ type Device struct {
 	PrimarySubnetID   string
 	PrimarySubnetName string
 	PrimarySubnetCIDR string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// PrimaryIP is the device's lowest-numbered IP (host form, no prefix),
+	// shown in the Devices list. Empty for a device with no address; when
+	// AddressCount > 1 the UI adds a "+N" affordance for the remainder.
+	PrimaryIP string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DeviceGroup is a set of devices that share a primary subnet (the subnet of
@@ -70,7 +74,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
-	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''),
+	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -78,14 +82,14 @@ LEFT JOIN mac_addresses m ON m.device_id = d.id
 LEFT JOIN taggings tg ON tg.entity_type = 'device' AND tg.entity_id = d.id
 LEFT JOIN tags t ON t.id = tg.tag_id
 LEFT JOIN LATERAL (
-	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr
+	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr, host(ipx.address) AS ip
 	FROM ip_addresses ipx
 	JOIN subnets sub ON sub.id = ipx.subnet_id
 	WHERE ipx.device_id = d.id
 	ORDER BY ipx.address
 	LIMIT 1
 ) ps ON true
-GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr
+GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr, ps.ip
 ORDER BY d.name`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
@@ -153,7 +157,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
-	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''),
+	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -161,7 +165,7 @@ LEFT JOIN mac_addresses m ON m.device_id = d.id
 LEFT JOIN taggings tg ON tg.entity_type = 'device' AND tg.entity_id = d.id
 LEFT JOIN tags t ON t.id = tg.tag_id
 LEFT JOIN LATERAL (
-	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr
+	SELECT sub.id AS subnet_id, sub.name AS subnet_name, sub.cidr::text AS cidr, host(ipx.address) AS ip
 	FROM ip_addresses ipx
 	JOIN subnets sub ON sub.id = ipx.subnet_id
 	WHERE ipx.device_id = d.id
@@ -169,7 +173,7 @@ LEFT JOIN LATERAL (
 	LIMIT 1
 ) ps ON true
 WHERE d.id = $1
-GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr`, id))
+GROUP BY d.id, ps.subnet_id, ps.subnet_name, ps.cidr, ps.ip`, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Device{}, ErrNotFound
@@ -255,7 +259,7 @@ WHERE id = $1`, id).Scan(&address.ID, &address.DeviceID, &address.Address, &addr
 
 func (s *Store) ListDeviceIPAddresses(ctx context.Context, deviceID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), ip.address::text, ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
 FROM ip_addresses ip
 LEFT JOIN devices d ON d.id = ip.device_id
 WHERE ip.device_id = $1
@@ -370,6 +374,7 @@ func scanDevice(scanner subnetScanner) (Device, error) {
 		&device.PrimarySubnetID,
 		&device.PrimarySubnetName,
 		&device.PrimarySubnetCIDR,
+		&device.PrimaryIP,
 		&device.CreatedAt,
 		&device.UpdatedAt,
 	); err != nil {
