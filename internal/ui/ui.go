@@ -12,7 +12,7 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
 
-//go:embed templates/*.html static/*.css
+//go:embed templates/*.html static/*.css static/*.js
 var assets embed.FS
 
 type PageData struct {
@@ -110,4 +110,9 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 func StaticCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	http.ServeFileFS(w, r, assets, "static/app.css")
+}
+
+func StaticJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	http.ServeFileFS(w, r, assets, "static/columns.js")
 }
