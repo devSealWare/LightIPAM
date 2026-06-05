@@ -47,6 +47,7 @@ func New(options Options) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
 	mux.HandleFunc("GET /static/app.css", ui.StaticCSS)
+	mux.HandleFunc("GET /static/columns.js", ui.StaticJS)
 	mux.HandleFunc("GET /", app.dashboard)
 	mux.HandleFunc("GET /search", app.search)
 	mux.HandleFunc("GET /bootstrap", app.bootstrapForm)
