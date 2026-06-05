@@ -108,6 +108,28 @@ func TestMaybeAutoImportGuards(t *testing.T) {
 	}
 }
 
+func TestSyncImportedGuards(t *testing.T) {
+	// Only an already-imported, non-conflicting observation triggers a device
+	// sync. The other cases must short-circuit before touching the nil store, so
+	// reaching the store would panic — these double as proof the guard holds.
+	s := testService(fakeDispatcher{enabled: true})
+	cases := []struct {
+		name   string
+		result store.DiscoveryUpsert
+	}{
+		{"pending not synced", store.DiscoveryUpsert{ReviewStatus: "pending", ReconcileStatus: store.ReconcileMatch}},
+		{"dismissed not synced", store.DiscoveryUpsert{ReviewStatus: "dismissed", ReconcileStatus: store.ReconcileMatch}},
+		{"imported conflict not synced", store.DiscoveryUpsert{ReviewStatus: "imported", ReconcileStatus: store.ReconcileConflict}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if s.syncImported(context.Background(), tc.result) {
+				t.Fatal("expected no sync")
+			}
+		})
+	}
+}
+
 func TestRegistrationFromAgent(t *testing.T) {
 	reg := registrationFromAgent(store.ScanAgent{ID: "a1", Status: "active", AllowedCIDRs: []string{"10.0.0.0/8"}})
 	if reg.Status != scanner.AgentActive {

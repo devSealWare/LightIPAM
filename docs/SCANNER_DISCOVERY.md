@@ -179,6 +179,28 @@ per-job `scan.discovery.auto_imported` count.
 The default stays review-first: a freshly enrolled or manually registered agent
 has `auto_import` off until an operator opts in.
 
+### Merge-on-rescan (keeping imported devices current)
+
+A discovery row merges fields from every scan that hits the same IP (an nmap
+service scan, an SNMP/ARP MAC harvest, an SNMP inventory record all accumulate on
+one row; a richer earlier value is never overwritten by a later empty one). But a
+**device** used to be written only at the moment of import, so whichever scan
+imported first won and later scans never reached the device — an nmap-then-ARP
+pair (common for hosts a router away, where services come over L3 and the MAC only
+over ARP) left the device missing either its services or its MAC.
+
+Now, when a scan observes a host whose discovery is **already imported** and
+**not conflicting**, the orchestrator re-syncs the merged findings onto the linked
+device (`syncImported` → `store.SyncImportedDiscovery`): the OS guess, the open
+services, the discovery source, and any newly seen MAC (with its OUI vendor). This
+runs on **every** scan regardless of the agent's `auto_import` flag — importing
+the host was already the operator's decision to manage it, and a sync creates no
+new IPAM records, it only refreshes the existing device. It never renames the
+device (an operator may have named it), never wipes a richer value with an empty
+one, and skips conflicts (those stay in the queue for an operator). A per-job
+`scan.discovery.synced` count is audited. Devices imported before this behavior
+existed self-heal on their next scan.
+
 ## Scan result detail (`/scans/{id}`)
 
 A finished job stores the agent's full `ScanResult` JSON. The detail page parses

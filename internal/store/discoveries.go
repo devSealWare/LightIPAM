@@ -352,6 +352,69 @@ WHERE id = $1`, discovery.ID, addressID, emptyToNil(deviceID)); err != nil {
 	return s.GetDiscovery(ctx, id)
 }
 
+// SyncImportedDiscovery refreshes the device an already-imported discovery is
+// linked to with the latest merged findings, so successive scans of different
+// types accumulate onto one device instead of only the first import's data
+// landing. It updates the device's OS guess, open services, and discovery source
+// (never clobbering a richer earlier value with an empty one) and attaches any
+// newly observed MAC with its vendor.
+//
+// It is deliberately conservative: it never renames the device (an operator may
+// have named it) and creates no new IPAM records. A discovery that is not
+// imported, or whose linked device has since been deleted, is a no-op. Callers
+// must skip conflicting observations — resolving a conflict is an operator
+// decision, not something a re-scan should silently apply.
+func (s *Store) SyncImportedDiscovery(ctx context.Context, id string) error {
+	discovery, err := s.GetDiscovery(ctx, id)
+	if err != nil {
+		return err
+	}
+	if discovery.Status != "imported" || discovery.ImportedDeviceID == "" {
+		return nil
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin sync: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1)", discovery.ImportedDeviceID).Scan(&exists); err != nil {
+		return fmt.Errorf("look up imported device: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+
+	servicesJSON, err := json.Marshal(discovery.Services)
+	if err != nil {
+		return fmt.Errorf("marshal discovery services: %w", err)
+	}
+	source := discovery.AgentName
+	if source == "" {
+		source = "scan"
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE devices SET
+	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
+	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
+	services = CASE WHEN jsonb_array_length($4::jsonb) > 0 THEN $4::jsonb ELSE services END,
+	discovery_source = $5,
+	updated_at = now()
+WHERE id = $1`, discovery.ImportedDeviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+		return fmt.Errorf("sync discovery device: %w", err)
+	}
+
+	if discovery.MAC != "" {
+		if err := attachDiscoveryMAC(ctx, tx, discovery.ImportedDeviceID, discovery.MAC, discovery.Vendor); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 // importDiscoveryDevice creates (or reuses) the device a discovery imports into
 // and stamps it with everything the scan exposed: the OS guess, the open
 // services, the reporting agent, and — when known — the MAC with its OUI vendor.
@@ -401,14 +464,16 @@ VALUES ($1, $2, 'Created from scan discovery', $3, $4, $5::jsonb, $6)`,
 	} else {
 		// Refresh the discovered facts on an existing device. OS, services, and
 		// source always reflect the latest observation (empty OS values do not
-		// clobber an earlier guess). The name is left untouched unless the operator
-		// supplied an explicit one with this import.
+		// clobber an earlier guess; an empty service list does not wipe services a
+		// richer earlier scan recorded — a MAC-only ARP/SNMP import onto a device
+		// already carrying an nmap service list keeps that list). The name is left
+		// untouched unless the operator supplied an explicit one with this import.
 		if _, err := tx.Exec(ctx, `
 UPDATE devices SET
 	name = CASE WHEN $6 <> '' THEN $6 ELSE name END,
 	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
 	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
-	services = $4::jsonb,
+	services = CASE WHEN jsonb_array_length($4::jsonb) > 0 THEN $4::jsonb ELSE services END,
 	discovery_source = $5,
 	updated_at = now()
 WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source, manualName); err != nil {
