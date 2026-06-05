@@ -11,8 +11,16 @@
       </div>
     </header>
 
+    {{ if .DeviceGroups }}
+    {{ range .DeviceGroups }}
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
-      {{ if .Devices }}
+      <div class="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <div class="min-w-0">
+          <h2 class="truncate text-sm font-semibold text-zinc-950 dark:text-white">{{ if .SubnetID }}{{ if .SubnetName }}{{ .SubnetName }}{{ else }}{{ .CIDR }}{{ end }}{{ else }}Unassigned{{ end }}</h2>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ if .SubnetID }}{{ .CIDR }}{{ else }}Devices with no IP address{{ end }}</p>
+        </div>
+        <span class="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">{{ len .Devices }} device{{ if ne (len .Devices) 1 }}s{{ end }}</span>
+      </div>
       <div class="grid grid-cols-[1.2fr_0.6fr_0.6fr_0.8fr_1fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
         <span>Name</span><span>IPs</span><span>MACs</span><span>Private MACs</span><span>Tags</span>
       </div>
@@ -28,13 +36,16 @@
         <span class="truncate text-zinc-500 dark:text-zinc-400">{{ range .Tags }}{{ . }} {{ end }}</span>
       </a>
       {{ end }}
-      {{ else }}
+    </section>
+    {{ end }}
+    {{ else }}
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="p-8">
         <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No devices yet</h2>
         <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Create devices to attach IP addresses and MAC addresses. Private rotating MACs are tagged automatically.</p>
         <a class="button-primary mt-5" href="/devices/new">Add device</a>
       </div>
-      {{ end }}
     </section>
+    {{ end }}
   </div>
 {{ end }}

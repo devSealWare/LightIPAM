@@ -28,6 +28,7 @@ type PageData struct {
 	Address           store.IPAddress
 	AddressStates     []string
 	Devices           []store.Device
+	DeviceGroups      []store.DeviceGroup
 	Device            store.Device
 	MACAddresses      []store.MACAddress
 	AuditLogs         []store.AuditLog
