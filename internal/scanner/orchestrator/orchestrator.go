@@ -143,7 +143,7 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 // still-pending observations are imported immediately; conflicts always stay in
 // the queue for an operator to resolve.
 func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, job store.ScanJob, observations []scanner.Observation) {
-	recorded, imported := 0, 0
+	recorded, imported, synced := 0, 0, 0
 	for _, obs := range observations {
 		if strings.TrimSpace(obs.IP) == "" {
 			continue
@@ -164,8 +164,14 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 			continue
 		}
 		recorded++
-		if s.maybeAutoImport(ctx, agent, result) {
+		// A still-pending observation may be auto-imported (creating IPAM records);
+		// an already-imported one is instead re-synced so this scan's findings merge
+		// onto the existing device. The two are mutually exclusive per observation.
+		switch {
+		case s.maybeAutoImport(ctx, agent, result):
 			imported++
+		case s.syncImported(ctx, result):
+			synced++
 		}
 	}
 	if recorded > 0 {
@@ -173,6 +179,9 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 	}
 	if imported > 0 {
 		s.audit(ctx, nil, "scan.discovery.auto_imported", job.ID, strconv.Itoa(imported))
+	}
+	if synced > 0 {
+		s.audit(ctx, nil, "scan.discovery.synced", job.ID, strconv.Itoa(synced))
 	}
 }
 
@@ -196,6 +205,25 @@ func (s *Service) maybeAutoImport(ctx context.Context, agent store.ScanAgent, re
 		return false
 	}
 	s.auditSubject(ctx, nil, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID, "auto")
+	return true
+}
+
+// syncImported keeps an already-imported host's device current as later scans of
+// different types arrive: an nmap service scan and an SNMP/ARP MAC harvest of the
+// same host accumulate onto one device record rather than only the first import's
+// data landing. Unlike auto-import it is NOT gated on agent trust — importing the
+// host was the operator's decision to manage it, and a sync creates no new IPAM
+// records, it only refreshes the device the discovery is already linked to.
+// Conflicting observations are left for an operator to resolve. Returns whether a
+// device was refreshed.
+func (s *Service) syncImported(ctx context.Context, result store.DiscoveryUpsert) bool {
+	if result.ReviewStatus != "imported" || result.ReconcileStatus == store.ReconcileConflict {
+		return false
+	}
+	if err := s.store.SyncImportedDiscovery(ctx, result.ID); err != nil {
+		s.logger.Error("sync imported discovery", "id", result.ID, "error", err)
+		return false
+	}
 	return true
 }
 

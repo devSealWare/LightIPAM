@@ -173,6 +173,19 @@ Phase 3 follow-ups (merged, #18):
   `base.html`. Progressive enhancement (all columns render server-side); strict
   CSP unchanged (same-origin script, no inline JS). Menu markup lives in the
   templates so Tailwind generates its classes.
+- **#43 Merge scan findings into imported devices** — a device used to be written
+  only at first import, so whichever scan imported first won and later scans never
+  reached the device (an nmap-then-ARP pair for a host a router away left it
+  missing either its services or its MAC; an OS guess from a later nmap never
+  appeared). Now `orchestrator.syncImported` → `store.SyncImportedDiscovery`
+  re-syncs the merged discovery findings (OS, services, source, newly seen MAC +
+  vendor) onto the linked device on **every** scan when the discovery is already
+  imported and non-conflicting — independent of `auto_import` (importing was
+  already the operator's decision; sync creates no new IPAM records). Never
+  renames, never wipes a richer value with an empty one, skips conflicts;
+  per-job `scan.discovery.synced` audit. The `importDiscoveryDevice` re-import
+  path got the same empty-services guard. Devices imported before this self-heal
+  on their next scan. See `docs/SCANNER_DISCOVERY.md` "Merge-on-rescan".
 
 ## Verification
 
