@@ -121,8 +121,9 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 }
 
 // portArgsForMode renders nmap's port selection for a mode: every TCP port for a
-// deep scan (-p-), the top 1000 for light and standard. Deep trades a much longer
-// run for complete coverage; the job timeout (--host-timeout) keeps it bounded.
+// deep scan (-p-), the top 1000 for light and standard. Deep's all-port sweep is
+// kept brisk by aggressive timing (see timingArgs) rather than a slower probe; the
+// job timeout (--host-timeout) still bounds it.
 func portArgsForMode(mode scanner.ScanMode) []string {
 	if mode == scanner.ModeDeepActive {
 		return []string{"-p-"}
@@ -131,10 +132,29 @@ func portArgsForMode(mode scanner.ScanMode) []string {
 }
 
 // versionAllForMode reports whether the mode runs nmap's exhaustive version
-// probes (--version-all). Standard and deep do; light keeps service detection
-// quick with nmap's default probe intensity.
+// probes (--version-all). Only standard does: it scans a small port set, so the
+// extra probes are affordable there. Deep keeps plain -sV (default intensity) so
+// scanning every port stays fast — it still detects services, just without the
+// exhaustive per-port version probing. Light keeps -sV at default intensity too.
 func versionAllForMode(mode scanner.ScanMode) bool {
-	return mode == scanner.ModeStandardActive || mode == scanner.ModeDeepActive
+	return mode == scanner.ModeStandardActive
+}
+
+// timingArgs speeds up a deep scan, which sweeps all 65535 ports. It uses nmap's
+// aggressive timing template (-T4) and a low retry cap, and — unless the operator
+// pinned an explicit rate — a guaranteed minimum packet rate so the full-port
+// sweep does not crawl. Lighter modes keep nmap's gentle defaults and the
+// conservative rate cap. Only the port sweep is sped up; service detection (-sV)
+// is unchanged.
+func timingArgs(mode scanner.ScanMode, rateCapped bool) []string {
+	if mode != scanner.ModeDeepActive {
+		return nil
+	}
+	args := []string{"-T4", "--max-retries", "2"}
+	if !rateCapped {
+		args = append(args, "--min-rate", "1000")
+	}
+	return args
 }
 
 // nmapArgs builds the nmap argument list for a job. The boolean is false when
@@ -156,14 +176,20 @@ func nmapArgs(job scanner.ScanJob, egress EgressOptions) ([]string, bool, error)
 	// probes consistently leave the LAN interface (see EgressOptions).
 	args = append(args, egress.args()...)
 
+	// Apply an explicit operator rate cap to any mode, and a conservative default
+	// cap to the shallow modes. Deep is intentionally left uncapped (unless the
+	// operator pinned a rate) so its all-port sweep can run fast under timingArgs.
 	rate := job.RateLimit.ProbesPerSecond
-	if rate <= 0 {
+	if rate <= 0 && job.Mode != scanner.ModeDeepActive {
 		rate = 100
 	}
-	args = append(args, "--max-rate", strconv.Itoa(rate))
+	if rate > 0 {
+		args = append(args, "--max-rate", strconv.Itoa(rate))
+	}
 	if job.RateLimit.Concurrency > 0 {
 		args = append(args, "--max-parallelism", strconv.Itoa(job.RateLimit.Concurrency))
 	}
+	args = append(args, timingArgs(job.Mode, rate > 0)...)
 	if job.TimeoutSeconds > 0 {
 		// --host-timeout is PER HOST: nmap caps each host at this budget and then
 		// moves on, exiting cleanly with partial results. The agent's supervising
@@ -196,7 +222,7 @@ func nmapArgs(job scanner.ScanJob, egress EgressOptions) ([]string, bool, error)
 		}
 	case scanner.ScanCombined:
 		// Combined always probes services and OS together; the CombinedDiscoverer
-		// forces deep mode, so this scans every port with exhaustive versioning.
+		// forces deep mode, so this scans every port with fast service detection.
 		args = append(args, "-sV", "-O")
 		args = append(args, portArgsForMode(job.Mode)...)
 		if versionAllForMode(job.Mode) {

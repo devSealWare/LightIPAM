@@ -196,8 +196,12 @@ Phase 3 follow-ups (merged, #18):
   keeps them out of the job's headline error, and `/scans/{id}` shows them in a
   muted "Skipped" section (`app.partitionScanErrors`, `PageData.ScanNotices`).
   **Modes simplified** to Light (top-1000 `-sV`), Standard (top-1000 +
-  `--version-all` + `-O`) and Deep (all ports `-p-` + versions + OS); `passive` is
-  still a valid protocol value but dropped from the UI. Mode is an nmap-only depth
+  `--version-all` + `-O`) and Deep (all ports `-p-` with `-sV` + `-O`); `passive`
+  is still a valid protocol value but dropped from the UI. **Deep is tuned for
+  speed** (`timingArgs`): it keeps `-sV` service detection but drops the slow
+  `--version-all` and runs the all-port sweep with `-T4 --max-retries 2`, plus
+  `--min-rate 1000` when no operator rate is pinned, and is exempt from the
+  conservative default `--max-rate 100` cap that still applies to shallow modes. Mode is an nmap-only depth
   knob — `arp_table`/`snmp_inventory`/`combined` ignore it and the form hides the
   picker (`app.modeForType` normalizes server-side, so it works JS-off). Dynamic
   show/hide + per-type hint via same-origin `internal/ui/static/scan_form.js`

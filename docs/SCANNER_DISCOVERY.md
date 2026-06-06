@@ -38,7 +38,7 @@ so it is no longer offered as a UI choice; the depths are Light / Standard / Dee
 | ----------------- | ------------------------------------------------------------- |
 | `light_active`    | Top-1000 TCP service detection (`-sV`).                       |
 | `standard_active` | Top-1000 + exhaustive versions (`--version-all`) + OS (`-O`). |
-| `deep_active`     | Every TCP port (`-p-`) + exhaustive versions + OS.           |
+| `deep_active`     | Every TCP port (`-p-`) with service detection (`-sV`) + OS, tuned for speed: `-T4`, `--min-rate 1000`, `--max-retries 2`, and no default rate cap. Drops `--version-all` so the all-port sweep stays fast. |
 
 | Type                | Adds                                                           |
 | ------------------- | ------------------------------------------------------------- |

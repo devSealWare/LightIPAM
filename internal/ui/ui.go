@@ -118,9 +118,9 @@ func optionLabel(value string) string {
 	case "light_active":
 		return "Light — top 1000 ports"
 	case "standard_active":
-		return "Standard — top 1000 + versions + OS"
+		return "Standard — top 1000 + full version probes + OS"
 	case "deep_active":
-		return "Deep — all ports + versions + OS"
+		return "Deep — all ports, fast service detection + OS"
 	case "host_discovery":
 		return "Host discovery"
 	case "service_detection":

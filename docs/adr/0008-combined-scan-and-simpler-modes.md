@@ -51,10 +51,17 @@ Two friction points in the scan form compounded it:
   hint as progressive enhancement; the strict CSP is unchanged (no inline JS).
 - **Three depths, no `passive` in the UI.** Modes reduce to **Light** (top-1000
   service detection), **Standard** (top-1000 + `--version-all` + `-O`) and **Deep**
-  (every port `-p-` + `--version-all` + `-O`). `passive` remains a valid protocol
-  value (the agent's no-packets short-circuit) but is no longer offered as a
-  choice. Deep deliberately trades a long run for full coverage; the job timeout
-  (`--host-timeout`) keeps it bounded.
+  (every port `-p-` with `-sV` + `-O`). `passive` remains a valid protocol value
+  (the agent's no-packets short-circuit) but is no longer offered as a choice.
+- **Deep is tuned for speed, not slowed by service detection.** The cost of a deep
+  scan is the 65535-port SYN sweep, not `-sV` (which only probes the open ports it
+  finds). So deep keeps `-sV` for real service detection but **drops
+  `--version-all`** (the exhaustive per-port version probing, kept on standard's
+  small port set) and runs the sweep aggressively: `-T4`, `--max-retries 2`, and —
+  unless the operator pinned an explicit rate — `--min-rate 1000`. The previous
+  hidden `--max-rate 100` default (which throttled every scan, making an all-port
+  sweep take ~11 min/host) is no longer applied to deep; shallow modes keep that
+  conservative cap. The job timeout (`--host-timeout`) still bounds each host.
 
 ## Consequences
 
@@ -70,5 +77,8 @@ Two friction points in the scan form compounded it:
 - Existing schedules stored with `mode = passive` are no longer selectable as
   passive; re-saving such a schedule picks a real depth. Passive scans produced no
   results, so nothing of value is lost.
-- The combined nmap scan is always deep (all ports), so it is the slowest scan
-  type. Operators who want a quick look still pick `service_detection` at Light.
+- The combined nmap scan is always deep (all ports). It is the broadest scan, but
+  the timing tuning keeps it far quicker than a throttled `--version-all` sweep
+  would be; operators who want the quickest look still pick `service_detection` at
+  Light. The faster, uncapped deep sweep is also louder on the wire — acceptable
+  for an admin scanning their own LAN, and still bounded by `--host-timeout`.

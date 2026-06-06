@@ -60,13 +60,57 @@ func TestNmapArgsDeepCombinedProbesEveryPort(t *testing.T) {
 	if err != nil || !active {
 		t.Fatalf("expected active scan, err=%v active=%v", err, active)
 	}
-	for _, want := range []string{"-sV", "-O", "-p-", "--version-all"} {
+	// Deep keeps service + OS detection over every port, but drops the slow
+	// exhaustive version probing so the all-port sweep stays fast.
+	for _, want := range []string{"-sV", "-O", "-p-"} {
 		if !argsContain(args, want) {
 			t.Fatalf("expected %q in deep combined args, got %v", want, args)
 		}
 	}
 	if argsContain(args, "--top-ports") {
 		t.Fatalf("deep mode scans every port (-p-), not the top ports, got %v", args)
+	}
+	if argsContain(args, "--version-all") {
+		t.Fatalf("deep should keep service detection fast (no --version-all), got %v", args)
+	}
+}
+
+func TestNmapArgsDeepUsesFastTiming(t *testing.T) {
+	job := validJob()
+	job.Type = scanner.ScanServiceDetect
+	job.Mode = scanner.ModeDeepActive
+	args, active, err := nmapArgs(job, EgressOptions{})
+	if err != nil || !active {
+		t.Fatalf("expected active scan, err=%v active=%v", err, active)
+	}
+	for _, want := range []string{"-T4", "--max-retries", "2", "--min-rate", "1000"} {
+		if !argsContain(args, want) {
+			t.Fatalf("expected fast-timing flag %q for deep, got %v", want, args)
+		}
+	}
+	// With no explicit operator rate, deep must not be throttled by --max-rate.
+	if argsContain(args, "--max-rate") {
+		t.Fatalf("deep should not be capped at the default rate, got %v", args)
+	}
+}
+
+func TestNmapArgsShallowKeepsRateCapNoFastTiming(t *testing.T) {
+	for _, mode := range []scanner.ScanMode{scanner.ModeLightActive, scanner.ModeStandardActive} {
+		t.Run(string(mode), func(t *testing.T) {
+			job := validJob()
+			job.Type = scanner.ScanServiceDetect
+			job.Mode = mode
+			args, _, err := nmapArgs(job, EgressOptions{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !argsContain(args, "--max-rate") {
+				t.Fatalf("shallow modes keep the conservative default rate cap, got %v", args)
+			}
+			if argsContain(args, "--min-rate") {
+				t.Fatalf("only deep forces a minimum rate, got %v", args)
+			}
+		})
 	}
 }
 
@@ -79,7 +123,7 @@ func TestNmapArgsServiceDetectionDepthByMode(t *testing.T) {
 	}{
 		{scanner.ModeLightActive, "--top-ports", false, "-p-"},
 		{scanner.ModeStandardActive, "--top-ports", true, "-p-"},
-		{scanner.ModeDeepActive, "-p-", true, "--top-ports"},
+		{scanner.ModeDeepActive, "-p-", false, "--top-ports"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.mode), func(t *testing.T) {
