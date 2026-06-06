@@ -22,12 +22,16 @@ The app should run as an unprivileged container with no Linux capabilities.
 
 The scanner agent owns:
 
-- ICMP and ARP/ND host discovery.
-- TCP and UDP service discovery.
-- OS and service fingerprinting.
-- Optional SNMP, LLDP/CDP, DHCP, and DNS enrichment.
+- Staged nmap host discovery (ICMP/ARP) then TCP service and OS fingerprinting on
+  live hosts. (Privileged probing via `NET_RAW`, confined here.)
+- SNMP ARP-table harvesting (`arp_table`) and SNMP device inventory
+  (`snmp_inventory`) over unprivileged UDP/161 — implemented.
+- A combined scan that fuses nmap + both SNMP passes per host.
+- Future enrichment: LLDP/CDP, DHCP, DNS, NetBIOS/mDNS, VLAN/interface mapping.
 
-Agents should be deployed near the networks they scan. The app should send signed scan jobs over mTLS, and agents should return normalized observations.
+Agents are deployed near the networks they scan. The app sends scan jobs over
+mTLS (each carrying an explicit IPv4 allowlist), and agents return normalized
+observations that flow through the discovery review queue.
 
 ### Database
 

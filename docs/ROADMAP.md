@@ -43,7 +43,14 @@ Follow-ups merged on top of Phase 3 (#18):
   queries a gateway/L3 device's `ipNetToMediaTable` over SNMP to recover IP↔MAC
   bindings for subnets the agent cannot reach at Layer 2. Unprivileged (UDP/161,
   no `NET_RAW`); reuses the discovery review-queue + reconciliation pattern.
-- SNMP device inventory (interfaces, sysDescr, etc.).
+- SNMP device inventory (**done**, ADR 0007). The `snmp_inventory` scan type reads
+  a device's system group (name, OS, location) and its interface/IP tables to
+  recover the device's own identity and the MACs of its interfaces.
+- Combined all-sources scan + scan-experience polish (**done**, ADRs 0008/0009):
+  one `combined` job runs deep nmap + ARP + SNMP inventory, merged per host, with
+  unreachable SNMP ignored not failed; simplified Light/Standard/Deep modes;
+  staged nmap (host discovery → service/OS on live hosts only); and dynamic,
+  generous per-type scan timeouts.
 - LLDP/CDP neighbor ingestion.
 - DHCP lease ingestion.
 - DNS forward/reverse enrichment.
