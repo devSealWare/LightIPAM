@@ -41,6 +41,7 @@ type PageData struct {
 	ScanJob           store.ScanJob
 	ScanObservations  []scanner.Observation
 	ScanErrors        []scanner.ScanError
+	ScanNotices       []scanner.ScanError
 	ScanSchedules     []store.ScanSchedule
 	ScanSchedule      store.ScanSchedule
 	ScanTypes         []string
@@ -69,6 +70,7 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		"join": func(values []string, sep string) string {
 			return strings.Join(values, sep)
 		},
+		"optionLabel": optionLabel,
 		"sub": func(a, b int) int {
 			return a - b
 		},
@@ -107,12 +109,52 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 	return tmpl.ExecuteTemplate(w, "base.html", data)
 }
 
+// optionLabel renders a scan-type or scan-mode enum value as a friendly label
+// for a <select>. The option's value attribute keeps the raw enum, so the posted
+// form is unchanged; only the displayed text is humanized. Unknown values fall
+// back to the raw string.
+func optionLabel(value string) string {
+	switch value {
+	case "light_active":
+		return "Light — top 1000 ports"
+	case "standard_active":
+		return "Standard — top 1000 + full version probes + OS"
+	case "deep_active":
+		return "Deep — all ports, fast service detection + OS"
+	case "host_discovery":
+		return "Host discovery"
+	case "service_detection":
+		return "Service detection"
+	case "os_probe":
+		return "OS probe"
+	case "combined":
+		return "Combined (nmap + ARP + SNMP)"
+	case "arp_table":
+		return "ARP table (SNMP)"
+	case "snmp_inventory":
+		return "SNMP inventory"
+	default:
+		return value
+	}
+}
+
 func StaticCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	http.ServeFileFS(w, r, assets, "static/app.css")
 }
 
 func StaticJS(w http.ResponseWriter, r *http.Request) {
+	serveJS(w, r, "static/columns.js")
+}
+
+// ScanFormJS serves the progressive-enhancement script for the scan/schedule
+// forms: it shows the mode picker only for nmap scan types and updates the
+// per-type hint. The forms work without it (the server normalizes the mode).
+func ScanFormJS(w http.ResponseWriter, r *http.Request) {
+	serveJS(w, r, "static/scan_form.js")
+}
+
+func serveJS(w http.ResponseWriter, r *http.Request, name string) {
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	http.ServeFileFS(w, r, assets, "static/columns.js")
+	http.ServeFileFS(w, r, assets, name)
 }

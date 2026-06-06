@@ -93,26 +93,65 @@ func execCommand(ctx context.Context, name string, args []string) ([]byte, error
 	return out, nil
 }
 
-// Discover runs nmap for the job and parses its XML output into observations.
+// hostDiscoveryTimeoutSeconds bounds each host in the stage-1 discovery sweep.
+// Discovery is fast (a ping/ARP probe), so this only caps a straggler; the real
+// per-host budget (ScanJob.TimeoutSeconds) applies to the stage-2 port scan.
+const hostDiscoveryTimeoutSeconds = 60
+
+// Discover scans in stages, mirroring how a human would: first find which hosts
+// are actually alive (a quick host-discovery sweep), then — only for the live
+// ones — scan ports and let nmap version-probe just the ports it finds open. A
+// target range with nothing alive short-circuits after stage 1 instead of
+// wasting the whole budget probing dead address space. Stage-1 (alive + MAC) and
+// stage-2 (services + OS) findings are merged per host.
 func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
-	args, active, err := nmapArgs(job, n.egress)
+	if job.Mode == scanner.ModePassive {
+		return []scanner.Observation{}, []scanner.ScanError{}, nil
+	}
+	if len(job.Targets) == 0 {
+		return nil, nil, fmt.Errorf("scan job has no targets")
+	}
+
+	// Stage 1: who is alive?
+	alive, errs, err := n.runNmap(ctx, hostDiscoveryArgs(job, n.egress))
 	if err != nil {
 		return nil, nil, err
 	}
-	if !active {
-		return []scanner.Observation{}, []scanner.ScanError{}, nil
+	// Host discovery is the whole job for that scan type.
+	if job.Type == scanner.ScanHostDiscovery {
+		return alive, errs, nil
+	}
+	if len(alive) == 0 {
+		// Nothing answered discovery; don't waste time port-scanning dead space.
+		return []scanner.Observation{}, errs, nil
 	}
 
+	// Stage 2: port + service/OS detection on the live hosts only. nmap scans the
+	// mode's ports and version-probes only the ones it finds open.
+	scanArgs, err := serviceScanArgs(job, n.egress, observedIPs(alive))
+	if err != nil {
+		return nil, nil, err
+	}
+	scanned, scanErrs, err := n.runNmap(ctx, scanArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	merged := mergeObservations(concatObservations(alive, scanned))
+	return merged, append(errs, scanErrs...), nil
+}
+
+// runNmap executes one nmap invocation and parses its XML. nmap exits non-zero on
+// partial failures but still emits usable XML, so a run error with parseable
+// output is reported as a partial (not a hard failure).
+func (n *NmapDiscoverer) runNmap(ctx context.Context, args []string) ([]scanner.Observation, []scanner.ScanError, error) {
 	out, runErr := n.run(ctx, n.binary, args)
 	if runErr != nil {
-		// nmap exits non-zero on partial failures but still emits usable XML, so
-		// try to parse before giving up.
 		if observations, parseErr := parseNmapXML(out); parseErr == nil && len(observations) > 0 {
 			return observations, []scanner.ScanError{{Code: "nmap_partial", Message: runErr.Error()}}, nil
 		}
 		return nil, nil, runErr
 	}
-
 	observations, err := parseNmapXML(out)
 	if err != nil {
 		return nil, nil, err
@@ -120,82 +159,150 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 	return observations, []scanner.ScanError{}, nil
 }
 
-// topPortsForMode maps a scan mode to the number of top TCP ports to probe.
-func topPortsForMode(mode scanner.ScanMode) int {
-	switch mode {
-	case scanner.ModeLightActive:
-		return 100
-	case scanner.ModeStandardActive:
-		return 1000
-	case scanner.ModeDeepActive:
-		return 1000
-	default:
-		return 100
+// observedIPs returns the IPv4 addresses from a set of observations, for use as
+// the explicit target list of a follow-up stage.
+func observedIPs(observations []scanner.Observation) []string {
+	ips := make([]string, 0, len(observations))
+	for _, obs := range observations {
+		if obs.IP != "" {
+			ips = append(ips, obs.IP)
+		}
 	}
+	return ips
 }
 
-// nmapArgs builds the nmap argument list for a job. The boolean is false when
-// the job requires no active probing (passive mode), in which case nmap is not
-// run at all. Targets are appended last, after "--", and are already validated
-// to fall within the job allowlist before this point.
-func nmapArgs(job scanner.ScanJob, egress EgressOptions) ([]string, bool, error) {
-	if job.Mode == scanner.ModePassive {
-		return nil, false, nil
+// concatObservations joins two observation slices into a fresh slice, never
+// aliasing either input's backing array.
+func concatObservations(a, b []scanner.Observation) []scanner.Observation {
+	out := make([]scanner.Observation, 0, len(a)+len(b))
+	out = append(out, a...)
+	out = append(out, b...)
+	return out
+}
+
+// portArgsForMode renders nmap's port selection for a mode: every TCP port for a
+// deep scan (-p-), the top 1000 for light and standard. Deep's all-port sweep is
+// kept brisk by aggressive timing (see timingArgs) rather than a slower probe; the
+// job timeout (--host-timeout) still bounds it.
+func portArgsForMode(mode scanner.ScanMode) []string {
+	if mode == scanner.ModeDeepActive {
+		return []string{"-p-"}
 	}
-	if len(job.Targets) == 0 {
-		return nil, false, fmt.Errorf("scan job has no targets")
+	return []string{"--top-ports", "1000"}
+}
+
+// versionAllForMode reports whether the mode runs nmap's exhaustive version
+// probes (--version-all). Only standard does: it scans a small port set, so the
+// extra probes are affordable there. Deep keeps plain -sV (default intensity) so
+// scanning every port stays fast — it still detects services, just without the
+// exhaustive per-port version probing. Light keeps -sV at default intensity too.
+func versionAllForMode(mode scanner.ScanMode) bool {
+	return mode == scanner.ModeStandardActive
+}
+
+// timingArgs speeds up a deep scan, which sweeps all 65535 ports. It uses nmap's
+// aggressive timing template (-T4) and a low retry cap, and — unless the operator
+// pinned an explicit rate — a guaranteed minimum packet rate so the full-port
+// sweep does not crawl. Lighter modes keep nmap's gentle defaults and the
+// conservative rate cap. Only the port sweep is sped up; service detection (-sV)
+// is unchanged.
+func timingArgs(mode scanner.ScanMode, rateCapped bool) []string {
+	if mode != scanner.ModeDeepActive {
+		return nil
+	}
+	args := []string{"-T4", "--max-retries", "2"}
+	if !rateCapped {
+		args = append(args, "--min-rate", "1000")
+	}
+	return args
+}
+
+// hostDiscoveryArgs builds the stage-1 nmap command: a fast host-discovery sweep
+// (-sn, no port scan) over the raw targets, to learn which hosts are alive (and
+// their MAC/vendor on a local segment) before any port probing. Targets are
+// appended last, after "--", and are already allowlist-validated.
+func hostDiscoveryArgs(job scanner.ScanJob, egress EgressOptions) []string {
+	// -oX - emits XML on stdout; --privileged uses raw sockets (NET_RAW), enabling
+	// ARP discovery and its reliable MAC reporting on the local segment.
+	args := []string{"-oX", "-", "--privileged", "-sn", "-T4"}
+	args = append(args, egress.args()...)
+	args = append(args, "--host-timeout", strconv.Itoa(hostDiscoveryTimeoutSeconds)+"s")
+	args = append(args, "--")
+	args = append(args, job.Targets...)
+	return args
+}
+
+// serviceScanArgs builds the stage-2 nmap command for the already-discovered live
+// hosts: it skips host discovery (-Pn, the hosts are known up), scans the mode's
+// ports, and lets nmap version-probe only the ports it finds open (-sV) plus
+// optional OS detection. Rate/timing and the per-host timeout apply here, where
+// the real work is. hosts is the explicit live-host list from stage 1.
+func serviceScanArgs(job scanner.ScanJob, egress EgressOptions, hosts []string) ([]string, error) {
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("service scan has no live hosts")
 	}
 
-	// -oX - emits XML on stdout; --privileged tells nmap to use raw sockets,
-	// which the agent container grants via the NET_RAW capability.
-	args := []string{"-oX", "-", "--privileged"}
+	// -Pn: discovery already happened in stage 1, so don't repeat it.
+	args := []string{"-oX", "-", "--privileged", "-Pn"}
 	// Pin the source interface/address when configured, so a dual-homed agent's
 	// probes consistently leave the LAN interface (see EgressOptions).
 	args = append(args, egress.args()...)
 
+	// Apply an explicit operator rate cap to any mode, and a conservative default
+	// cap to the shallow modes. Deep is intentionally left uncapped (unless the
+	// operator pinned a rate) so its all-port sweep can run fast under timingArgs.
 	rate := job.RateLimit.ProbesPerSecond
-	if rate <= 0 {
+	if rate <= 0 && job.Mode != scanner.ModeDeepActive {
 		rate = 100
 	}
-	args = append(args, "--max-rate", strconv.Itoa(rate))
+	if rate > 0 {
+		args = append(args, "--max-rate", strconv.Itoa(rate))
+	}
 	if job.RateLimit.Concurrency > 0 {
 		args = append(args, "--max-parallelism", strconv.Itoa(job.RateLimit.Concurrency))
 	}
+	args = append(args, timingArgs(job.Mode, rate > 0)...)
 	if job.TimeoutSeconds > 0 {
 		// --host-timeout is PER HOST: nmap caps each host at this budget and then
 		// moves on, exiting cleanly with partial results. The agent's supervising
-		// context (see scanBudget) allows for this across every target plus grace,
+		// context (scanner.ScanBudget) allows for this across every host plus grace,
 		// so nmap self-limits instead of being hard-killed mid-write.
 		args = append(args, "--host-timeout", strconv.Itoa(job.TimeoutSeconds)+"s")
 	}
 
-	topPorts := topPortsForMode(job.Mode)
 	switch job.Type {
-	case scanner.ScanHostDiscovery:
-		// Host discovery only: ping/ARP sweep, no port scan.
-		args = append(args, "-sn")
 	case scanner.ScanServiceDetect:
-		args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
-		if job.Mode == scanner.ModeDeepActive {
+		args = append(args, "-sV")
+		args = append(args, portArgsForMode(job.Mode)...)
+		if versionAllForMode(job.Mode) {
 			args = append(args, "--version-all")
 		}
 	case scanner.ScanOSProbe:
 		args = append(args, "-O")
+		// Light is OS-only; standard/deep add service detection over the mode's
+		// ports so the OS guess is corroborated by running services.
 		if job.Mode != scanner.ModeLightActive {
-			args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
+			args = append(args, "-sV")
+			args = append(args, portArgsForMode(job.Mode)...)
+			if versionAllForMode(job.Mode) {
+				args = append(args, "--version-all")
+			}
 		}
 	case scanner.ScanCombined:
-		args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
-		if job.Mode != scanner.ModeLightActive {
-			args = append(args, "-O")
+		// Combined always probes services and OS together; the CombinedDiscoverer
+		// forces deep mode, so this scans every port with fast service detection.
+		args = append(args, "-sV", "-O")
+		args = append(args, portArgsForMode(job.Mode)...)
+		if versionAllForMode(job.Mode) {
+			args = append(args, "--version-all")
 		}
 	default:
-		return nil, false, fmt.Errorf("unsupported scan type %q", job.Type)
+		return nil, fmt.Errorf("unsupported scan type %q", job.Type)
 	}
 
 	args = append(args, "--")
-	args = append(args, job.Targets...)
-	return args, true, nil
+	args = append(args, hosts...)
+	return args, nil
 }
 
 // --- nmap XML parsing ---

@@ -29,19 +29,21 @@
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan type</span>
-          <select class="form-input" name="scan_type">
+          <select class="form-input" name="scan_type" data-scan-type>
             {{ range .ScanTypes }}
-            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ . }}</option>
+            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ optionLabel . }}</option>
             {{ end }}
           </select>
+          <span class="mt-1 block text-xs text-zinc-400" data-scan-hint></span>
         </label>
-        <label class="block">
+        <label class="block" data-scan-mode-field>
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Mode</span>
           <select class="form-input" name="mode">
             {{ range .ScanModes }}
-            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ . }}</option>
+            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ optionLabel . }}</option>
             {{ end }}
           </select>
+          <span class="mt-1 block text-xs text-zinc-400">Depth applies to nmap scans only.</span>
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
@@ -54,8 +56,9 @@
           <span class="mt-1 block text-xs text-zinc-400">IPv4 addresses or CIDRs, one per line. For an <span class="font-mono">arp_table</span> scan, list the gateway/router IPs to query over SNMP — the agent reports the IP↔MAC pairs they have cached. For an <span class="font-mono">snmp_inventory</span> scan, list the SNMP-enabled device IPs to inventory — the agent reports each device's name, OS, and the MACs of its own interfaces.</span>
         </label>
         <label class="block">
-          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timeout (seconds)</span>
-          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="60">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Per-host timeout (seconds)</span>
+          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="auto" data-scan-timeout>
+          <span class="mt-1 block text-xs text-zinc-400">Leave blank for a smart default based on the scan type.</span>
         </label>
       </div>
       <div class="mt-7 flex items-center justify-between gap-3">

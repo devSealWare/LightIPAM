@@ -27,28 +27,63 @@ active discovery that needs **no** extra privilege — ordinary UDP/161, no
 
 ## Scan depth (mode → nmap)
 
-Scan **type** selects what to collect; scan **mode** selects intensity.
+Scan **type** selects what to collect; scan **mode** selects intensity. Mode is a
+depth knob for the nmap scan types only — `arp_table`, `snmp_inventory`, and
+`combined` ignore it (combined always runs at full depth), so the scan form hides
+the Mode picker for those three. The protocol still defines a `passive` mode (the
+agent's no-packets short-circuit), but it produces zero results for every backend,
+so it is no longer offered as a UI choice; the depths are Light / Standard / Deep.
 
-| Mode              | nmap behavior                                            |
-| ----------------- | -------------------------------------------------------- |
-| `passive`         | No nmap is run at all.                                   |
-| `light_active`    | Host discovery sweep (`-sn`); top-100 ports for service. |
-| `standard_active` | Top-1000 TCP service detection (`-sV`).                  |
-| `deep_active`     | Adds OS probing (`-O`) and exhaustive version probes.    |
+| Mode              | nmap behavior                                                  |
+| ----------------- | ------------------------------------------------------------- |
+| `light_active`    | Top-1000 TCP service detection (`-sV`).                       |
+| `standard_active` | Top-1000 + exhaustive versions (`--version-all`) + OS (`-O`). |
+| `deep_active`     | Every TCP port (`-p-`) with service detection (`-sV`) + OS, tuned for speed: `-T4`, `--min-rate 1000`, `--max-retries 2`, and no default rate cap. Drops `--version-all` so the all-port sweep stays fast. |
 
-| Type                | Adds                                              |
-| ------------------- | ------------------------------------------------- |
-| `host_discovery`    | `-sn` ping/ARP sweep, no port scan.               |
-| `service_detection` | `-sV` over the mode's top ports.                  |
-| `os_probe`          | `-O` OS fingerprinting.                           |
-| `combined`          | `-sV` + `-O` (OS skipped on `light_active`).      |
+| Type                | Adds                                                           |
+| ------------------- | ------------------------------------------------------------- |
+| `host_discovery`    | `-sn` ping/ARP sweep, no port scan (mode ignored).            |
+| `service_detection` | `-sV` over the mode's ports; `--version-all` on standard. |
+| `os_probe`          | `-O`; standard/deep also add `-sV` over the mode's ports.     |
+| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest and SNMP inventory of the targets, merged per host (see below). |
 
 Job rate limits map to `--max-rate` / `--max-parallelism`; the job timeout maps
-to `--host-timeout` and bounds the agent-side context.
+to `--host-timeout` and feeds the agent/app budgets (see "Timeouts" below).
 
-`internal/scanner/agent/nmap.go` builds the argument list and parses nmap's XML
-(`-oX -`). The command runner is injectable, so argument building and XML parsing
-are unit-tested without nmap or raw-socket privileges.
+### Staged scan methodology
+
+nmap scans run in stages, mirroring how a human narrows down a host, so probing
+is never wasted on dead address space:
+
+1. **Host discovery** — a fast `-sn` sweep (`-T4`) over the raw targets finds which
+   hosts are alive (and, on the local segment, their MAC/vendor). A target range
+   with nothing alive short-circuits here, before any port scan.
+2. **Port + service/OS detection** — only the live hosts are handed to a second
+   pass that skips re-discovery (`-Pn`), scans the mode's ports, and lets nmap
+   version-probe (`-sV`) **only the ports it finds open**, plus OS detection where
+   the type calls for it.
+
+Stage-1 (alive + MAC) and stage-2 (services + OS) findings are merged per IP
+(`mergeObservations`), so a host ends up as one record. `host_discovery` is just
+stage 1; the SNMP scan types are unaffected (they are not nmap).
+
+`internal/scanner/agent/nmap.go` builds each stage's argument list and parses
+nmap's XML (`-oX -`). The command runner is injectable, so argument building, the
+staged pipeline, and XML parsing are unit-tested without nmap or raw-socket
+privileges.
+
+### Timeouts
+
+`ScanJob.TimeoutSeconds` is the **per-host** budget (nmap's `--host-timeout`). The
+form leaves it blank by default and the app fills a generous per-type default
+(`app.defaultTimeoutForType`: host_discovery 120s, service_detection 600s, os_probe
+900s, combined 1200s, arp_table 180s, snmp_inventory 300s). From that per-host
+budget, `scanner.ScanBudget(perHost, targets)` derives the **whole-job** budget
+(`perHost × host-count + discovery allowance + grace`, capped at 4h). Both the
+agent (supervising the discoverer) and the app (bounding the blocking dispatch
+HTTP call) compute their deadline from `ScanBudget`, so the app always outlasts the
+agent — fixing the multi-host "context deadline exceeded" where the app gave up
+after `perHost + 10s` while the agent needed `perHost × hosts`.
 
 ## SNMP ARP-table harvesting (`arp_table`)
 
@@ -118,6 +153,30 @@ observations flow through the **same** review queue and reconciliation as nmap a
 scan all merge onto one discovery row per IP. A multi-homed device imports as one
 device per distinct interface MAC under the existing MAC-keyed import (deduping by
 name is future VLAN/interface-mapping work). See ADR 0007.
+
+## Combined scan (`combined`)
+
+`combined` runs all three backends against the targets in one job and merges
+their findings into the most complete picture per host:
+
+- a **deep nmap** scan (every TCP port, `-sV` + `-O`) — the core of the job,
+- an **SNMP ARP harvest** (`arp_table`) of the single-host targets, and
+- an **SNMP inventory** (`snmp_inventory`) of the single-host targets.
+
+nmap is authoritative: if it fails, the combined job fails. The two SNMP passes
+are **best-effort enrichment** — a device that does not answer SNMP (or a CIDR
+target, which SNMP cannot query) is reported as *ignored*, never failed. Ignored
+notices carry the `scan_ignored` code; the orchestrator never promotes them to the
+job's headline error, and `/scans/{id}` renders them in a muted **Skipped**
+section rather than as red errors.
+
+`internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap and
+SNMP discoverers. It forces the nmap sub-job to deep mode, restricts the SNMP
+sub-jobs to bare-IP targets (`hostTargets`), and merges the per-IP observations
+(`mergeObservations`: the leading nmap source wins scalar fields, services union
+by port, evidence concatenates). Because the discovery store already merges by IP
+(`ON CONFLICT (ip)`), the consolidated observations land on one discovery row and,
+once imported, on one device (see Merge-on-rescan). See ADR 0008.
 
 ## Review queue (`/discoveries`)
 

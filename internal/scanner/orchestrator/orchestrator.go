@@ -102,7 +102,16 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 		}
 	}
 
-	timeout := time.Duration(job.TimeoutSeconds)*time.Second + 10*time.Second
+	// The dispatch is a single blocking HTTP call that the agent answers only when
+	// the whole scan finishes, so the app must outlast the agent's own budget.
+	// Derive it from the same per-host budget the agent uses (scanner.ScanBudget),
+	// plus network grace — otherwise a multi-host scan trips "context deadline
+	// exceeded" on the app side long before the agent is done.
+	timeout := scanner.ScanBudget(job.TimeoutSeconds, job.Targets)
+	if timeout <= 0 {
+		timeout = 30 * time.Minute
+	}
+	timeout += 60 * time.Second
 	dispatchCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -124,9 +133,7 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 	if encoded, err := json.Marshal(result); err == nil {
 		out.Result = string(encoded)
 	}
-	if len(result.Errors) > 0 {
-		out.Error = result.Errors[0].Message
-	}
+	out.Error = headlineError(result.Errors)
 	if out.Status == "" {
 		out.Status = "failed"
 		out.Error = "agent returned no status"
@@ -225,6 +232,20 @@ func (s *Service) syncImported(ctx context.Context, result store.DiscoveryUpsert
 		return false
 	}
 	return true
+}
+
+// headlineError returns the first real failure message to surface as the job's
+// summary error, skipping ignored notices (best-effort portions that were
+// skipped, e.g. SNMP during a combined scan). A job whose only errors are ignored
+// notices therefore shows no headline error and stays a success.
+func headlineError(errs []scanner.ScanError) string {
+	for _, e := range errs {
+		if e.Code == scanner.CodeScanIgnored {
+			continue
+		}
+		return e.Message
+	}
+	return ""
 }
 
 func servicesFromObservation(services []scanner.ServiceObservation) []store.DiscoveryService {
