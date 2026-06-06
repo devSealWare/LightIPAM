@@ -66,6 +66,22 @@
     </section>
     {{ end }}
 
+    {{ if $.ScanNotices }}
+    <section class="glass-panel mt-5 rounded-[28px] p-6">
+      <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Skipped</h2>
+      <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Best-effort parts of this scan that produced nothing and were ignored, not failed.</p>
+      <ul class="mt-3 space-y-2">
+        {{ range $.ScanNotices }}
+        <li class="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
+          <span class="font-medium">{{ .Message }}</span>
+          {{ if .Target }}<span class="ml-1 font-mono text-xs text-zinc-400">({{ .Target }})</span>{{ end }}
+          <span class="ml-1 rounded-md bg-zinc-200 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">ignored</span>
+        </li>
+        {{ end }}
+      </ul>
+    </section>
+    {{ end }}
+
     {{ if $.ScanObservations }}
     <section class="glass-panel mt-5 rounded-[28px] p-6">
       <div class="flex items-center justify-between">

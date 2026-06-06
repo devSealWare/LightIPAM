@@ -124,9 +124,7 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 	if encoded, err := json.Marshal(result); err == nil {
 		out.Result = string(encoded)
 	}
-	if len(result.Errors) > 0 {
-		out.Error = result.Errors[0].Message
-	}
+	out.Error = headlineError(result.Errors)
 	if out.Status == "" {
 		out.Status = "failed"
 		out.Error = "agent returned no status"
@@ -225,6 +223,20 @@ func (s *Service) syncImported(ctx context.Context, result store.DiscoveryUpsert
 		return false
 	}
 	return true
+}
+
+// headlineError returns the first real failure message to surface as the job's
+// summary error, skipping ignored notices (best-effort portions that were
+// skipped, e.g. SNMP during a combined scan). A job whose only errors are ignored
+// notices therefore shows no headline error and stays a success.
+func headlineError(errs []scanner.ScanError) string {
+	for _, e := range errs {
+		if e.Code == scanner.CodeScanIgnored {
+			continue
+		}
+		return e.Message
+	}
+	return ""
 }
 
 func servicesFromObservation(services []scanner.ServiceObservation) []store.DiscoveryService {

@@ -51,6 +51,13 @@ const (
 	ModeDeepActive     ScanMode = "deep_active"
 )
 
+// CodeScanIgnored marks a best-effort portion of a scan that produced nothing
+// and was skipped rather than failed — e.g. an SNMP query during a combined scan
+// that got no response. It is informational: a result carrying only ignored
+// notices is still a success, and the UI renders these as muted "skipped" notes
+// rather than errors.
+const CodeScanIgnored = "scan_ignored"
+
 type JobStatus string
 
 const (

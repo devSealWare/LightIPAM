@@ -52,7 +52,7 @@ func TestNmapArgsHostDiscoveryUsesPingSweep(t *testing.T) {
 	}
 }
 
-func TestNmapArgsDeepCombinedProbesServicesAndOS(t *testing.T) {
+func TestNmapArgsDeepCombinedProbesEveryPort(t *testing.T) {
 	job := validJob()
 	job.Type = scanner.ScanCombined
 	job.Mode = scanner.ModeDeepActive
@@ -60,26 +60,69 @@ func TestNmapArgsDeepCombinedProbesServicesAndOS(t *testing.T) {
 	if err != nil || !active {
 		t.Fatalf("expected active scan, err=%v active=%v", err, active)
 	}
-	for _, want := range []string{"-sV", "-O", "--top-ports", "1000"} {
+	for _, want := range []string{"-sV", "-O", "-p-", "--version-all"} {
 		if !argsContain(args, want) {
 			t.Fatalf("expected %q in deep combined args, got %v", want, args)
 		}
 	}
+	if argsContain(args, "--top-ports") {
+		t.Fatalf("deep mode scans every port (-p-), not the top ports, got %v", args)
+	}
 }
 
-func TestNmapArgsLightActiveStaysShallow(t *testing.T) {
+func TestNmapArgsServiceDetectionDepthByMode(t *testing.T) {
+	cases := []struct {
+		mode       scanner.ScanMode
+		wantPort   string // expected port-selection flag
+		wantVerAll bool
+		denyPort   string // port flag that must NOT appear
+	}{
+		{scanner.ModeLightActive, "--top-ports", false, "-p-"},
+		{scanner.ModeStandardActive, "--top-ports", true, "-p-"},
+		{scanner.ModeDeepActive, "-p-", true, "--top-ports"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			job := validJob()
+			job.Type = scanner.ScanServiceDetect
+			job.Mode = tc.mode
+			args, active, err := nmapArgs(job, EgressOptions{})
+			if err != nil || !active {
+				t.Fatalf("expected active scan, err=%v active=%v", err, active)
+			}
+			if !argsContain(args, "-sV") {
+				t.Fatalf("service detection must run -sV, got %v", args)
+			}
+			if !argsContain(args, tc.wantPort) {
+				t.Fatalf("mode %s: expected port flag %q, got %v", tc.mode, tc.wantPort, args)
+			}
+			if argsContain(args, tc.denyPort) {
+				t.Fatalf("mode %s: did not expect %q, got %v", tc.mode, tc.denyPort, args)
+			}
+			if got := argsContain(args, "--version-all"); got != tc.wantVerAll {
+				t.Fatalf("mode %s: --version-all present=%v, want %v (args %v)", tc.mode, got, tc.wantVerAll, args)
+			}
+			// Service detection never fingerprints the OS; that is the os_probe type.
+			if argsContain(args, "-O") {
+				t.Fatalf("service detection must not run -O, got %v", args)
+			}
+		})
+	}
+}
+
+func TestNmapArgsLightOSProbeIsOSOnly(t *testing.T) {
 	job := validJob()
-	job.Type = scanner.ScanCombined
+	job.Type = scanner.ScanOSProbe
 	job.Mode = scanner.ModeLightActive
-	args, _, err := nmapArgs(job, EgressOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	args, active, err := nmapArgs(job, EgressOptions{})
+	if err != nil || !active {
+		t.Fatalf("expected active scan, err=%v active=%v", err, active)
 	}
-	if argsContain(args, "-O") {
-		t.Fatalf("light_active must not run OS detection, got %v", args)
+	if !argsContain(args, "-O") {
+		t.Fatalf("os probe must run -O, got %v", args)
 	}
-	if !argsContain(args, "100") {
-		t.Fatalf("light_active should use the top-100 ports, got %v", args)
+	if argsContain(args, "-sV") {
+		t.Fatalf("light os probe should be OS-only (no -sV), got %v", args)
 	}
 }
 

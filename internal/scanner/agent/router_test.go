@@ -54,6 +54,23 @@ func TestDiscoveryRouterRoutesInventory(t *testing.T) {
 	}
 }
 
+func TestDiscoveryRouterRoutesCombined(t *testing.T) {
+	nmap := &stubDiscoverer{tag: "nmap"}
+	combined := &stubDiscoverer{tag: "combined"}
+	router := NewDiscoveryRouter(nmap).Register(scanner.ScanCombined, combined)
+
+	obs, _, err := router.Discover(context.Background(), scanner.ScanJob{Type: scanner.ScanCombined})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if !combined.called || nmap.called {
+		t.Fatalf("combined should route to the combined discoverer (combined=%v nmap=%v)", combined.called, nmap.called)
+	}
+	if len(obs) != 1 || obs[0].IP != "combined" {
+		t.Fatalf("unexpected observations: %+v", obs)
+	}
+}
+
 func TestDiscoveryRouterFallsBack(t *testing.T) {
 	nmap := &stubDiscoverer{tag: "nmap"}
 	snmp := &stubDiscoverer{tag: "snmp"}

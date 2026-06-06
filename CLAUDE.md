@@ -186,6 +186,24 @@ Phase 3 follow-ups (merged, #18):
   per-job `scan.discovery.synced` audit. The `importDiscoveryDevice` re-import
   path got the same empty-services guard. Devices imported before this self-heal
   on their next scan. See `docs/SCANNER_DISCOVERY.md` "Merge-on-rescan".
+- **#44 Combined-all scan + simpler scan modes** (ADR 0008). `combined` now runs
+  all three backends in one job: a deep nmap scan (all ports, `-sV` + `-O`) plus
+  best-effort SNMP `arp_table` and `snmp_inventory` of the targets, merged per
+  host (`CombinedDiscoverer` in `internal/scanner/agent/combined.go`;
+  `mergeObservations`). nmap is the core (its failure fails the job); a silent
+  SNMP device or a CIDR target is *ignored*, not failed — notices carry the new
+  `scanner.CodeScanIgnored` (`scan_ignored`) code, `orchestrator.headlineError`
+  keeps them out of the job's headline error, and `/scans/{id}` shows them in a
+  muted "Skipped" section (`app.partitionScanErrors`, `PageData.ScanNotices`).
+  **Modes simplified** to Light (top-1000 `-sV`), Standard (top-1000 +
+  `--version-all` + `-O`) and Deep (all ports `-p-` + versions + OS); `passive` is
+  still a valid protocol value but dropped from the UI. Mode is an nmap-only depth
+  knob — `arp_table`/`snmp_inventory`/`combined` ignore it and the form hides the
+  picker (`app.modeForType` normalizes server-side, so it works JS-off). Dynamic
+  show/hide + per-type hint via same-origin `internal/ui/static/scan_form.js`
+  (`ui.ScanFormJS`, route `GET /static/scan_form.js`); strict CSP unchanged.
+  Friendly `optionLabel` text on the type/mode `<select>`s. Combined is registered
+  on the agent router in `cmd/scanner-agent/main.go`.
 
 ## Verification
 

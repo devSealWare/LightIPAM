@@ -120,18 +120,21 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 	return observations, []scanner.ScanError{}, nil
 }
 
-// topPortsForMode maps a scan mode to the number of top TCP ports to probe.
-func topPortsForMode(mode scanner.ScanMode) int {
-	switch mode {
-	case scanner.ModeLightActive:
-		return 100
-	case scanner.ModeStandardActive:
-		return 1000
-	case scanner.ModeDeepActive:
-		return 1000
-	default:
-		return 100
+// portArgsForMode renders nmap's port selection for a mode: every TCP port for a
+// deep scan (-p-), the top 1000 for light and standard. Deep trades a much longer
+// run for complete coverage; the job timeout (--host-timeout) keeps it bounded.
+func portArgsForMode(mode scanner.ScanMode) []string {
+	if mode == scanner.ModeDeepActive {
+		return []string{"-p-"}
 	}
+	return []string{"--top-ports", "1000"}
+}
+
+// versionAllForMode reports whether the mode runs nmap's exhaustive version
+// probes (--version-all). Standard and deep do; light keeps service detection
+// quick with nmap's default probe intensity.
+func versionAllForMode(mode scanner.ScanMode) bool {
+	return mode == scanner.ModeStandardActive || mode == scanner.ModeDeepActive
 }
 
 // nmapArgs builds the nmap argument list for a job. The boolean is false when
@@ -169,25 +172,35 @@ func nmapArgs(job scanner.ScanJob, egress EgressOptions) ([]string, bool, error)
 		args = append(args, "--host-timeout", strconv.Itoa(job.TimeoutSeconds)+"s")
 	}
 
-	topPorts := topPortsForMode(job.Mode)
 	switch job.Type {
 	case scanner.ScanHostDiscovery:
-		// Host discovery only: ping/ARP sweep, no port scan.
+		// Host discovery only: ping/ARP sweep, no port scan. Mode does not change
+		// a ping sweep, so the depth knobs are intentionally ignored here.
 		args = append(args, "-sn")
 	case scanner.ScanServiceDetect:
-		args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
-		if job.Mode == scanner.ModeDeepActive {
+		args = append(args, "-sV")
+		args = append(args, portArgsForMode(job.Mode)...)
+		if versionAllForMode(job.Mode) {
 			args = append(args, "--version-all")
 		}
 	case scanner.ScanOSProbe:
 		args = append(args, "-O")
+		// Light is OS-only; standard/deep add service detection over the mode's
+		// ports so the OS guess is corroborated by running services.
 		if job.Mode != scanner.ModeLightActive {
-			args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
+			args = append(args, "-sV")
+			args = append(args, portArgsForMode(job.Mode)...)
+			if versionAllForMode(job.Mode) {
+				args = append(args, "--version-all")
+			}
 		}
 	case scanner.ScanCombined:
-		args = append(args, "-sV", "--top-ports", strconv.Itoa(topPorts))
-		if job.Mode != scanner.ModeLightActive {
-			args = append(args, "-O")
+		// Combined always probes services and OS together; the CombinedDiscoverer
+		// forces deep mode, so this scans every port with exhaustive versioning.
+		args = append(args, "-sV", "-O")
+		args = append(args, portArgsForMode(job.Mode)...)
+		if versionAllForMode(job.Mode) {
+			args = append(args, "--version-all")
 		}
 	default:
 		return nil, false, fmt.Errorf("unsupported scan type %q", job.Type)

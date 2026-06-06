@@ -43,19 +43,21 @@
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan type</span>
-          <select class="form-input" name="scan_type">
+          <select class="form-input" name="scan_type" data-scan-type>
             {{ range .ScanTypes }}
-            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ . }}</option>
+            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ optionLabel . }}</option>
             {{ end }}
           </select>
+          <span class="mt-1 block text-xs text-zinc-400" data-scan-hint></span>
         </label>
-        <label class="block">
+        <label class="block" data-scan-mode-field>
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Mode</span>
           <select class="form-input" name="mode">
             {{ range .ScanModes }}
-            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ . }}</option>
+            <option value="{{ . }}" {{ if eq . (index $.Form "mode") }}selected{{ end }}>{{ optionLabel . }}</option>
             {{ end }}
           </select>
+          <span class="mt-1 block text-xs text-zinc-400">Depth applies to nmap scans only.</span>
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
