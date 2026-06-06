@@ -208,6 +208,24 @@ Phase 3 follow-ups (merged, #18):
   (`ui.ScanFormJS`, route `GET /static/scan_form.js`); strict CSP unchanged.
   Friendly `optionLabel` text on the type/mode `<select>`s. Combined is registered
   on the agent router in `cmd/scanner-agent/main.go`.
+- **#45 Staged nmap + dynamic timeouts** (ADR 0009). `NmapDiscoverer.Discover` now
+  scans in two stages: a fast `-sn -T4` **host-discovery** sweep finds live hosts
+  (short-circuiting a dead range with no port scan), then only those hosts get a
+  `-Pn` **service/OS** pass that version-probes just the open ports; the stages
+  merge per IP (`hostDiscoveryArgs` + `serviceScanArgs`, reusing `mergeObservations`;
+  `nmapArgs` is gone). `host_discovery` is stage 1 only; SNMP types are unaffected.
+  **Timeouts are now dynamic + generous and the dispatch-deadline bug is fixed.**
+  `ScanJob.TimeoutSeconds` is per-host; the form leaves it blank and
+  `app.defaultTimeoutForType` fills a per-type default (host_discovery 120 /
+  service_detection 600 / os_probe 900 / combined 1200 / arp_table 180 /
+  snmp_inventory 300). `scanner.ScanBudget(perHost, targets)` (new
+  `internal/scanner/budget.go`, with `EstimateTargetHosts`, cap raised 2h→4h)
+  derives the whole-job budget; **both** the agent's supervising context and the
+  app's dispatch context use it (app adds 60s grace), so a multi-host scan no
+  longer trips "context deadline exceeded" — previously the app gave up after
+  `perHost + 10s` while the agent needed `perHost × hosts`. Agent's local
+  `scanBudget`/`estimateTargetHosts` removed in favor of the shared funcs. Form's
+  timeout field shows the per-type default as a placeholder (`scan_form.js`).
 
 ## Verification
 

@@ -26,6 +26,31 @@ func scanModeOptions() []string {
 	return []string{"light_active", "standard_active", "deep_active"}
 }
 
+// defaultTimeoutForType is the per-host scan timeout (seconds) used when the
+// operator leaves the field blank. It scales with how much work the scan type
+// does per host and is intentionally generous: a too-low timeout surfaced as
+// "context deadline exceeded" on slow or thorough scans (and the app derives its
+// dispatch deadline from this per-host budget × the target count). The operator
+// can still override it on the form.
+func defaultTimeoutForType(scanType string) int {
+	switch scanType {
+	case "host_discovery":
+		return 120
+	case "service_detection":
+		return 600
+	case "os_probe":
+		return 900
+	case "combined":
+		return 1200
+	case "arp_table":
+		return 180
+	case "snmp_inventory":
+		return 300
+	default:
+		return 300
+	}
+}
+
 // modeForType resolves the scan mode to store for a job, given its type. Mode is
 // a depth knob that only applies to the plain nmap scan types; ARP and SNMP have
 // no depth (a non-passive mode just means "run"), and combined always runs at
@@ -224,7 +249,7 @@ func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
 	if len(targets) == 0 {
 		return store.ScanJobInput{}, errors.New("Enter at least one target.")
 	}
-	timeout := 60
+	timeout := defaultTimeoutForType(form["scan_type"])
 	if form["timeout"] != "" {
 		parsed, err := strconv.Atoi(form["timeout"])
 		if err != nil || parsed <= 0 {
@@ -250,7 +275,7 @@ func (a *App) renderScanForm(w http.ResponseWriter, r *http.Request, session sto
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active", "timeout": "60"}
+		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active"}
 	}
 	_ = ui.Render(w, "scan_new.html", ui.PageData{
 		Title:         "Run Scan",
@@ -733,7 +758,7 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 	if err != nil || interval < 60 {
 		return store.ScanScheduleInput{}, form, errors.New("Interval must be at least 60 seconds.")
 	}
-	timeout := 60
+	timeout := defaultTimeoutForType(form["scan_type"])
 	if form["timeout"] != "" {
 		parsed, err := strconv.Atoi(form["timeout"])
 		if err != nil || parsed <= 0 {
@@ -780,7 +805,7 @@ func (a *App) renderScheduleForm(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active", "timeout": "60", "interval": "3600", "enabled": "on"}
+		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active", "interval": "3600", "enabled": "on"}
 	}
 	_ = ui.Render(w, "schedule_form.html", ui.PageData{
 		Title:        title,

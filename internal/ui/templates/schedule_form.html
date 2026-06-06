@@ -68,8 +68,9 @@
           <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="targets" placeholder="192.168.10.0/24">{{ index .Form "targets" }}</textarea>
         </label>
         <label class="block">
-          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timeout (seconds)</span>
-          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="60">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Per-host timeout (seconds)</span>
+          <input class="form-input" name="timeout" value="{{ index .Form "timeout" }}" inputmode="numeric" placeholder="auto" data-scan-timeout>
+          <span class="mt-1 block text-xs text-zinc-400">Leave blank for a smart default based on the scan type.</span>
         </label>
         <label class="flex items-center gap-3 sm:col-span-2">
           <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="enabled" {{ if index .Form "enabled" }}checked{{ end }}>

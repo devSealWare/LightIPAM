@@ -102,7 +102,16 @@ func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store
 		}
 	}
 
-	timeout := time.Duration(job.TimeoutSeconds)*time.Second + 10*time.Second
+	// The dispatch is a single blocking HTTP call that the agent answers only when
+	// the whole scan finishes, so the app must outlast the agent's own budget.
+	// Derive it from the same per-host budget the agent uses (scanner.ScanBudget),
+	// plus network grace — otherwise a multi-host scan trips "context deadline
+	// exceeded" on the app side long before the agent is done.
+	timeout := scanner.ScanBudget(job.TimeoutSeconds, job.Targets)
+	if timeout <= 0 {
+		timeout = 30 * time.Minute
+	}
+	timeout += 60 * time.Second
 	dispatchCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

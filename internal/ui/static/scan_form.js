@@ -10,6 +10,8 @@
  *   [data-scan-type]        the scan-type <select>
  *   [data-scan-mode-field]  the wrapper around the Mode picker, hidden when N/A
  *   [data-scan-hint]        an element whose text is set to the per-type hint
+ *   [data-scan-timeout]     the timeout <input>; its placeholder shows the
+ *                           per-type default used when left blank
  */
 (function () {
   "use strict";
@@ -19,6 +21,17 @@
     arp_table: true,
     snmp_inventory: true,
     combined: true
+  };
+
+  // Per-host timeout defaults (seconds), mirroring app.defaultTimeoutForType.
+  // Shown as the timeout field's placeholder when the operator leaves it blank.
+  var TIMEOUTS = {
+    host_discovery: 120,
+    service_detection: 600,
+    os_probe: 900,
+    combined: 1200,
+    arp_table: 180,
+    snmp_inventory: 300
   };
 
   var HINTS = {
@@ -45,6 +58,7 @@
     }
     var modeField = document.querySelector("[data-scan-mode-field]");
     var hint = document.querySelector("[data-scan-hint]");
+    var timeout = document.querySelector("[data-scan-timeout]");
 
     function update() {
       var type = select.value;
@@ -53,6 +67,9 @@
       }
       if (hint) {
         hint.textContent = HINTS[type] || "";
+      }
+      if (timeout) {
+        timeout.placeholder = TIMEOUTS[type] ? "auto (" + TIMEOUTS[type] + "s)" : "auto";
       }
     }
 
