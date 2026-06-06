@@ -2,9 +2,11 @@
 
 The scanner agent is the isolated component that performs active network
 discovery for Light IPAM. It runs as a separate container so the web app can
-stay unprivileged. Since issue #10 it performs **real active discovery** with
-nmap for non-passive jobs; the privilege to do so (`NET_RAW`) is scoped to this
-component only. See `docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flow.
+stay unprivileged. It performs **real active discovery** for non-passive jobs:
+nmap for host/service/OS scanning (the only thing needing `NET_RAW`, scoped to
+this component) and SNMP for ARP-table harvesting and device inventory (plain
+UDP/161, no extra privilege). See `docs/SCANNER_DISCOVERY.md` for the
+discovery/enrollment flow and the per-scan-type behavior.
 
 ## Responsibilities
 
@@ -12,8 +14,13 @@ component only. See `docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flo
 - Verify the app's client certificate identity.
 - Validate every job against the agent's registered IPv4 allowlist using
   `scanner.ValidateAgentScope` (allowlist containment).
-- Run nmap for active modes (depth bounded by mode) and report observations;
-  passive jobs return an empty, successful result.
+- Route each job to the right backend by scan type (a `DiscoveryRouter`): nmap for
+  `host_discovery`/`service_detection`/`os_probe`, SNMP for
+  `arp_table`/`snmp_inventory`, and a combined discoverer for `combined` (deep
+  nmap + both SNMP passes, merged per host, SNMP non-response ignored not failed).
+- Run nmap in **stages** — a fast host-discovery sweep, then service/OS detection
+  on only the live hosts — and report observations; passive jobs return an empty,
+  successful result.
 - Self-describe on `GET /register` so the app can enroll it automatically.
 
 The agent never trusts a job blindly: even if the app submits targets outside
@@ -74,6 +81,11 @@ rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
 | `AGENT_ALLOWED_CIDRS` | (required)                   | Comma-separated IPv4 CIDRs the agent may scan. |
 | `AGENT_SCAN_SOURCE_IP`| (unset)                      | Pin nmap's probes to the interface owning this IP (the macvlan LAN IP). See "Consistent scans across subnets". |
 | `AGENT_SCAN_INTERFACE`| (unset)                      | Name the egress interface directly instead of resolving it from the source IP. |
+| `AGENT_SNMP_COMMUNITY`| `public`                     | SNMP v2c read community (lives only on the agent, never the app DB). |
+| `AGENT_SNMP_VERSION`  | `2c`                         | SNMP version (only `2c` is wired today; shaped for v3 later). |
+| `AGENT_SNMP_PORT`     | `161`                        | SNMP UDP port.                            |
+| `AGENT_SNMP_TIMEOUT`  | `5`                          | SNMP per-request timeout (seconds).       |
+| `AGENT_SNMP_RETRIES`  | `1`                          | SNMP retry count.                         |
 | `APP_CLIENT_CN`       | `light-ipam-app`             | Required client certificate CommonName.   |
 | `SCANNER_TLS_CERT`    | `/certs/agent.crt`           | Agent server certificate.                 |
 | `SCANNER_TLS_KEY`     | `/certs/agent.key`           | Agent server key.                         |
@@ -89,8 +101,10 @@ go run ./cmd/scanner-certs -dir deploy/scanner-certs
 docker compose --profile scanner up -d --build
 ```
 
-The service drops all Linux capabilities and runs read-only. `NET_RAW` will be
-added here — and only here — when Nmap-based discovery lands.
+The service drops all Linux capabilities (`cap_drop: ALL`) and adds back only
+`NET_RAW` — here, and only here — for nmap's raw-socket probes. The app service
+keeps zero capabilities. SNMP discovery uses an ordinary UDP socket and needs no
+added capability.
 
 ## Layer-2 discovery (MAC addresses) with macvlan
 
@@ -158,16 +172,24 @@ docker compose exec scanner-agent ip -br addr                # confirm the macvl
 
 ## Scan timeouts
 
-A job's timeout is nmap's **per-host** budget (`--host-timeout`): nmap caps each
-target at that many seconds, then moves on and exits cleanly with whatever it
-found. The agent's own supervising deadline is deliberately *larger* — the
-per-host budget across every target plus grace for startup/output, capped at two
-hours (`scanBudget`). This lets nmap self-limit and return partial results
-instead of being hard-killed at the exact moment its host-timeout fires (which
-truncates output and produces an empty `nmap failed:` error). If a heavy
-`standard_active`/`deep_active` scan still times out, raise the timeout on the
-scan form or narrow the targets; `host_discovery`/`light_active` (`-sn`) needs no
-port probing and returns near-instantly.
+A job's timeout is the **per-host** budget (nmap's `--host-timeout`): nmap caps
+each target at that many seconds, then moves on and exits cleanly with whatever
+it found. The scan form leaves the field blank by default and the app fills a
+**generous per-type default** (`app.defaultTimeoutForType`: host_discovery 120s,
+service_detection 600s, os_probe 900s, combined 1200s, arp_table 180s,
+snmp_inventory 300s) — a high `--host-timeout` is only a ceiling, harmless to fast
+hosts and protective of slow ones.
+
+From that per-host budget, `scanner.ScanBudget(perHost, targets)` derives the
+**whole-job** budget (`perHost × host-count + host-discovery allowance + grace`,
+capped at **4h**). Both the agent (supervising the discoverer across its staged
+nmap passes) and the app (bounding the single blocking dispatch HTTP call) compute
+their deadline from this one function, so the app always outlasts the agent — this
+is what fixed the multi-host "context deadline exceeded" where the app gave up
+after `perHost + 10s` while the agent legitimately needed `perHost × hosts`. The
+generous budget also lets nmap self-limit and return partial results instead of
+being hard-killed mid-write. If a heavy scan still times out, raise the timeout on
+the scan form or narrow the targets.
 
 ## App-side dispatch
 
