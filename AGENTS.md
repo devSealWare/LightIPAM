@@ -8,9 +8,10 @@ Light IPAM is a lightweight IP address management system for small business thro
 
 ## Current State
 
-Phase 1 manual IPAM foundation is merged to `main`.
+Phase 1 manual IPAM foundation is merged to `main`, as are the scanner phases
+(2–4 in progress) — see "Current State of the Scanner Track" below for discovery.
 
-Implemented:
+Implemented (manual IPAM):
 
 - Go backend with `net/http`.
 - PostgreSQL via `pgx`.
@@ -51,9 +52,16 @@ Implemented:
 - `internal/ipam`: IPv4/CIDR parsing and utility functions.
 - `internal/macaddr`: MAC normalization, private MAC detection, vendor matching.
 - `internal/store`: database query layer.
-- `internal/ui`: embedded templates and static CSS.
+- `internal/ui`: embedded templates and static assets (CSS + progressive-
+  enhancement JS).
 - `internal/ui/assets/app.css`: Tailwind source.
 - `internal/ui/static/app.css`: generated CSS committed for embedding.
+- `internal/ui/static/*.js`: same-origin progressive-enhancement scripts
+  (`columns.js` selectable table columns, `scan_form.js` dynamic scan form); no
+  inline JS, strict CSP.
+- `internal/scanner` + `cmd/scanner-agent` + `cmd/scanner-certs`: the scanner
+  protocol, agent, app-side dispatch/orchestrator, and dev PKI (see "Scanner
+  Components").
 - `docs`: product, architecture, roadmap, backlog, ADRs.
 
 ## Stack
@@ -93,65 +101,64 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 
 - `internal/scanner`: versioned protocol types and allowlist validation
   (issue #7). `ValidateJobForAgent` is the app-side check; `ValidateAgentScope`
-  is the agent-side check.
+  is the agent-side check. `budget.go` holds the shared `ScanBudget` /
+  `EstimateTargetHosts` used by both the agent and the app for scan deadlines.
 - `internal/scanner/agent`: agent receive/report handler (`GET /healthz`,
-  `GET /register`, `POST /jobs`) plus mTLS TLS config builders. `nmap.go` is the
-  nmap-backed `Discoverer`; passive jobs stay no-op (issues #8/#10).
+  `GET /register`, `POST /jobs`) plus mTLS TLS config builders. Backends:
+  `nmap.go` (staged `Discoverer` — host-discovery sweep then service/OS on live
+  hosts), `snmp.go` (`arp_table` + `snmp_inventory` over UDP/161), `combined.go`
+  (deep nmap + both SNMP passes, merged per host, SNMP non-response ignored), and
+  `router.go` (`DiscoveryRouter` dispatching by scan type). Passive jobs stay
+  no-op.
 - `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
   certificates.
 - `cmd/scanner-agent`: the agent process (mTLS HTTPS). Bundles nmap and runs
-  with `NET_RAW` only (issue #10).
+  with `NET_RAW` only; SNMP needs no added capability. Wires the nmap + SNMP +
+  combined backends onto the router.
 - `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs and
   pulls `/register` for enrollment (issues #9/#10).
 - `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
-  dispatch async, record lifecycle + audit, run the schedule ticker, persist
-  observations as discoveries, and auto-enroll the bundled agent.
+  dispatch async (deadline from `scanner.ScanBudget`), record lifecycle + audit,
+  run the schedule ticker, persist observations as discoveries, auto-import /
+  merge-on-rescan onto imported devices, and auto-enroll the bundled agent.
 - App routes: `/scans` (+ `/scans/{id}` structured detail), `/agents`
-  (+ `/agents/discover`, `/agents/{id}/approve`), `/schedules`, and
-  `/discoveries` (import/dismiss). Migration 5 adds
-  `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds `scan_discoveries`
-  (migration 7 adds its reconciliation columns; migration 8 adds
-  `scan_agents.auto_import`).
+  (+ `/agents/discover`, `/agents/{id}/approve`), `/schedules`, `/discoveries`
+  (import/dismiss), `/search`, and `/static/scan_form.js` (+ `/static/columns.js`).
+  Migration 5 adds `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds
+  `scan_discoveries` (migration 7 adds its reconciliation columns; migration 8
+  adds `scan_agents.auto_import`).
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
   service stays at zero capabilities.
 
 See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, `docs/SCANNER_DISCOVERY.md`,
-and ADRs 0002/0003/0004/0005.
+and ADRs 0002–0009.
 
 ## Current State of the Scanner Track
 
-Issue #10 (Nmap Discovery MVP) is **merged to `main`** (PR #15, commit
-`4f695c9`). The agent runs real nmap scans (depth bounded by mode); successful
-observations land in the `/discoveries` review queue, where an operator imports
-them into subnets/devices or dismisses them. Agents enroll by app-pull (auto on
-boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form) as `pending`
-for one-click approval. The app remains unprivileged (zero capabilities, no
-nmap). The initial backlog (issues #1–#10) is now complete. Two Phase 3
-follow-ups also merged (PR #18): per-agent auto-import and a structured
-scan-result detail UI.
+The initial backlog (issues #1–#10) and **Roadmap Phase 3** are complete, and
+**Phase 4 (Network Context) is underway**. The agent runs real scans routed by
+type: staged nmap (host discovery → service/OS on live hosts only), SNMP
+`arp_table` harvesting (ADR 0006) and SNMP `snmp_inventory` (ADR 0007), and a
+`combined` scan that runs deep nmap + both SNMP passes merged per host with
+unreachable SNMP ignored not failed (ADR 0008). Scan modes are simplified to
+Light/Standard/Deep, and scan timeouts are dynamic per-type with a shared
+budget shared by the agent and app (ADR 0009). Successful observations land in
+the `/discoveries` review queue (import/dismiss), with per-agent auto-import for
+trusted agents and merge-on-rescan onto already-imported devices. Agents enroll
+by app-pull (auto on boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents`
+"Discover" form). The app remains unprivileged (zero capabilities, no nmap).
 
 ## Next
 
-No issue is in progress. **Roadmap Phase 3 is complete** — conflict-aware
-reconciliation (migration 7: `scan_discoveries.reconcile_status`/`conflict`,
-`store.reconcileDiscovery`) finished it, flagging discoveries new/match/conflict
-and refreshing `last_seen_at` on managed addresses. Two Phase 3 follow-ups are
-**merged (#18)**:
+No issue is in progress. Remaining candidate work, roughly in priority order:
 
-- Per-agent auto-import trust setting: `scan_agents.auto_import` (migration 8);
-  `orchestrator.maybeAutoImport` imports non-conflicting pending observations,
-  conflicts stay queued. Agent-form checkbox + `/agents` badge.
-- Scan-result detail UI: `/scans/{id}` parses the agent result
-  (`app.parseScanResult`) into per-host cards (MAC/OS/services/evidence), raw
-  JSON collapsed.
-
-Remaining candidate work, roughly in priority order:
-
-- Phase 4 (Network Context): SNMP, LLDP/CDP, DHCP, DNS enrichment, VLAN mapping —
-  each reusing the discovery review-queue + reconciliation pattern, kept in the
-  agent.
-- Phase 5 (Production Hardening): managed cert issuance/rotation, OIDC/MFA.
+- Phase 4 (Network Context), remaining: LLDP/CDP neighbors, DHCP lease ingestion,
+  DNS forward/reverse enrichment, NetBIOS/mDNS hostname resolution, VLAN/interface
+  mapping — each reusing the discovery review-queue + reconciliation pattern and
+  staying in the agent, never the web app.
+- Phase 5 (Production Hardening): managed cert issuance/rotation (replacing the
+  dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 
 Branch from `main` and confirm the next item with the user before starting.
 

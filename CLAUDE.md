@@ -58,16 +58,24 @@ detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 **Roadmap Phase 4 is underway:** two SNMP sources are merged — ARP-table
 harvesting (`arp_table` scan type, ADR 0006) and device inventory
 (`snmp_inventory` scan type, ADR 0007) — see "Scanner SNMP ARP Discovery" and
-"Scanner SNMP Inventory" below. Next candidate work is the rest of Phase 4
-(LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names, VLAN/interface
-mapping) or the follow-ups under "Next" below.
+"Scanner SNMP Inventory" below. On top of those, the scan experience was
+overhauled (#44/#45, ADRs 0008/0009): a `combined` scan now runs deep nmap + ARP
++ SNMP inventory merged per host (SNMP non-response ignored not failed), scan
+modes are simplified to Light/Standard/Deep, nmap runs **staged** (host discovery
+→ service/OS on live hosts only), and scan timeouts are dynamic per-type via the
+shared `scanner.ScanBudget` (fixing multi-host "context deadline exceeded"). See
+the #44/#45 bullets under "Recent UI / IPAM work". Next candidate work is the rest
+of Phase 4 (LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names,
+VLAN/interface mapping) or the follow-ups under "Next" below.
 
 Issue #10 (merged) scope:
 
 - Agent runs nmap (`internal/scanner/agent/nmap.go`, `Discoverer` interface),
   depth bounded by scan mode (passive → none, light → `-sn`, standard → `-sV`,
-  deep → `+ -O`). Injectable command runner keeps arg-building/XML-parsing tests
-  hermetic.
+  deep → `+ -O`). **Mode mapping and single-pass behavior superseded by #44/#45
+  (ADRs 0008/0009): modes are now Light/Standard/Deep and nmap runs staged — see
+  the #44/#45 bullets below.** Injectable command runner keeps
+  arg-building/XML-parsing tests hermetic.
 - `NET_RAW` granted to the agent compose service only; agent image bundles nmap
   and runs as root. App image stays nmap-free with zero capabilities.
 - DB migration 6: `scan_discoveries`. Observations upsert into a **review

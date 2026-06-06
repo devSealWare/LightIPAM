@@ -5,40 +5,53 @@ Use this prompt to bring Claude or another coding agent up to speed.
 ```text
 You are working in the GitHub repository devSealWare/LightIPAM.
 
-Read AGENTS.md, CLAUDE.md, README.md, docs/MVP.md, docs/ROADMAP.md, docs/SECURITY.md, docs/ARCHITECTURE.md, and docs/BACKLOG.md before making changes.
+Read CLAUDE.md, AGENTS.md, README.md, docs/ROADMAP.md, docs/SECURITY.md,
+docs/ARCHITECTURE.md, docs/SCANNER_DISCOVERY.md, and docs/SCANNER_AGENT.md before
+making changes. CLAUDE.md's "Recent work" / "Next" sections are the most current.
 
 Current product:
-Light IPAM is a Go/PostgreSQL/Tailwind/Docker Compose IPAM application. It has a complete Phase 1 manual IPAM foundation: first-admin bootstrap, local auth, embedded PostgreSQL migrations, subnet CRUD, sparse address create/edit/delete, device CRUD, MAC tracking, private rotating MAC tagging, built-in OUI vendor matching, immutable audit logs, audit UI, dashboard, sidebar navigation, and confirmation flows.
+Light IPAM is a Go/PostgreSQL/Tailwind/Docker Compose IPAM application.
+- Phase 1 (manual IPAM) is complete: first-admin bootstrap, local auth, embedded
+  PostgreSQL migrations, subnet CRUD, sparse address records, device CRUD, MAC
+  tracking, private-MAC tagging, OUI vendor matching, immutable audit logs,
+  dashboard, global search, selectable table columns.
+- Phases 2–3 (scanner foundation + nmap discovery MVP) are complete, and Phase 4
+  (Network Context) is underway. The optional scanner-agent runs staged nmap
+  (host discovery -> service/OS on live hosts), SNMP arp_table harvesting, SNMP
+  device inventory, and a combined all-sources scan; observations flow through the
+  /discoveries review queue with reconciliation, per-agent auto-import, and
+  merge-on-rescan. See ADRs 0001-0009.
 
-Current architecture rule:
-The web app must stay unprivileged. Do not add raw socket scanning, packet capture, Nmap execution, or trunked-network scanning to the app container. Active discovery must be isolated in a future scanner-agent container.
+Architecture rule (do not violate):
+The web app must stay unprivileged — no raw sockets, nmap, packet capture, or
+trunked-network scanning in the app container. All privileged/active discovery
+lives in the scanner-agent only; nmap (NET_RAW) is confined there, and SNMP is
+plain UDP/161 with no added capability.
 
-Current task:
-Work on issue #7: Define scanner agent protocol.
+Implementation style:
+Go standard library net/http routing, pgx for PostgreSQL, embedded migrations in
+internal/db/migrations.go, store methods in internal/store, handlers in
+internal/app, templates in internal/ui/templates, Tailwind source in
+internal/ui/assets/app.css (generated to internal/ui/static/app.css). No large
+frameworks; strict CSP with no inline JS (same-origin static scripts only).
 
-Implementation expectations:
-- Define scanner agent registration model.
-- Define mTLS identity model.
-- Define scan job schema.
-- Define scan result schema.
-- Require explicit IPv4 allowlists per scan.
-- Define scan lifecycle states and evidence/error records.
-- Keep the work as protocol/types/docs only. Do not implement active scanning or Nmap yet.
-
-Suggested files:
-- docs/SCANNER_PROTOCOL.md
-- docs/adr/0002-scanner-agent-protocol.md
-- internal/scanner/protocol.go
-- internal/scanner/protocol_test.go
+Working agreement:
+Branch from main, implement, verify, open a PR via gh, and stop — the user says
+when to merge. Confirm which item to pick up before starting; the backlog file no
+longer drives the order (use ROADMAP.md / the "Next" sections).
 
 Verification:
 - npm run build:css
 - go test ./...
-- docker compose build
+- gofmt -l internal cmd
+- docker compose build && docker compose --profile scanner build
 - docker compose up -d
 - docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 
-Next after issue #7:
-Start issue #8: scanner-agent container with no-op job receive/report behavior.
+Candidate next work (confirm with the user):
+- Phase 4 remaining: LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names,
+  VLAN/interface mapping — each reusing the discovery review-queue pattern, in the
+  agent.
+- Phase 5: managed cert issuance/rotation, OIDC/MFA, encrypted secrets,
+  backup/restore.
 ```
-

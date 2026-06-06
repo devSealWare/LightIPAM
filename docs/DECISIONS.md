@@ -36,14 +36,20 @@ Reasons:
 
 ## Discovery
 
-Use a separate scanner agent, even when it runs on the same Docker host as the app. Start with Nmap for OS and service fingerprinting, then add lighter custom probes where needed.
+Use a separate scanner agent, even when it runs on the same Docker host as the app. Nmap handles OS and service fingerprinting; SNMP (unprivileged UDP/161) handles passive imports the agent can read directly. Each new source reuses the discovery review-queue + reconciliation pipeline and stays in the agent.
 
-Initial discovery modes:
+As-built scan types and modes:
 
-- Passive imports: DHCP, DNS, ARP tables, SNMP inventory.
-- Light active scan: ICMP, ARP/ND, selected TCP ports.
-- Standard active scan: Nmap service/version detection and OS detection.
-- Deep active scan: NSE scripts and UDP scanning, disabled by default.
+- **Scan types:** `host_discovery`, `service_detection`, `os_probe`, `combined`
+  (deep nmap + SNMP ARP + SNMP inventory, merged per host), `arp_table` (SNMP
+  ARP-cache harvesting), and `snmp_inventory` (SNMP device identity + interface
+  MACs).
+- **Modes** (nmap depth knob only; SNMP/ARP/combined ignore it): Light (top-1000
+  service detection), Standard (top-1000 + exhaustive versions + OS), Deep (all
+  ports + OS, tuned for speed). The protocol still defines `passive` (no packets)
+  but it is no longer offered in the UI.
+- **Staged nmap:** a fast host-discovery sweep finds live hosts first, then only
+  those get service/OS detection. NSE scripts / UDP scanning remain future work.
 
 ## Authentication
 

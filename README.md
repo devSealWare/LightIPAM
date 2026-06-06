@@ -8,9 +8,11 @@ The design is intentionally split so risk stays isolated:
 
 - **`app`** — the unprivileged web UI, auth, IPAM inventory, audit log, and scan
   orchestration. Runs with **zero Linux capabilities** and no scanning tools.
-- **`scanner-agent`** — an optional, isolated network sensor that runs nmap for
-  discovery/service/OS detection. It is the **only** component granted a network
-  capability (`NET_RAW`), and only when enabled.
+- **`scanner-agent`** — an optional, isolated network sensor that runs nmap
+  (staged host-discovery → service/OS detection) and SNMP (ARP-table harvesting +
+  device inventory) for discovery. nmap is the **only** thing granted a network
+  capability (`NET_RAW`), and only when enabled; SNMP is plain UDP/161 and needs
+  no extra privilege.
 - **`db`** — PostgreSQL, using native `inet`/`cidr`/`macaddr` types.
 
 ## Features
@@ -21,20 +23,33 @@ The design is intentionally split so risk stays isolated:
 - Subnet CRUD with global overlap blocking and optional VLAN metadata.
 - Sparse IPv4 address records (`/31` and `/32` supported), device CRUD, MAC
   tracking with private/rotating-MAC detection and best-effort OUI vendor lookup.
+- Devices grouped by subnet, global search across subnets/addresses/devices/MACs,
+  and per-table selectable columns.
 - Immutable, append-only audit log with UI filters.
 
 **Discovery (optional, agent-driven)**
 - mTLS between app and agent; the app is always the client. Two-sided allowlist
   enforcement (app-side + agent-side).
-- nmap-backed host discovery, TCP service detection, and OS probing, with scan
-  depth bounded by mode (`passive` → none, `light` → `-sn`, `standard` → `-sV`,
-  `deep` → `+ -O`) and rate limiting.
-- Manual and scheduled scans (in-process scheduler) with a full job lifecycle and
-  audit trail.
+- **Staged nmap** — a fast host-discovery sweep finds live hosts first, then only
+  those get service/OS detection (version probing just the open ports). Scan
+  **depth** is a Light / Standard / Deep mode (top-1000 → +exhaustive versions+OS
+  → all ports), applied to the nmap scan types only.
+- **SNMP backends (unprivileged, UDP/161):** `arp_table` harvests IP↔MAC bindings
+  from a gateway's ARP cache (recovering MACs across a router), and
+  `snmp_inventory` reads a device's own identity (name/OS) and the MACs of its
+  interfaces.
+- **Combined** scan runs deep nmap + ARP + SNMP inventory in one job, merged into
+  one picture per host; an unreachable SNMP target is *skipped* (ignored), not
+  failed.
+- Manual and scheduled scans (in-process scheduler) with a full job lifecycle,
+  audit trail, per-host result detail, and generous per-type scan timeouts.
 - **Review queue** (`/discoveries`): observations never auto-mutate IPAM. Each is
   reconciled against managed records — flagged **new**, **match**, or **conflict**
   (e.g. a changed MAC, or a deprecated address still responding) — and an operator
   imports or dismisses it. Managed addresses get live `last_seen_at` tracking.
+- **Auto-import & merge-on-rescan:** a trusted agent can auto-import
+  non-conflicting hosts, and every scan re-syncs its findings onto already-imported
+  devices so different scan types accumulate into one complete record.
 - **Near-automatic agent enrollment**: the app pulls an agent's identity from its
   `/register` endpoint (auto on boot for the bundled agent, or via the `/agents`
   "Discover" form) and adds it as `pending` for one-click approval.
@@ -97,7 +112,10 @@ All active scanning lives in the scanner agent, which is the sole holder of
 ## Project status
 
 Phase 1 (Manual IPAM), Phase 2 (Scanner Agent Foundation), and Phase 3 (Nmap
-Discovery MVP) are complete. See the roadmap for what's next.
+Discovery MVP) are complete. **Phase 4 (Network Context) is underway:** SNMP
+ARP-table harvesting and SNMP device inventory have shipped, alongside a combined
+all-sources scan, staged nmap scanning, and dynamic per-type scan timeouts. See
+the roadmap for what's next.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security Model](docs/SECURITY.md)
