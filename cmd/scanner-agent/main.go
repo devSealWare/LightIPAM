@@ -79,9 +79,16 @@ func main() {
 	// device's own identity and interface/IP tables (snmp_inventory). The router
 	// sends both SNMP job types to it and everything else to nmap.
 	snmp := resolveSNMP(logger)
+
+	// Combined runs all three backends against the targets — deep nmap, plus the
+	// two SNMP passes as best-effort enrichment — and merges the findings into one
+	// picture per host. Unreachable SNMP is ignored, not failed.
+	combined := agent.NewCombinedDiscoverer(nmap, snmp)
+
 	router := agent.NewDiscoveryRouter(nmap).
 		Register(scanner.ScanARPTable, snmp).
-		Register(scanner.ScanSNMPInventory, snmp)
+		Register(scanner.ScanSNMPInventory, snmp).
+		Register(scanner.ScanCombined, combined)
 
 	a := agent.New(agent.Config{
 		Registration:     registration,

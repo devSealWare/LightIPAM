@@ -17,8 +17,58 @@ func scanTypeOptions() []string {
 	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table", "snmp_inventory"}
 }
 
+// scanModeOptions lists the user-selectable scan depths for nmap-based scan
+// types. The protocol still defines a "passive" mode (the agent's no-packets
+// short-circuit), but it produces zero results for every backend, so it is not
+// offered as a choice. ARP/SNMP/combined ignore the mode entirely (see
+// modeForType) and hide the picker.
 func scanModeOptions() []string {
-	return []string{"passive", "light_active", "standard_active", "deep_active"}
+	return []string{"light_active", "standard_active", "deep_active"}
+}
+
+// defaultTimeoutForType is the per-host scan timeout (seconds) used when the
+// operator leaves the field blank. It scales with how much work the scan type
+// does per host and is intentionally generous: a too-low timeout surfaced as
+// "context deadline exceeded" on slow or thorough scans (and the app derives its
+// dispatch deadline from this per-host budget × the target count). The operator
+// can still override it on the form.
+func defaultTimeoutForType(scanType string) int {
+	switch scanType {
+	case "host_discovery":
+		return 120
+	case "service_detection":
+		return 600
+	case "os_probe":
+		return 900
+	case "combined":
+		return 1200
+	case "arp_table":
+		return 180
+	case "snmp_inventory":
+		return 300
+	default:
+		return 300
+	}
+}
+
+// modeForType resolves the scan mode to store for a job, given its type. Mode is
+// a depth knob that only applies to the plain nmap scan types; ARP and SNMP have
+// no depth (a non-passive mode just means "run"), and combined always runs at
+// full depth. For those types the submitted mode is ignored and a canonical value
+// is substituted, so the form can hide the picker yet still post a valid job even
+// with JavaScript disabled.
+func modeForType(scanType, mode string) (string, error) {
+	switch scanType {
+	case "arp_table", "snmp_inventory":
+		return "standard_active", nil // SNMP has no depth; any active mode runs it
+	case "combined":
+		return "deep_active", nil // combined always runs the full deep scan + ARP + SNMP
+	default:
+		if !contains(scanModeOptions(), mode) {
+			return "", errors.New("Select a valid scan mode.")
+		}
+		return mode, nil
+	}
 }
 
 func agentStatusOptions() []string {
@@ -138,15 +188,32 @@ func (a *App) scanShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	observations, scanErrors := parseScanResult(job.Result)
+	failures, notices := partitionScanErrors(scanErrors)
 	_ = ui.Render(w, "scan_detail.html", ui.PageData{
 		Title:            "Scan " + job.ID,
 		User:             session.User,
 		CSRF:             session.CSRFToken,
 		ScanJob:          job,
 		ScanObservations: observations,
-		ScanErrors:       scanErrors,
+		ScanErrors:       failures,
+		ScanNotices:      notices,
 		ActiveNav:        "scans",
 	})
+}
+
+// partitionScanErrors splits an agent's reported errors into real failures and
+// ignored notices (best-effort portions that were skipped, e.g. an SNMP pass
+// during a combined scan that got no response). The detail view renders the two
+// differently: failures in red, notices as muted "skipped" lines.
+func partitionScanErrors(errs []scanner.ScanError) (failures, notices []scanner.ScanError) {
+	for _, e := range errs {
+		if e.Code == scanner.CodeScanIgnored {
+			notices = append(notices, e)
+		} else {
+			failures = append(failures, e)
+		}
+	}
+	return failures, notices
 }
 
 // parseScanResult decodes the agent result JSON stored on a job into structured
@@ -170,8 +237,9 @@ func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
 	if !contains(scanTypeOptions(), form["scan_type"]) {
 		return store.ScanJobInput{}, errors.New("Select a valid scan type.")
 	}
-	if !contains(scanModeOptions(), form["mode"]) {
-		return store.ScanJobInput{}, errors.New("Select a valid scan mode.")
+	mode, err := modeForType(form["scan_type"], form["mode"])
+	if err != nil {
+		return store.ScanJobInput{}, err
 	}
 	allowed := parseList(form["allowed_cidrs"])
 	if len(allowed) == 0 {
@@ -181,7 +249,7 @@ func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
 	if len(targets) == 0 {
 		return store.ScanJobInput{}, errors.New("Enter at least one target.")
 	}
-	timeout := 60
+	timeout := defaultTimeoutForType(form["scan_type"])
 	if form["timeout"] != "" {
 		parsed, err := strconv.Atoi(form["timeout"])
 		if err != nil || parsed <= 0 {
@@ -192,7 +260,7 @@ func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
 	return store.ScanJobInput{
 		AgentID:        form["agent_id"],
 		ScanType:       form["scan_type"],
-		Mode:           form["mode"],
+		Mode:           mode,
 		AllowedCIDRs:   allowed,
 		Targets:        targets,
 		TimeoutSeconds: timeout,
@@ -207,7 +275,7 @@ func (a *App) renderScanForm(w http.ResponseWriter, r *http.Request, session sto
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "passive", "timeout": "60"}
+		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active"}
 	}
 	_ = ui.Render(w, "scan_new.html", ui.PageData{
 		Title:         "Run Scan",
@@ -674,8 +742,9 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 	if !contains(scanTypeOptions(), form["scan_type"]) {
 		return store.ScanScheduleInput{}, form, errors.New("Select a valid scan type.")
 	}
-	if !contains(scanModeOptions(), form["mode"]) {
-		return store.ScanScheduleInput{}, form, errors.New("Select a valid scan mode.")
+	mode, err := modeForType(form["scan_type"], form["mode"])
+	if err != nil {
+		return store.ScanScheduleInput{}, form, err
 	}
 	allowed := parseList(form["allowed_cidrs"])
 	if len(allowed) == 0 {
@@ -689,7 +758,7 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 	if err != nil || interval < 60 {
 		return store.ScanScheduleInput{}, form, errors.New("Interval must be at least 60 seconds.")
 	}
-	timeout := 60
+	timeout := defaultTimeoutForType(form["scan_type"])
 	if form["timeout"] != "" {
 		parsed, err := strconv.Atoi(form["timeout"])
 		if err != nil || parsed <= 0 {
@@ -701,7 +770,7 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 		Name:            form["name"],
 		AgentID:         form["agent_id"],
 		ScanType:        form["scan_type"],
-		Mode:            form["mode"],
+		Mode:            mode,
 		AllowedCIDRs:    allowed,
 		Targets:         targets,
 		TimeoutSeconds:  timeout,
@@ -736,7 +805,7 @@ func (a *App) renderScheduleForm(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "passive", "timeout": "60", "interval": "3600", "enabled": "on"}
+		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active", "interval": "3600", "enabled": "on"}
 	}
 	_ = ui.Render(w, "schedule_form.html", ui.PageData{
 		Title:        title,

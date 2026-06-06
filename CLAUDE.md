@@ -186,6 +186,46 @@ Phase 3 follow-ups (merged, #18):
   per-job `scan.discovery.synced` audit. The `importDiscoveryDevice` re-import
   path got the same empty-services guard. Devices imported before this self-heal
   on their next scan. See `docs/SCANNER_DISCOVERY.md` "Merge-on-rescan".
+- **#44 Combined-all scan + simpler scan modes** (ADR 0008). `combined` now runs
+  all three backends in one job: a deep nmap scan (all ports, `-sV` + `-O`) plus
+  best-effort SNMP `arp_table` and `snmp_inventory` of the targets, merged per
+  host (`CombinedDiscoverer` in `internal/scanner/agent/combined.go`;
+  `mergeObservations`). nmap is the core (its failure fails the job); a silent
+  SNMP device or a CIDR target is *ignored*, not failed — notices carry the new
+  `scanner.CodeScanIgnored` (`scan_ignored`) code, `orchestrator.headlineError`
+  keeps them out of the job's headline error, and `/scans/{id}` shows them in a
+  muted "Skipped" section (`app.partitionScanErrors`, `PageData.ScanNotices`).
+  **Modes simplified** to Light (top-1000 `-sV`), Standard (top-1000 +
+  `--version-all` + `-O`) and Deep (all ports `-p-` with `-sV` + `-O`); `passive`
+  is still a valid protocol value but dropped from the UI. **Deep is tuned for
+  speed** (`timingArgs`): it keeps `-sV` service detection but drops the slow
+  `--version-all` and runs the all-port sweep with `-T4 --max-retries 2`, plus
+  `--min-rate 1000` when no operator rate is pinned, and is exempt from the
+  conservative default `--max-rate 100` cap that still applies to shallow modes. Mode is an nmap-only depth
+  knob — `arp_table`/`snmp_inventory`/`combined` ignore it and the form hides the
+  picker (`app.modeForType` normalizes server-side, so it works JS-off). Dynamic
+  show/hide + per-type hint via same-origin `internal/ui/static/scan_form.js`
+  (`ui.ScanFormJS`, route `GET /static/scan_form.js`); strict CSP unchanged.
+  Friendly `optionLabel` text on the type/mode `<select>`s. Combined is registered
+  on the agent router in `cmd/scanner-agent/main.go`.
+- **#45 Staged nmap + dynamic timeouts** (ADR 0009). `NmapDiscoverer.Discover` now
+  scans in two stages: a fast `-sn -T4` **host-discovery** sweep finds live hosts
+  (short-circuiting a dead range with no port scan), then only those hosts get a
+  `-Pn` **service/OS** pass that version-probes just the open ports; the stages
+  merge per IP (`hostDiscoveryArgs` + `serviceScanArgs`, reusing `mergeObservations`;
+  `nmapArgs` is gone). `host_discovery` is stage 1 only; SNMP types are unaffected.
+  **Timeouts are now dynamic + generous and the dispatch-deadline bug is fixed.**
+  `ScanJob.TimeoutSeconds` is per-host; the form leaves it blank and
+  `app.defaultTimeoutForType` fills a per-type default (host_discovery 120 /
+  service_detection 600 / os_probe 900 / combined 1200 / arp_table 180 /
+  snmp_inventory 300). `scanner.ScanBudget(perHost, targets)` (new
+  `internal/scanner/budget.go`, with `EstimateTargetHosts`, cap raised 2h→4h)
+  derives the whole-job budget; **both** the agent's supervising context and the
+  app's dispatch context use it (app adds 60s grace), so a multi-host scan no
+  longer trips "context deadline exceeded" — previously the app gave up after
+  `perHost + 10s` while the agent needed `perHost × hosts`. Agent's local
+  `scanBudget`/`estimateTargetHosts` removed in favor of the shared funcs. Form's
+  timeout field shows the per-type default as a placeholder (`scan_form.js`).
 
 ## Verification
 
