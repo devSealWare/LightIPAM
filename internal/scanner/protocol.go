@@ -40,6 +40,15 @@ const (
 	// interfaces — facts nmap cannot fingerprint reliably across subnets but a
 	// device readily self-reports over SNMP.
 	ScanSNMPInventory ScanType = "snmp_inventory"
+	// ScanNameLookup resolves human-readable names for specific hosts without nmap
+	// or SNMP, over two unprivileged UDP protocols: a NetBIOS node-status query
+	// (UDP/137) returns a Windows/Samba host's machine name and workgroup, and a
+	// unicast mDNS reverse query (UDP/5353) returns an Apple/Linux/IoT host's
+	// ".local" name. Targets are the host IPs to name; the agent emits one
+	// observation per host whose name it learns. This recovers hostnames for hosts
+	// with no DNS PTR record — common on small-business LANs — and works across
+	// subnets for NetBIOS (the query is unicast), unlike multicast-only mDNS.
+	ScanNameLookup ScanType = "name_lookup"
 )
 
 type ScanMode string
@@ -152,7 +161,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup:
 		return true
 	default:
 		return false

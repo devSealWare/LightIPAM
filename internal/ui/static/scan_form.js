@@ -20,6 +20,7 @@
   var NO_MODE = {
     arp_table: true,
     snmp_inventory: true,
+    name_lookup: true,
     combined: true
   };
 
@@ -31,16 +32,18 @@
     os_probe: 900,
     combined: 1200,
     arp_table: 180,
-    snmp_inventory: 300
+    snmp_inventory: 300,
+    name_lookup: 120
   };
 
   var HINTS = {
     host_discovery: "Ping/ARP sweep to find live hosts. Mode sets scan depth.",
     service_detection: "Probes open TCP ports for running services. Mode sets port breadth and version depth.",
     os_probe: "Fingerprints the operating system. Mode sets depth.",
-    combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory, merged into one picture. Unreachable SNMP is skipped, not failed.",
+    combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory + NetBIOS/mDNS names, merged into one picture. Unreachable enrichment is skipped, not failed.",
     arp_table: "Asks gateway/L3 devices for their ARP cache over SNMP to recover IP↔MAC bindings across subnets. Targets are the gateway IPs.",
-    snmp_inventory: "Asks SNMP devices about themselves — name, OS, and the MACs of their own interfaces. Targets are the device IPs."
+    snmp_inventory: "Asks SNMP devices about themselves — name, OS, and the MACs of their own interfaces. Targets are the device IPs.",
+    name_lookup: "Asks hosts for their name over NetBIOS (UDP/137) and mDNS (UDP/5353) — recovers names with no DNS record. Targets are the host IPs."
   };
 
   function ready(fn) {

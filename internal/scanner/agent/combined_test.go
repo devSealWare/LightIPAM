@@ -53,8 +53,12 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 			return nil, nil, nil
 		}
 	}}
+	names := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		return []scanner.Observation{{IP: "192.168.10.20", Hostname: "MYPC",
+			Evidence: []scanner.Evidence{{Source: "netbios", Summary: "NetBIOS name: MYPC"}}}}, nil, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp)
+	c := NewCombinedDiscoverer(nmap, snmp, names)
 	obs, notices, err := c.Discover(context.Background(), combinedJob())
 	if err != nil {
 		t.Fatalf("combined discover: %v", err)
@@ -63,7 +67,7 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 		t.Fatalf("expected no notices when every backend answered, got %+v", notices)
 	}
 	if len(obs) != 1 {
-		t.Fatalf("expected the three sources to merge into one observation, got %d: %+v", len(obs), obs)
+		t.Fatalf("expected the four sources to merge into one observation, got %d: %+v", len(obs), obs)
 	}
 	got := obs[0]
 	if got.IP != "192.168.10.20" {
@@ -72,6 +76,7 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if got.MAC != "aa:bb:cc:dd:ee:ff" {
 		t.Fatalf("expected MAC merged from ARP, got %q", got.MAC)
 	}
+	// SNMP inventory merges before the name lookup, so its hostname leads.
 	if got.Hostname != "nas" {
 		t.Fatalf("expected hostname merged from inventory, got %q", got.Hostname)
 	}
@@ -81,8 +86,8 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if len(got.Services) != 1 || got.Services[0].Port != 22 {
 		t.Fatalf("expected nmap services preserved, got %+v", got.Services)
 	}
-	if len(got.Evidence) != 2 {
-		t.Fatalf("expected evidence from both SNMP passes, got %+v", got.Evidence)
+	if len(got.Evidence) != 3 {
+		t.Fatalf("expected evidence from both SNMP passes and the name lookup, got %+v", got.Evidence)
 	}
 
 	// nmap must be driven at full depth.
@@ -104,6 +109,16 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 			t.Fatalf("SNMP sub-job targets should be the single host, got %v", j.Targets)
 		}
 	}
+	// Name lookup runs once, active, against the single-host targets.
+	if len(names.jobs) != 1 {
+		t.Fatalf("expected one name-lookup sub-job, got %d", len(names.jobs))
+	}
+	if names.jobs[0].Type != scanner.ScanNameLookup || names.jobs[0].Mode == scanner.ModePassive {
+		t.Fatalf("name sub-job should be an active name_lookup, got %q/%q", names.jobs[0].Type, names.jobs[0].Mode)
+	}
+	if len(names.jobs[0].Targets) != 1 || names.jobs[0].Targets[0] != "192.168.10.20" {
+		t.Fatalf("name sub-job targets should be the single host, got %v", names.jobs[0].Targets)
+	}
 }
 
 func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
@@ -113,17 +128,21 @@ func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
 	snmp := &recordingDiscoverer{fn: func(job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
 		return nil, []scanner.ScanError{{Code: "snmp_failed", Message: "no response", Target: "192.168.10.20"}}, nil
 	}}
+	names := &recordingDiscoverer{fn: func(job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		return nil, []scanner.ScanError{{Code: "name_unresolved", Message: "no NetBIOS or mDNS name", Target: "192.168.10.20"}}, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp)
+	c := NewCombinedDiscoverer(nmap, snmp, names)
 	obs, notices, err := c.Discover(context.Background(), combinedJob())
 	if err != nil {
-		t.Fatalf("combined must not fail when SNMP is silent: %v", err)
+		t.Fatalf("combined must not fail when enrichment is silent: %v", err)
 	}
 	if len(obs) != 1 || obs[0].IP != "192.168.10.20" {
 		t.Fatalf("expected the nmap observation to survive, got %+v", obs)
 	}
-	if len(notices) != 2 {
-		t.Fatalf("expected one ignored notice per SNMP pass, got %+v", notices)
+	// One ignored notice per enrichment pass: ARP, inventory, and name lookup.
+	if len(notices) != 3 {
+		t.Fatalf("expected one ignored notice per enrichment pass, got %+v", notices)
 	}
 	for _, n := range notices {
 		if n.Code != scanner.CodeScanIgnored {
@@ -140,13 +159,20 @@ func TestCombinedNmapFailureFails(t *testing.T) {
 		t.Fatal("SNMP must not run when nmap fails")
 		return nil, nil, nil
 	}}
+	names := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		t.Fatal("name lookup must not run when nmap fails")
+		return nil, nil, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp)
+	c := NewCombinedDiscoverer(nmap, snmp, names)
 	if _, _, err := c.Discover(context.Background(), combinedJob()); err == nil {
 		t.Fatal("expected combined to fail when its core nmap scan fails")
 	}
 	if len(snmp.jobs) != 0 {
 		t.Fatalf("SNMP should not have been dispatched, got %d jobs", len(snmp.jobs))
+	}
+	if len(names.jobs) != 0 {
+		t.Fatalf("name lookup should not have been dispatched, got %d jobs", len(names.jobs))
 	}
 }
 
@@ -158,11 +184,15 @@ func TestCombinedSkipsSNMPForCIDRTargets(t *testing.T) {
 		t.Fatal("SNMP cannot query a CIDR and must be skipped")
 		return nil, nil, nil
 	}}
+	names := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		t.Fatal("name lookup cannot query a CIDR and must be skipped")
+		return nil, nil, nil
+	}}
 
 	job := combinedJob()
 	job.Targets = []string{"192.168.10.0/24"}
 
-	c := NewCombinedDiscoverer(nmap, snmp)
+	c := NewCombinedDiscoverer(nmap, snmp, names)
 	obs, notices, err := c.Discover(context.Background(), job)
 	if err != nil {
 		t.Fatalf("combined discover: %v", err)
@@ -173,8 +203,12 @@ func TestCombinedSkipsSNMPForCIDRTargets(t *testing.T) {
 	if len(snmp.jobs) != 0 {
 		t.Fatalf("SNMP should not run for a CIDR target, got %d jobs", len(snmp.jobs))
 	}
-	if len(notices) != 2 {
-		t.Fatalf("expected an ignored notice per skipped SNMP pass, got %+v", notices)
+	if len(names.jobs) != 0 {
+		t.Fatalf("name lookup should not run for a CIDR target, got %d jobs", len(names.jobs))
+	}
+	// One ignored notice per skipped enrichment pass: ARP, inventory, name lookup.
+	if len(notices) != 3 {
+		t.Fatalf("expected an ignored notice per skipped enrichment pass, got %+v", notices)
 	}
 }
 

@@ -1,9 +1,11 @@
 // Command scanner-agent runs the Light IPAM scanner agent. It authenticates the
 // app over mTLS, validates submitted scan jobs against its registered allowlist,
 // and runs the discovery backend selected by scan type: nmap for active
-// host/service/OS probing (raw sockets, NET_RAW) and SNMP for ARP-table
-// harvesting (ordinary UDP/161, no extra privilege). All privileged behavior is
-// isolated to this component; the web app never carries it.
+// host/service/OS probing (raw sockets, NET_RAW), SNMP for ARP-table harvesting
+// and device inventory (ordinary UDP/161), and NetBIOS/mDNS for host-name
+// resolution (ordinary UDP/137 and UDP/5353) — the SNMP and name backends need no
+// extra privilege. All privileged behavior is isolated to this component; the web
+// app never carries it.
 package main
 
 import (
@@ -80,14 +82,21 @@ func main() {
 	// sends both SNMP job types to it and everything else to nmap.
 	snmp := resolveSNMP(logger)
 
-	// Combined runs all three backends against the targets — deep nmap, plus the
-	// two SNMP passes as best-effort enrichment — and merges the findings into one
-	// picture per host. Unreachable SNMP is ignored, not failed.
-	combined := agent.NewCombinedDiscoverer(nmap, snmp)
+	// Names is a third unprivileged backend: it speaks NetBIOS (UDP/137) and mDNS
+	// (UDP/5353) from ordinary sockets (no NET_RAW) to learn a host's machine name
+	// and ".local" name. The router sends name_lookup jobs to it.
+	names := resolveNames(logger)
+
+	// Combined runs every backend against the targets — deep nmap, plus the two
+	// SNMP passes and the name lookup as best-effort enrichment — and merges the
+	// findings into one picture per host. An unreachable enrichment pass is
+	// ignored, not failed.
+	combined := agent.NewCombinedDiscoverer(nmap, snmp, names)
 
 	router := agent.NewDiscoveryRouter(nmap).
 		Register(scanner.ScanARPTable, snmp).
 		Register(scanner.ScanSNMPInventory, snmp).
+		Register(scanner.ScanNameLookup, names).
 		Register(scanner.ScanCombined, combined)
 
 	a := agent.New(agent.Config{
@@ -177,6 +186,23 @@ func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 		"timeout", cfg.Timeout.String(),
 	)
 	return agent.NewSNMPDiscoverer(cfg)
+}
+
+// resolveNames builds the name-resolution backend (NetBIOS + mDNS) from the
+// agent's environment. Both protocols are unprivileged unicast UDP; the ports and
+// per-probe timeout are tunable but rarely need changing.
+func resolveNames(logger *slog.Logger) *agent.NameDiscoverer {
+	cfg := agent.NameConfig{
+		NetBIOSPort: uint16(atoiDefault(os.Getenv("AGENT_NETBIOS_PORT"), 137)),
+		MDNSPort:    uint16(atoiDefault(os.Getenv("AGENT_MDNS_PORT"), 5353)),
+		Timeout:     time.Duration(atoiDefault(os.Getenv("AGENT_NAME_TIMEOUT"), 2)) * time.Second,
+	}
+	logger.Info("name discovery enabled (NetBIOS + mDNS)",
+		"netbios_port", cfg.NetBIOSPort,
+		"mdns_port", cfg.MDNSPort,
+		"timeout", cfg.Timeout.String(),
+	)
+	return agent.NewNameDiscoverer(cfg)
 }
 
 // atoiDefault parses s as a base-10 int, returning fallback when s is empty or

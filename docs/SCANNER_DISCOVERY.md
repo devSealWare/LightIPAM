@@ -21,18 +21,20 @@ risk is isolated to the agent:
 
 The app only ever acts as an mTLS client; it never probes the network.
 
-SNMP ARP-table harvesting (below) is the exception that proves the rule: it is
-active discovery that needs **no** extra privilege — ordinary UDP/161, no
-`NET_RAW` — so it runs in the same agent without widening its capability set.
+SNMP harvesting and NetBIOS/mDNS name resolution (below) are the exceptions that
+prove the rule: they are active discovery that needs **no** extra privilege —
+ordinary unicast UDP (161 for SNMP, 137/5353 for names), no `NET_RAW` — so they run
+in the same agent without widening its capability set.
 
 ## Scan depth (mode → nmap)
 
 Scan **type** selects what to collect; scan **mode** selects intensity. Mode is a
-depth knob for the nmap scan types only — `arp_table`, `snmp_inventory`, and
-`combined` ignore it (combined always runs at full depth), so the scan form hides
-the Mode picker for those three. The protocol still defines a `passive` mode (the
-agent's no-packets short-circuit), but it produces zero results for every backend,
-so it is no longer offered as a UI choice; the depths are Light / Standard / Deep.
+depth knob for the nmap scan types only — `arp_table`, `snmp_inventory`,
+`name_lookup`, and `combined` ignore it (combined always runs at full depth), so
+the scan form hides the Mode picker for those. The protocol still defines a
+`passive` mode (the agent's no-packets short-circuit), but it produces zero results
+for every backend, so it is no longer offered as a UI choice; the depths are
+Light / Standard / Deep.
 
 | Mode              | nmap behavior                                                  |
 | ----------------- | ------------------------------------------------------------- |
@@ -45,7 +47,10 @@ so it is no longer offered as a UI choice; the depths are Light / Standard / Dee
 | `host_discovery`    | `-sn` ping/ARP sweep, no port scan (mode ignored).            |
 | `service_detection` | `-sV` over the mode's ports; `--version-all` on standard. |
 | `os_probe`          | `-O`; standard/deep also add `-sV` over the mode's ports.     |
-| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest and SNMP inventory of the targets, merged per host (see below). |
+| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, and NetBIOS/mDNS name lookup of the targets, merged per host (see below). |
+| `arp_table`         | SNMP walk of a gateway's ARP cache, no nmap (mode ignored).   |
+| `snmp_inventory`    | SNMP read of a device's identity + interfaces, no nmap (mode ignored). |
+| `name_lookup`       | NetBIOS (UDP/137) + mDNS (UDP/5353) name query, no nmap (mode ignored). |
 
 Job rate limits map to `--max-rate` / `--max-parallelism`; the job timeout maps
 to `--host-timeout` and feeds the agent/app budgets (see "Timeouts" below).
@@ -154,29 +159,63 @@ scan all merge onto one discovery row per IP. A multi-homed device imports as on
 device per distinct interface MAC under the existing MAC-keyed import (deduping by
 name is future VLAN/interface-mapping work). See ADR 0007.
 
+## Name resolution (`name_lookup`)
+
+Where nmap recovers a hostname only when DNS has a PTR record, `name_lookup` asks
+a host *directly* for its name over two unprivileged UDP protocols — recovering
+names for the many small-business hosts that have no DNS record at all:
+
+- **NetBIOS node status** (UDP/137). The agent sends an NBSTAT query for the
+  wildcard name `*`; a Windows or Samba host replies with the NetBIOS names it has
+  registered. The unique suffix-`0x00` name is the **machine name** (→ hostname);
+  the group suffix-`0x00` name is the **workgroup/domain** (→ evidence). The query
+  is unicast, so unlike multicast mDNS it **works across subnets**.
+- **mDNS reverse lookup** (UDP/5353). The agent sends a unicast PTR query for the
+  host's `<reversed>.in-addr.arpa` name with the QU (unicast-response) bit set; an
+  Apple/Linux/IoT responder (Bonjour/avahi) answers with its `.local` name. mDNS
+  is primarily link-local, so cross-subnet replies are best-effort.
+
+Per target the agent attempts both and folds them into **one observation**:
+NetBIOS leads the hostname, mDNS fills it only if NetBIOS was silent, and both ride
+as evidence (`netbios` / `mdns` sources). Targets must be single IPv4 hosts (each
+probe is a unicast query to one device); a CIDR or a host that answers neither
+protocol is reported as a per-target `name_unresolved` notice, never a job
+failure.
+
+`internal/scanner/agent/names.go` (`NameDiscoverer`) builds and parses the NetBIOS
+and DNS wire formats with the standard library — **no new dependency** — behind an
+injectable `udpExchanger` so the packet encoders/parsers are unit-tested without a
+socket. Both protocols are ordinary unicast UDP: **no `NET_RAW`, no new privilege**
+(tunable via `AGENT_NETBIOS_PORT` / `AGENT_MDNS_PORT` / `AGENT_NAME_TIMEOUT`).
+Observations reuse the **same** review queue and reconciliation as every other
+source, so a name merges onto the same discovery row as an nmap service scan, an
+ARP MAC, and an SNMP inventory record. See ADR 0010.
+
 ## Combined scan (`combined`)
 
-`combined` runs all three backends against the targets in one job and merges
-their findings into the most complete picture per host:
+`combined` runs every backend against the targets in one job and merges their
+findings into the most complete picture per host:
 
 - a **deep nmap** scan (every TCP port, `-sV` + `-O`) — the core of the job,
-- an **SNMP ARP harvest** (`arp_table`) of the single-host targets, and
-- an **SNMP inventory** (`snmp_inventory`) of the single-host targets.
+- an **SNMP ARP harvest** (`arp_table`) of the single-host targets,
+- an **SNMP inventory** (`snmp_inventory`) of the single-host targets, and
+- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets.
 
-nmap is authoritative: if it fails, the combined job fails. The two SNMP passes
-are **best-effort enrichment** — a device that does not answer SNMP (or a CIDR
-target, which SNMP cannot query) is reported as *ignored*, never failed. Ignored
-notices carry the `scan_ignored` code; the orchestrator never promotes them to the
-job's headline error, and `/scans/{id}` renders them in a muted **Skipped**
-section rather than as red errors.
+nmap is authoritative: if it fails, the combined job fails. The three enrichment
+passes are **best-effort** — a host that does not answer SNMP or a name protocol
+(or a CIDR target, which these unicast queries cannot expand) is reported as
+*ignored*, never failed. Ignored notices carry the `scan_ignored` code; the
+orchestrator never promotes them to the job's headline error, and `/scans/{id}`
+renders them in a muted **Skipped** section rather than as red errors.
 
-`internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap and
-SNMP discoverers. It forces the nmap sub-job to deep mode, restricts the SNMP
-sub-jobs to bare-IP targets (`hostTargets`), and merges the per-IP observations
-(`mergeObservations`: the leading nmap source wins scalar fields, services union
-by port, evidence concatenates). Because the discovery store already merges by IP
-(`ON CONFLICT (ip)`), the consolidated observations land on one discovery row and,
-once imported, on one device (see Merge-on-rescan). See ADR 0008.
+`internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap,
+SNMP, and name discoverers. It forces the nmap sub-job to deep mode, restricts the
+enrichment sub-jobs to bare-IP targets (`hostTargets`), and merges the per-IP
+observations (`mergeObservations`: the leading nmap source wins scalar fields,
+services union by port, evidence concatenates). Because the discovery store already
+merges by IP (`ON CONFLICT (ip)`), the consolidated observations land on one
+discovery row and, once imported, on one device (see Merge-on-rescan). See ADRs
+0008 and 0010.
 
 ## Review queue (`/discoveries`)
 

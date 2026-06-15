@@ -55,18 +55,20 @@ and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-a
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 (migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
-**Roadmap Phase 4 is underway:** two SNMP sources are merged — ARP-table
-harvesting (`arp_table` scan type, ADR 0006) and device inventory
-(`snmp_inventory` scan type, ADR 0007) — see "Scanner SNMP ARP Discovery" and
-"Scanner SNMP Inventory" below. On top of those, the scan experience was
-overhauled (#44/#45, ADRs 0008/0009): a `combined` scan now runs deep nmap + ARP
-+ SNMP inventory merged per host (SNMP non-response ignored not failed), scan
-modes are simplified to Light/Standard/Deep, nmap runs **staged** (host discovery
-→ service/OS on live hosts only), and scan timeouts are dynamic per-type via the
+**Roadmap Phase 4 is underway:** three agent-side discovery sources beyond nmap
+are merged — SNMP ARP-table harvesting (`arp_table` scan type, ADR 0006), SNMP
+device inventory (`snmp_inventory` scan type, ADR 0007), and NetBIOS/mDNS name
+resolution (`name_lookup` scan type, ADR 0010) — see "Scanner SNMP ARP
+Discovery", "Scanner SNMP Inventory", and "Scanner NetBIOS/mDNS Names" below. On
+top of those, the scan experience was overhauled (#44/#45, ADRs 0008/0009): a
+`combined` scan now runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names
+merged per host (a silent enrichment pass is ignored not failed), scan modes are
+simplified to Light/Standard/Deep, nmap runs **staged** (host discovery →
+service/OS on live hosts only), and scan timeouts are dynamic per-type via the
 shared `scanner.ScanBudget` (fixing multi-host "context deadline exceeded"). See
 the #44/#45 bullets under "Recent UI / IPAM work". Next candidate work is the rest
-of Phase 4 (LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names,
-VLAN/interface mapping) or the follow-ups under "Next" below.
+of Phase 4 (LLDP/CDP, DHCP leases, DNS enrichment, VLAN/interface mapping) or the
+follow-ups under "Next" below.
 
 Issue #10 (merged) scope:
 
@@ -149,6 +151,33 @@ DB migration** — observations reuse the same review-queue + reconciliation, so
 inventory record, an ARP MAC, and an nmap service scan merge on one IP. New scan
 type added to `scanTypeOptions()` and the scan-form help text. See
 `docs/SCANNER_DISCOVERY.md`, ADR 0007.
+
+## Scanner NetBIOS/mDNS Names (merged, Phase 4, ADR 0010)
+
+`internal/scanner/agent/names.go` adds a third unprivileged `Discoverer`:
+`NameDiscoverer` handles the `name_lookup` scan type by asking a host *directly*
+for its name, recovering names for hosts with no DNS PTR record (the common
+small-business case). Per target it sends a **NetBIOS** node-status query
+(NBSTAT, UDP/137 — a Windows/Samba host returns its machine name + workgroup;
+unicast, so it **works across subnets**) and a **unicast mDNS** reverse PTR query
+(UDP/5353 — an Apple/Linux/IoT responder returns its `.local` name; link-local, so
+cross-subnet is best-effort), folding both into **one observation**: NetBIOS leads
+the hostname, mDNS fills it only if NetBIOS was silent, both ride as evidence
+(`netbios`/`mdns`). Targets must be single hosts; a CIDR or a host answering
+neither protocol is a per-target `name_unresolved` notice, never a job failure.
+The NetBIOS/DNS wire formats (first-level name encoding, DNS labels, compression
+pointers) are built/parsed with the **standard library — no new dependency** —
+behind an injectable `udpExchanger` so encoders/parsers are unit-tested without a
+socket (mirrors gosnmp behind `snmpSession`). **Ordinary unicast UDP, no
+`NET_RAW`** — capability set unchanged; ports/timeout via `AGENT_NETBIOS_PORT`/
+`AGENT_MDNS_PORT`/`AGENT_NAME_TIMEOUT`. Registered on the `DiscoveryRouter` and
+folded into `combined` as a third best-effort enrichment pass
+(`NewCombinedDiscoverer(nmap, snmp, names)`; `runOptional` now takes the
+discoverer). Observations reuse the same review-queue + reconciliation, so a name
+merges onto the same discovery row (and device) as nmap services, an ARP MAC, and
+an SNMP inventory record. New scan type in `scanTypeOptions()`, `optionLabel`,
+`scan_form.js`, and the scan-form help text. See `docs/SCANNER_DISCOVERY.md`,
+ADR 0010.
 
 Phase 3 follow-ups (merged, #18):
 
@@ -276,11 +305,12 @@ The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 
 Remaining candidate follow-ups, roughly in priority order:
 
-- **Phase 4 (Network Context):** SNMP ARP-table harvesting (ADR 0006) and SNMP
-  device inventory (interfaces/sysDescr, ADR 0007) are **done**. Remaining:
-  LLDP/CDP neighbors, DHCP lease ingestion, DNS enrichment, NetBIOS/mDNS names,
-  VLAN/interface mapping. Each new source should reuse the discovery
-  review-queue + reconciliation pattern and stay in the agent, not the app.
+- **Phase 4 (Network Context):** SNMP ARP-table harvesting (ADR 0006), SNMP
+  device inventory (interfaces/sysDescr, ADR 0007), and NetBIOS/mDNS name
+  resolution (`name_lookup`, ADR 0010) are **done**. Remaining: LLDP/CDP
+  neighbors, DHCP lease ingestion, DNS enrichment, VLAN/interface mapping. Each
+  new source should reuse the discovery review-queue + reconciliation pattern and
+  stay in the agent, not the app.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
   (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 
