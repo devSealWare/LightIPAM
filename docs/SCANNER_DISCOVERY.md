@@ -82,7 +82,8 @@ privileges.
 `ScanJob.TimeoutSeconds` is the **per-host** budget (nmap's `--host-timeout`). The
 form leaves it blank by default and the app fills a generous per-type default
 (`app.defaultTimeoutForType`: host_discovery 120s, service_detection 600s, os_probe
-900s, combined 1200s, arp_table 180s, snmp_inventory 300s). From that per-host
+900s, combined 1200s, arp_table 180s, snmp_inventory 300s, name_lookup 120s). From
+that per-host
 budget, `scanner.ScanBudget(perHost, targets)` derives the **whole-job** budget
 (`perHost × host-count + discovery allowance + grace`, capped at 4h). Both the
 agent (supervising the discoverer) and the app (bounding the blocking dispatch

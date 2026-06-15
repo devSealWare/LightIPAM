@@ -26,8 +26,10 @@ The scanner agent owns:
   live hosts. (Privileged probing via `NET_RAW`, confined here.)
 - SNMP ARP-table harvesting (`arp_table`) and SNMP device inventory
   (`snmp_inventory`) over unprivileged UDP/161 — implemented.
-- A combined scan that fuses nmap + both SNMP passes per host.
-- Future enrichment: LLDP/CDP, DHCP, DNS, NetBIOS/mDNS, VLAN/interface mapping.
+- NetBIOS + unicast mDNS host-name resolution (`name_lookup`) over unprivileged
+  UDP/137 and UDP/5353 — implemented.
+- A combined scan that fuses nmap + both SNMP passes + the name lookup per host.
+- Future enrichment: LLDP/CDP, DHCP, DNS, VLAN/interface mapping.
 
 Agents are deployed near the networks they scan. The app sends scan jobs over
 mTLS (each carrying an explicit IPv4 allowlist), and agents return normalized

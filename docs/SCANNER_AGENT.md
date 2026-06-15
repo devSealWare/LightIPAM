@@ -18,8 +18,9 @@ per-scan-type behavior.
   `scanner.ValidateAgentScope` (allowlist containment).
 - Route each job to the right backend by scan type (a `DiscoveryRouter`): nmap for
   `host_discovery`/`service_detection`/`os_probe`, SNMP for
-  `arp_table`/`snmp_inventory`, and a combined discoverer for `combined` (deep
-  nmap + both SNMP passes, merged per host, SNMP non-response ignored not failed).
+  `arp_table`/`snmp_inventory`, NetBIOS/mDNS for `name_lookup`, and a combined
+  discoverer for `combined` (deep nmap + both SNMP passes + the name lookup, merged
+  per host, a silent enrichment pass ignored not failed).
 - Run nmap in **stages** — a fast host-discovery sweep, then service/OS detection
   on only the live hosts — and report observations; passive jobs return an empty,
   successful result.
