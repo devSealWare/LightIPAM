@@ -61,18 +61,22 @@ Required fields:
 - `agent_id`: intended agent.
 - `requested_by`: user ID or system.
 - `scan_type`: `host_discovery`, `service_detection`, `os_probe`, `combined`,
-  `arp_table`, or `snmp_inventory`. `combined` runs deep nmap plus both SNMP
-  passes against the targets and merges the result per host (ADR 0008).
+  `arp_table`, `snmp_inventory`, or `name_lookup`. `combined` runs deep nmap plus
+  both SNMP passes and the NetBIOS/mDNS name lookup against the targets and merges
+  the result per host (ADRs 0008/0010).
 - `mode`: `passive`, `light_active`, `standard_active`, or `deep_active`. Mode is
-  an nmap depth knob; `arp_table`/`snmp_inventory`/`combined` ignore it (the app
-  hides the picker and normalizes it). `passive` is still a valid value (the
-  agent's no-packets short-circuit) but is no longer offered in the UI.
+  an nmap depth knob; `arp_table`/`snmp_inventory`/`name_lookup`/`combined` ignore
+  it (the app hides the picker and normalizes it). `passive` is still a valid value
+  (the agent's no-packets short-circuit) but is no longer offered in the UI.
 - `allowed_cidrs`: explicit IPv4 CIDRs for this job.
 - `targets`: IPv4 CIDRs or individual IPv4 addresses. For an `arp_table` scan
   these are the gateway/L3 device IPs to query over SNMP (see ADR 0006); the
   agent reports the cached IP↔MAC neighbors that fall within `allowed_cidrs`. For
   an `snmp_inventory` scan they are the SNMP device IPs to inventory (see ADR
-  0007); the agent reports each device's identity and its interface MACs.
+  0007); the agent reports each device's identity and its interface MACs. For a
+  `name_lookup` scan they are the individual host IPs to name over NetBIOS/mDNS
+  (see ADR 0010); each must be a single host (a CIDR is reported as a skipped
+  notice, since the probes are unicast).
 - `ports`: optional TCP/UDP port selections.
 - `rate_limit`: packet/probe rate policy.
 - `timeout_seconds`: job timeout.
@@ -108,7 +112,8 @@ Observation fields:
 - `ip`: observed IPv4 address.
 - `mac`: optional MAC address.
 - `vendor`: optional MAC vendor (from nmap's OUI data or the SNMP source).
-- `hostname`: optional hostname.
+- `hostname`: optional hostname (nmap reverse DNS, SNMP `sysName`, or a
+  NetBIOS/mDNS name).
 - `os_family`: optional OS family.
 - `os_detail`: optional OS details.
 - `services`: optional service observations.
@@ -127,11 +132,12 @@ Service fields:
 ### Error codes
 
 `errors` carries failures, but also informational notices. A combined scan whose
-best-effort SNMP portion got no response (or was pointed at a CIDR, which SNMP
-cannot query) reports a notice with code `scan_ignored` (`scanner.CodeScanIgnored`)
-rather than failing. The app does not promote `scan_ignored` to a job's headline
-error, and the result detail view renders these as a muted "Skipped" section. A
-result whose only errors are `scan_ignored` notices is still `succeeded`.
+best-effort enrichment (SNMP or NetBIOS/mDNS) got no response — or was pointed at
+a CIDR, which these unicast queries cannot expand — reports a notice with code
+`scan_ignored` (`scanner.CodeScanIgnored`) rather than failing. The app does not
+promote `scan_ignored` to a job's headline error, and the result detail view
+renders these as a muted "Skipped" section. A result whose only errors are
+`scan_ignored` notices is still `succeeded`.
 
 ## Lifecycle
 

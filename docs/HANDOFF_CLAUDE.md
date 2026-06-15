@@ -18,9 +18,9 @@ Light IPAM is a Go/PostgreSQL/Tailwind/Docker Compose IPAM application.
 - Phases 2–3 (scanner foundation + nmap discovery MVP) are complete, and Phase 4
   (Network Context) is underway. The optional scanner-agent runs staged nmap
   (host discovery -> service/OS on live hosts), SNMP arp_table harvesting, SNMP
-  device inventory, and a combined all-sources scan; observations flow through the
-  /discoveries review queue with reconciliation, per-agent auto-import, and
-  merge-on-rescan. See ADRs 0001-0009.
+  device inventory, NetBIOS/mDNS name_lookup, and a combined all-sources scan;
+  observations flow through the /discoveries review queue with reconciliation,
+  per-agent auto-import, and merge-on-rescan. See ADRs 0001-0010.
 
 Architecture rule (do not violate):
 The web app must stay unprivileged — no raw sockets, nmap, packet capture, or
@@ -49,9 +49,8 @@ Verification:
 - docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 
 Candidate next work (confirm with the user):
-- Phase 4 remaining: LLDP/CDP, DHCP leases, DNS enrichment, NetBIOS/mDNS names,
-  VLAN/interface mapping — each reusing the discovery review-queue pattern, in the
-  agent.
+- Phase 4 remaining: LLDP/CDP, DHCP leases, DNS enrichment, VLAN/interface
+  mapping — each reusing the discovery review-queue pattern, in the agent.
 - Phase 5: managed cert issuance/rotation, OIDC/MFA, encrypted secrets,
   backup/restore.
 ```
