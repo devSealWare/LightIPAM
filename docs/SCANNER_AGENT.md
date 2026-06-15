@@ -4,9 +4,11 @@ The scanner agent is the isolated component that performs active network
 discovery for Light IPAM. It runs as a separate container so the web app can
 stay unprivileged. It performs **real active discovery** for non-passive jobs:
 nmap for host/service/OS scanning (the only thing needing `NET_RAW`, scoped to
-this component) and SNMP for ARP-table harvesting and device inventory (plain
-UDP/161, no extra privilege). See `docs/SCANNER_DISCOVERY.md` for the
-discovery/enrollment flow and the per-scan-type behavior.
+this component), SNMP for ARP-table harvesting and device inventory (plain
+UDP/161), and NetBIOS/mDNS for host-name resolution (plain UDP/137 and UDP/5353) —
+the SNMP and name backends need no extra privilege. See
+`docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flow and the
+per-scan-type behavior.
 
 ## Responsibilities
 
@@ -86,6 +88,9 @@ rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
 | `AGENT_SNMP_PORT`     | `161`                        | SNMP UDP port.                            |
 | `AGENT_SNMP_TIMEOUT`  | `5`                          | SNMP per-request timeout (seconds).       |
 | `AGENT_SNMP_RETRIES`  | `1`                          | SNMP retry count.                         |
+| `AGENT_NETBIOS_PORT`  | `137`                        | NetBIOS name-service UDP port (`name_lookup`). |
+| `AGENT_MDNS_PORT`     | `5353`                       | mDNS UDP port (`name_lookup`).            |
+| `AGENT_NAME_TIMEOUT`  | `2`                          | NetBIOS/mDNS per-probe timeout (seconds). |
 | `APP_CLIENT_CN`       | `light-ipam-app`             | Required client certificate CommonName.   |
 | `SCANNER_TLS_CERT`    | `/certs/agent.crt`           | Agent server certificate.                 |
 | `SCANNER_TLS_KEY`     | `/certs/agent.key`           | Agent server key.                         |
