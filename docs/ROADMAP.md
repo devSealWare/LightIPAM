@@ -51,13 +51,15 @@ Follow-ups merged on top of Phase 3 (#18):
   unreachable SNMP ignored not failed; simplified Light/Standard/Deep modes;
   staged nmap (host discovery → service/OS on live hosts only); and dynamic,
   generous per-type scan timeouts.
+- NetBIOS and mDNS/Bonjour hostname resolution (**done**, ADR 0010). The
+  `name_lookup` scan type asks a host directly for its name over NetBIOS (UDP/137)
+  and unicast mDNS (UDP/5353), recovering names for SMB, Apple, and IoT devices
+  with no DNS PTR record; NetBIOS works across subnets. Folded into the `combined`
+  scan as a best-effort enrichment pass. Unprivileged unicast UDP, no new
+  dependency; reuses the discovery review-queue + reconciliation, in the agent.
 - LLDP/CDP neighbor ingestion.
 - DHCP lease ingestion.
 - DNS forward/reverse enrichment.
-- NetBIOS and mDNS/Bonjour hostname resolution (agent-side), so SMB, Apple, and
-  IoT devices without a DNS PTR record still resolve to a name. Reuses the
-  discovery review-queue + reconciliation pattern and stays in the scanner
-  agent (e.g. nmap `nbstat` NSE / mDNS probe), never the web app.
 - VLAN and interface mapping.
 
 ## Phase 5: Production Hardening

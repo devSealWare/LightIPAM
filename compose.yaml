@@ -56,6 +56,11 @@ services:
       # to match your gateways. The credential stays on the agent, never the app.
       AGENT_SNMP_VERSION: "2c"
       AGENT_SNMP_COMMUNITY: "public"
+      # NetBIOS/mDNS name resolution (name_lookup scan type, also part of a
+      # combined scan): the agent asks each host for its own name over UDP/137
+      # (NetBIOS) and UDP/5353 (mDNS), recovering names for hosts with no DNS PTR
+      # record. Unprivileged unicast UDP — no NET_RAW. Ports/timeout are tunable:
+      #   AGENT_NETBIOS_PORT (137), AGENT_MDNS_PORT (5353), AGENT_NAME_TIMEOUT (2s)
     volumes:
       - ./deploy/scanner-certs:/certs:ro
     read_only: true
