@@ -42,18 +42,23 @@ Minimum viable security features:
 ## Scan Safety
 
 Discovery supports graduated, allowlist-bounded policies. The nmap scan types take
-a depth mode; SNMP-based types read what a device exposes and ignore depth.
+a depth mode; the SNMP and name-resolution types read what a device exposes and
+ignore depth.
 
 - **SNMP imports (unprivileged):** `arp_table` reads a gateway's ARP cache and
   `snmp_inventory` reads a device's own identity/interfaces, both over UDP/161 with
   no `NET_RAW`. The read community lives only on the agent.
+- **Name resolution (unprivileged):** `name_lookup` asks a host for its name over
+  NetBIOS (UDP/137) and unicast mDNS (UDP/5353), again with no `NET_RAW`.
 - **Light:** top-1000 TCP service detection.
 - **Standard:** top-1000 + exhaustive version probes + OS fingerprinting.
 - **Deep:** every TCP port + OS, tuned for speed; the broadest (and loudest) scan.
-- **Combined:** deep nmap plus both SNMP passes, merged per host.
+- **Combined:** deep nmap plus both SNMP passes and the NetBIOS/mDNS name lookup,
+  merged per host.
 
 All nmap scans run staged — a host-discovery sweep first, then port/service work
 only on live hosts — so probing is never aimed at dead address space. Privileged
-(`NET_RAW`) probing is confined to the nmap backend in the agent; UDP/NSE-style
-scripting and authenticated checks remain future work.
+(`NET_RAW`) probing is confined to the nmap backend in the agent; the SNMP and
+name backends are ordinary unicast UDP. UDP/NSE-style scripting and authenticated
+checks remain future work.
 

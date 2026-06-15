@@ -106,15 +106,16 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 - `internal/scanner/agent`: agent receive/report handler (`GET /healthz`,
   `GET /register`, `POST /jobs`) plus mTLS TLS config builders. Backends:
   `nmap.go` (staged `Discoverer` — host-discovery sweep then service/OS on live
-  hosts), `snmp.go` (`arp_table` + `snmp_inventory` over UDP/161), `combined.go`
-  (deep nmap + both SNMP passes, merged per host, SNMP non-response ignored), and
-  `router.go` (`DiscoveryRouter` dispatching by scan type). Passive jobs stay
-  no-op.
+  hosts), `snmp.go` (`arp_table` + `snmp_inventory` over UDP/161), `names.go`
+  (`name_lookup` — NetBIOS UDP/137 + unicast mDNS UDP/5353, no extra privilege),
+  `combined.go` (deep nmap + both SNMP passes + NetBIOS/mDNS names, merged per
+  host, a silent enrichment pass ignored), and `router.go` (`DiscoveryRouter`
+  dispatching by scan type). Passive jobs stay no-op.
 - `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
   certificates.
 - `cmd/scanner-agent`: the agent process (mTLS HTTPS). Bundles nmap and runs
-  with `NET_RAW` only; SNMP needs no added capability. Wires the nmap + SNMP +
-  combined backends onto the router.
+  with `NET_RAW` only; SNMP and NetBIOS/mDNS need no added capability. Wires the
+  nmap + SNMP + names + combined backends onto the router.
 - `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs and
   pulls `/register` for enrollment (issues #9/#10).
 - `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
@@ -132,33 +133,38 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   service stays at zero capabilities.
 
 See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, `docs/SCANNER_DISCOVERY.md`,
-and ADRs 0002–0009.
+and ADRs 0002–0010.
 
 ## Current State of the Scanner Track
 
 The initial backlog (issues #1–#10) and **Roadmap Phase 3** are complete, and
 **Phase 4 (Network Context) is underway**. The agent runs real scans routed by
 type: staged nmap (host discovery → service/OS on live hosts only), SNMP
-`arp_table` harvesting (ADR 0006) and SNMP `snmp_inventory` (ADR 0007), and a
-`combined` scan that runs deep nmap + both SNMP passes merged per host with
-unreachable SNMP ignored not failed (ADR 0008). Scan modes are simplified to
-Light/Standard/Deep, and scan timeouts are dynamic per-type with a shared
-budget shared by the agent and app (ADR 0009). Successful observations land in
-the `/discoveries` review queue (import/dismiss), with per-agent auto-import for
-trusted agents and merge-on-rescan onto already-imported devices. Agents enroll
-by app-pull (auto on boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents`
-"Discover" form). The app remains unprivileged (zero capabilities, no nmap).
+`arp_table` harvesting (ADR 0006), SNMP `snmp_inventory` (ADR 0007), NetBIOS/mDNS
+`name_lookup` (ADR 0010), and a `combined` scan that runs deep nmap + both SNMP
+passes + the name lookup merged per host, with a silent enrichment pass ignored
+not failed (ADR 0008). Scan modes are simplified to Light/Standard/Deep, and scan
+timeouts are dynamic per-type with a budget shared by the agent and app (ADR
+0009). Successful observations land in the `/discoveries` review queue
+(import/dismiss), with per-agent auto-import for trusted agents and
+merge-on-rescan onto already-imported devices. Agents enroll by app-pull (auto on
+boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form). The app
+remains unprivileged (zero capabilities, no nmap).
 
 ## Next
 
 No issue is in progress. Remaining candidate work, roughly in priority order:
 
 - Phase 4 (Network Context), remaining: LLDP/CDP neighbors, DHCP lease ingestion,
-  DNS forward/reverse enrichment, NetBIOS/mDNS hostname resolution, VLAN/interface
-  mapping — each reusing the discovery review-queue + reconciliation pattern and
-  staying in the agent, never the web app.
+  DNS forward/reverse enrichment, VLAN/interface mapping — each reusing the
+  discovery review-queue + reconciliation pattern and staying in the agent, never
+  the web app.
 - Phase 5 (Production Hardening): managed cert issuance/rotation (replacing the
   dev CA), OIDC/MFA, encrypted secrets, backup/restore.
+
+Known limitations to be aware of (see README "Limitations"): the SNMP and
+NetBIOS/mDNS backends are unverified against real hardware; IPv4 only; the dev CA
+has no rotation; single admin role, no MFA/OIDC; no backup/restore yet.
 
 Branch from `main` and confirm the next item with the user before starting.
 
