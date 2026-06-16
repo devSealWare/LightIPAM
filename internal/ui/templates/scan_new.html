@@ -30,8 +30,12 @@
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan type</span>
           <select class="form-input" name="scan_type" data-scan-type>
-            {{ range .ScanTypes }}
-            <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ optionLabel . }}</option>
+            {{ range .ScanTypeGroups }}
+            <optgroup label="{{ .Label }}">
+              {{ range .Types }}
+              <option value="{{ . }}" {{ if eq . (index $.Form "scan_type") }}selected{{ end }}>{{ optionLabel . }}</option>
+              {{ end }}
+            </optgroup>
             {{ end }}
           </select>
           <span class="mt-1 block text-xs text-zinc-400" data-scan-hint></span>

@@ -65,9 +65,27 @@ Follow-ups merged on top of Phase 3 (#18):
   an LLDP MAC-typed chassis id). Unprivileged (UDP/161, no `NET_RAW`); folded into
   the `combined` scan; reuses the discovery review-queue + reconciliation, in the
   agent.
-- DHCP lease ingestion.
-- DNS forward/reverse enrichment.
-- VLAN and interface mapping.
+- DNS forward/reverse enrichment (**done**, ADR 0012). The `dns_lookup` scan type
+  resolves each host's name from the network's authoritative DNS (reverse PTR) and
+  forward-confirms it, naming managed hosts that already have a DNS record and
+  flagging a stale/mismatched PTR. Unprivileged UDP/TCP/53; folded into `combined`;
+  reuses the discovery review-queue + reconciliation, in the agent.
+- VLAN and interface mapping (**done**, ADR 0013). The `snmp_inventory` scan now
+  reads each interface's 802.1Q access VLAN (Q-BRIDGE-MIB `dot1qPvid`, joined to the
+  interface through the bridge-port table) and operational status, mapping a host's
+  IP → interface → VLAN. A discovered VLAN backfills the containing subnet's VLAN
+  when it has none (never overwriting an operator value), so the mapping reaches the
+  Subnets and Devices pages. Unprivileged (UDP/161), no new scan type.
+- DHCP lease ingestion (**done**, ADR 0014). The `dhcp_leases` scan type reads the
+  DHCP server's lease file (ISC dhcpd or dnsmasq, mounted read-only on the agent) for
+  the authoritative IP↔MAC binding and client-supplied hostname of each active lease.
+  Opt-in and never fatal (an unconfigured file is a clear notice / muted Skipped
+  line); folded into `combined`; reuses the discovery review-queue + reconciliation,
+  in the agent.
+
+**Phase 4 is complete.** The four Network-Context sources (SNMP ARP, SNMP inventory
++ VLAN/interface, NetBIOS/mDNS names, DNS names, DHCP leases, LLDP/CDP neighbors) all
+merge per host through one review/import path; a single `combined` scan runs them all.
 
 ## Phase 5: Production Hardening
 

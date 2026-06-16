@@ -45,6 +45,7 @@ type PageData struct {
 	ScanSchedules     []store.ScanSchedule
 	ScanSchedule      store.ScanSchedule
 	ScanTypes         []string
+	ScanTypeGroups    []ScanTypeGroup
 	ScanModes         []string
 	AgentStatuses     []string
 	DispatchReady     bool
@@ -57,6 +58,14 @@ type PageData struct {
 	Form              map[string]string
 	ActiveNav         string
 	SuccessMessage    string
+}
+
+// ScanTypeGroup is a labeled set of scan types rendered as an <optgroup> in the
+// scan/schedule forms, so the recommended Combined scan leads and the granular
+// single-source scans are clearly secondary.
+type ScanTypeGroup struct {
+	Label string
+	Types []string
 }
 
 func Render(w http.ResponseWriter, name string, data PageData) error {
@@ -128,7 +137,7 @@ func optionLabel(value string) string {
 	case "os_probe":
 		return "OS probe"
 	case "combined":
-		return "Combined (nmap + ARP + SNMP + names + DNS + DHCP + LLDP/CDP)"
+		return "Combined — every source, merged (recommended)"
 	case "arp_table":
 		return "ARP table (SNMP)"
 	case "snmp_inventory":

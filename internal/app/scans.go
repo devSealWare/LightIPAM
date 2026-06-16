@@ -17,6 +17,19 @@ func scanTypeOptions() []string {
 	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table", "snmp_inventory", "name_lookup", "dns_lookup", "dhcp_leases", "lldp_cdp"}
 }
 
+// scanTypeGroups arranges the scan types for the form's <optgroup>s so the
+// recommended Combined scan leads and the granular options read as advanced. Most
+// operators pick Combined and go; the single-source scans are for when you want
+// exactly one collection method. Every value here is also in scanTypeOptions (the
+// validation set).
+func scanTypeGroups() []ui.ScanTypeGroup {
+	return []ui.ScanTypeGroup{
+		{Label: "Recommended", Types: []string{"combined"}},
+		{Label: "Active nmap scans (choose a depth)", Types: []string{"host_discovery", "service_detection", "os_probe"}},
+		{Label: "Single-source (advanced)", Types: []string{"arp_table", "snmp_inventory", "name_lookup", "dns_lookup", "dhcp_leases", "lldp_cdp"}},
+	}
+}
+
 // scanModeOptions lists the user-selectable scan depths for nmap-based scan
 // types. The protocol still defines a "passive" mode (the agent's no-packets
 // short-circuit), but it produces zero results for every backend, so it is not
@@ -283,19 +296,20 @@ func (a *App) renderScanForm(w http.ResponseWriter, r *http.Request, session sto
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active"}
+		form = map[string]string{"scan_type": "combined", "mode": "standard_active"}
 	}
 	_ = ui.Render(w, "scan_new.html", ui.PageData{
-		Title:         "Run Scan",
-		Error:         message,
-		User:          session.User,
-		CSRF:          session.CSRFToken,
-		ScanAgents:    agents,
-		ScanTypes:     scanTypeOptions(),
-		ScanModes:     scanModeOptions(),
-		DispatchReady: a.scans != nil && a.scans.DispatchEnabled(),
-		Form:          form,
-		ActiveNav:     "scans",
+		Title:          "Run Scan",
+		Error:          message,
+		User:           session.User,
+		CSRF:           session.CSRFToken,
+		ScanAgents:     agents,
+		ScanTypes:      scanTypeOptions(),
+		ScanTypeGroups: scanTypeGroups(),
+		ScanModes:      scanModeOptions(),
+		DispatchReady:  a.scans != nil && a.scans.DispatchEnabled(),
+		Form:           form,
+		ActiveNav:      "scans",
 	})
 }
 
@@ -813,19 +827,20 @@ func (a *App) renderScheduleForm(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "host_discovery", "mode": "standard_active", "interval": "3600", "enabled": "on"}
+		form = map[string]string{"scan_type": "combined", "mode": "standard_active", "interval": "3600", "enabled": "on"}
 	}
 	_ = ui.Render(w, "schedule_form.html", ui.PageData{
-		Title:        title,
-		Error:        message,
-		User:         session.User,
-		CSRF:         session.CSRFToken,
-		ScanAgents:   agents,
-		ScanSchedule: schedule,
-		ScanTypes:    scanTypeOptions(),
-		ScanModes:    scanModeOptions(),
-		Form:         form,
-		ActiveNav:    "schedules",
+		Title:          title,
+		Error:          message,
+		User:           session.User,
+		CSRF:           session.CSRFToken,
+		ScanAgents:     agents,
+		ScanSchedule:   schedule,
+		ScanTypes:      scanTypeOptions(),
+		ScanTypeGroups: scanTypeGroups(),
+		ScanModes:      scanModeOptions(),
+		Form:           form,
+		ActiveNav:      "schedules",
 	})
 }
 
