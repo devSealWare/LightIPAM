@@ -226,7 +226,7 @@ Phase 3 follow-ups (merged, #18):
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
   `store.Search`, `search.go`).
 - **#36 MAC vendor carry-through** — nmap's OUI vendor flows through discovery
-  into device/MAC records.
+  into device/MAC records (`scan_discoveries.vendor`, migration 10).
 - **#37 nmap egress pinning** — `EgressOptions` (`-e`/`-S`) pins probes to the
   LAN interface for consistent cross-subnet scans on a dual-homed agent
   (`AGENT_SCAN_SOURCE_IP` / `AGENT_SCAN_INTERFACE`).
@@ -246,7 +246,9 @@ Phase 3 follow-ups (merged, #18):
   only at first import, so whichever scan imported first won and later scans never
   reached the device (an nmap-then-ARP pair for a host a router away left it
   missing either its services or its MAC; an OS guess from a later nmap never
-  appeared). Now `orchestrator.syncImported` → `store.SyncImportedDiscovery`
+  appeared). Migration 9 added `devices.os_family`, `devices.os_detail`,
+  `devices.services`, and `devices.discovery_source`; now
+  `orchestrator.syncImported` → `store.SyncImportedDiscovery`
   re-syncs the merged discovery findings (OS, services, source, newly seen MAC +
   vendor) onto the linked device on **every** scan when the discovery is already
   imported and non-conflicting — independent of `auto_import` (importing was
@@ -348,4 +350,3 @@ Remaining candidate follow-ups, roughly in priority order:
 
 When starting the next issue, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order).
-

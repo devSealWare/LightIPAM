@@ -66,7 +66,7 @@ func modeForType(scanType, mode string) (string, error) {
 	case "arp_table", "snmp_inventory", "name_lookup", "lldp_cdp":
 		return "standard_active", nil // SNMP/name lookups have no depth; any active mode runs them
 	case "combined":
-		return "deep_active", nil // combined always runs the full deep scan + ARP + SNMP
+		return "deep_active", nil // combined always runs deep nmap plus all enrichment passes
 	default:
 		if !contains(scanModeOptions(), mode) {
 			return "", errors.New("Select a valid scan mode.")
