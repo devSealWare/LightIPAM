@@ -30,7 +30,7 @@ in the same agent without widening its capability set.
 
 Scan **type** selects what to collect; scan **mode** selects intensity. Mode is a
 depth knob for the nmap scan types only — `arp_table`, `snmp_inventory`,
-`name_lookup`, and `combined` ignore it (combined always runs at full depth), so
+`name_lookup`, `dns_lookup`, `lldp_cdp`, and `combined` ignore it (combined always runs at full depth), so
 the scan form hides the Mode picker for those. The protocol still defines a
 `passive` mode (the agent's no-packets short-circuit), but it produces zero results
 for every backend, so it is no longer offered as a UI choice; the depths are
@@ -47,10 +47,11 @@ Light / Standard / Deep.
 | `host_discovery`    | `-sn` ping/ARP sweep, no port scan (mode ignored).            |
 | `service_detection` | `-sV` over the mode's ports; `--version-all` on standard. |
 | `os_probe`          | `-O`; standard/deep also add `-sV` over the mode's ports.     |
-| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, NetBIOS/mDNS name lookup, and LLDP/CDP neighbor harvest of the targets, merged per host (see below). |
+| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, NetBIOS/mDNS name lookup, DNS name lookup, and LLDP/CDP neighbor harvest of the targets, merged per host (see below). |
 | `arp_table`         | SNMP walk of a gateway's ARP cache, no nmap (mode ignored).   |
 | `snmp_inventory`    | SNMP read of a device's identity + interfaces, no nmap (mode ignored). |
 | `name_lookup`       | NetBIOS (UDP/137) + mDNS (UDP/5353) name query, no nmap (mode ignored). |
+| `dns_lookup`        | DNS reverse (PTR) + forward-confirm name query, no nmap (mode ignored). |
 | `lldp_cdp`          | SNMP read of a switch/router's LLDP + CDP neighbor caches, no nmap (mode ignored). |
 
 Job rate limits map to `--max-rate` / `--max-parallelism`; the job timeout maps
@@ -193,6 +194,35 @@ Observations reuse the **same** review queue and reconciliation as every other
 source, so a name merges onto the same discovery row as an nmap service scan, an
 ARP MAC, and an SNMP inventory record. See ADR 0010.
 
+## DNS name enrichment (`dns_lookup`)
+
+Where `name_lookup` recovers names for hosts with **no** DNS record (NetBIOS/mDNS),
+`dns_lookup` reads the authoritative DNS the network already runs — the common case
+for managed hosts — and forward-confirms it:
+
+- **Reverse then forward.** Per target the agent does a reverse (PTR) lookup to
+  learn the IP's name, then a forward (A) lookup of that name. The PTR name becomes
+  the observation's hostname (FQDN, trailing dot trimmed); whether the forward
+  lookup maps back to the same IP rides as `dns` evidence ("forward-confirmed" or
+  "forward lookup did not confirm"). A stale or hijacked PTR is surfaced, not
+  trusted blindly — but the name is still kept.
+- **Targets are single hosts.** A reverse lookup is per-address, so a CIDR target is
+  a per-target `dns_unresolved` notice rather than expanded. An address with no PTR
+  record is likewise a per-target `dns_unresolved` notice, never a job failure.
+- **Resolver on the agent.** With `AGENT_DNS_SERVER` set the agent queries that
+  resolver directly (host or host:port, defaulting to `:53`); otherwise it uses the
+  agent's system resolver. `AGENT_DNS_TIMEOUT` (seconds) bounds each lookup.
+- **Unprivileged, no new dependency.** Resolution uses the standard library's
+  `*net.Resolver` over ordinary UDP/TCP/53 — no `NET_RAW`. The resolver sits behind
+  an injectable interface so the reverse/forward decoding is unit-tested with no
+  real DNS.
+
+`dns_lookup` is the fourth best-effort enrichment pass folded into `combined`, and
+its names flow through the **same** review queue and reconciliation as every other
+source, so a DNS name merges onto the same discovery row (and device) as an nmap
+service scan, an ARP MAC, an SNMP inventory record, and a NetBIOS/mDNS name. See
+`internal/scanner/agent/dns.go`, ADR 0012.
+
 ## LLDP/CDP neighbor harvesting (`lldp_cdp`)
 
 Where the other sources answer "what is at this IP?", `lldp_cdp` answers "how is
@@ -239,20 +269,22 @@ findings into the most complete picture per host:
 - a **deep nmap** scan (every TCP port, `-sV` + `-O`) — the core of the job,
 - an **SNMP ARP harvest** (`arp_table`) of the single-host targets,
 - an **SNMP inventory** (`snmp_inventory`) of the single-host targets,
-- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets, and
+- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets,
+- a **DNS name lookup** (`dns_lookup`) of the single-host targets, and
 - an **LLDP/CDP neighbor harvest** (`lldp_cdp`) of the single-host targets (if a
   target is a switch/router, its neighbors are harvested too).
 
-nmap is authoritative: if it fails, the combined job fails. The four enrichment
-passes are **best-effort** — a host that does not answer SNMP or a name protocol
+nmap is authoritative: if it fails, the combined job fails. The enrichment passes
+are **best-effort** — a host that does not answer SNMP, a name protocol, or DNS
 (or a CIDR target, which these unicast queries cannot expand) is reported as
 *ignored*, never failed. Ignored notices carry the `scan_ignored` code; the
 orchestrator never promotes them to the job's headline error, and `/scans/{id}`
 renders them in a muted **Skipped** section rather than as red errors.
 
-`internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap,
-SNMP, and name discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It
-forces the nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
+`internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap core
+with an ordered list of best-effort enrichment passes drawn from the SNMP, name,
+and DNS discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It forces the
+nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
 targets (`hostTargets`), and merges the per-IP observations (`mergeObservations`:
 the leading nmap source wins scalar fields, services union by port, evidence
 concatenates). Because the discovery store already merges by IP

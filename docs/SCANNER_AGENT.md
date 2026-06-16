@@ -93,6 +93,8 @@ rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
 | `AGENT_NETBIOS_PORT`  | `137`                        | NetBIOS name-service UDP port (`name_lookup`). |
 | `AGENT_MDNS_PORT`     | `5353`                       | mDNS UDP port (`name_lookup`).            |
 | `AGENT_NAME_TIMEOUT`  | `2`                          | NetBIOS/mDNS per-probe timeout (seconds). |
+| `AGENT_DNS_SERVER`    | (system resolver)            | Resolver to query for `dns_lookup` (host or host:port, default `:53`); empty uses the agent's system resolver. |
+| `AGENT_DNS_TIMEOUT`   | `3`                          | DNS per-lookup timeout (seconds, `dns_lookup`). |
 | `APP_CLIENT_CN`       | `light-ipam-app`             | Required client certificate CommonName.   |
 | `SCANNER_TLS_CERT`    | `/certs/agent.crt`           | Agent server certificate.                 |
 | `SCANNER_TLS_KEY`     | `/certs/agent.key`           | Agent server key.                         |
