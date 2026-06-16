@@ -108,6 +108,12 @@
               <dd class="mt-0.5 text-sm text-zinc-800 dark:text-zinc-100">{{ if .OSDetail }}{{ .OSDetail }}{{ else }}{{ .OSFamily }}{{ end }}{{ if and .OSDetail .OSFamily (ne .OSDetail .OSFamily) }} <span class="text-zinc-400">({{ .OSFamily }})</span>{{ end }}</dd>
             </div>
             {{ end }}
+            {{ if .VLAN }}
+            <div>
+              <dt class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">VLAN</dt>
+              <dd class="mt-0.5 text-sm text-zinc-800 dark:text-zinc-100">{{ .VLAN }}</dd>
+            </div>
+            {{ end }}
           </dl>
 
           {{ if .Services }}

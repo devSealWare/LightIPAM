@@ -145,6 +145,16 @@ reliably across a router.
   device's name (→ hostname), `sysDescr` (→ OS detail) and a coarse OS-family
   guess, plus the MAC of that IP's interface. sysLocation/contact/uptime and
   `sysObjectID` ride along as evidence.
+- **VLAN and interface mapping.** Each owned IP carries the **802.1Q access VLAN**
+  of its interface, read from the Q-BRIDGE-MIB `dot1qPvid` table and joined to the
+  interface through `dot1dBasePortIfIndex` (bridge port → ifIndex); `dot1qVlanStaticName`
+  names the VLAN. The interface's operational status (`ifOperStatus`, up/down) and
+  the VLAN (with name) ride as evidence. On import (and on every re-sync), a
+  discovered VLAN **fills the containing subnet's VLAN when it has none** — never
+  overwriting an operator-set value — so VLAN findings surface on the Subnets page;
+  the device's linked-addresses list shows each address's subnet VLAN. All the VLAN
+  walks are best-effort: a device that is not an 802.1Q bridge simply yields no VLAN
+  and keeps the rest of its inventory.
 - **Allowlist-scoped, deduped, best-effort.** Only owned IPs inside the job
   allowlist are reported, deduped by IP across targets. A failed system `Get` is a
   per-target `snmp_failed` (SNMP not answering); the table walks are best-effort,

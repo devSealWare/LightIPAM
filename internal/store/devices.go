@@ -259,9 +259,10 @@ WHERE id = $1`, id).Scan(&address.ID, &address.DeviceID, &address.Address, &addr
 
 func (s *Store) ListDeviceIPAddresses(ctx context.Context, deviceID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, sub.vlan, ip.created_at, ip.updated_at
 FROM ip_addresses ip
 LEFT JOIN devices d ON d.id = ip.device_id
+LEFT JOIN subnets sub ON sub.id = ip.subnet_id
 WHERE ip.device_id = $1
 ORDER BY ip.address`, deviceID)
 	if err != nil {
@@ -272,7 +273,7 @@ ORDER BY ip.address`, deviceID)
 	var addresses []IPAddress
 	for rows.Next() {
 		var address IPAddress
-		if err := rows.Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
+		if err := rows.Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.VLAN, &address.CreatedAt, &address.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan device address: %w", err)
 		}
 		addresses = append(addresses, address)
