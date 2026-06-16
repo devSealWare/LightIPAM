@@ -67,8 +67,17 @@ services:
       # the agent resolves each host's name from DNS (reverse PTR) and forward-
       # confirms it. Unprivileged UDP/TCP/53 — no NET_RAW. Tunable:
       #   AGENT_DNS_SERVER (system resolver by default), AGENT_DNS_TIMEOUT (3s)
+      # DHCP lease ingestion (dhcp_leases scan type, also part of a combined scan):
+      # the agent reads the DHCP server's lease file for authoritative IP↔MAC and
+      # client hostnames. Opt-in — set AGENT_DHCP_LEASE_FILE and mount the file
+      # read-only (see the volumes example below). Reading a file needs no NET_RAW.
+      #   AGENT_DHCP_LEASE_FILE (unset = idle), AGENT_DHCP_LEASE_FORMAT (isc|dnsmasq|auto)
+      # AGENT_DHCP_LEASE_FILE: /leases/dnsmasq.leases
     volumes:
       - ./deploy/scanner-certs:/certs:ro
+      # To enable dhcp_leases, mount the DHCP server's lease file read-only and set
+      # AGENT_DHCP_LEASE_FILE above to the in-container path, e.g.:
+      # - /var/lib/misc/dnsmasq.leases:/leases/dnsmasq.leases:ro
     read_only: true
     # Active discovery needs raw sockets for ARP/SYN/OS probes. NET_RAW is
     # granted here — and only here — while every other capability stays dropped.

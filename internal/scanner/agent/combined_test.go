@@ -64,8 +64,12 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 		return []scanner.Observation{{IP: "192.168.10.20", Hostname: "nas.example.com",
 			Evidence: []scanner.Evidence{{Source: "dns", Summary: "Reverse DNS (PTR): nas.example.com (forward-confirmed)"}}}}, nil, nil
 	}}
+	dhcp := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		return []scanner.Observation{{IP: "192.168.10.20", MAC: "aa:bb:cc:dd:ee:ff", Hostname: "nas-dhcp",
+			Evidence: []scanner.Evidence{{Source: "dhcp", Summary: "DHCP lease (active)"}}}}, nil, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp, names, dns)
+	c := NewCombinedDiscoverer(nmap, snmp, names, dns, dhcp)
 	obs, notices, err := c.Discover(context.Background(), combinedJob())
 	if err != nil {
 		t.Fatalf("combined discover: %v", err)
@@ -74,7 +78,7 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 		t.Fatalf("expected no notices when every backend answered, got %+v", notices)
 	}
 	if len(obs) != 1 {
-		t.Fatalf("expected the six sources to merge into one observation, got %d: %+v", len(obs), obs)
+		t.Fatalf("expected the seven sources to merge into one observation, got %d: %+v", len(obs), obs)
 	}
 	got := obs[0]
 	if got.IP != "192.168.10.20" {
@@ -93,8 +97,8 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if len(got.Services) != 1 || got.Services[0].Port != 22 {
 		t.Fatalf("expected nmap services preserved, got %+v", got.Services)
 	}
-	if len(got.Evidence) != 5 {
-		t.Fatalf("expected evidence from both SNMP passes, the name lookup, DNS, and LLDP/CDP, got %+v", got.Evidence)
+	if len(got.Evidence) != 6 {
+		t.Fatalf("expected evidence from both SNMP passes, the name lookup, DNS, DHCP, and LLDP/CDP, got %+v", got.Evidence)
 	}
 
 	// nmap must be driven at full depth.
@@ -134,6 +138,13 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if dns.jobs[0].Type != scanner.ScanDNSLookup || dns.jobs[0].Mode == scanner.ModePassive {
 		t.Fatalf("dns sub-job should be an active dns_lookup, got %q/%q", dns.jobs[0].Type, dns.jobs[0].Mode)
 	}
+	// DHCP lease lookup runs once, active, against the single-host targets.
+	if len(dhcp.jobs) != 1 {
+		t.Fatalf("expected one DHCP sub-job, got %d", len(dhcp.jobs))
+	}
+	if dhcp.jobs[0].Type != scanner.ScanDHCPLeases || dhcp.jobs[0].Mode == scanner.ModePassive {
+		t.Fatalf("dhcp sub-job should be an active dhcp_leases, got %q/%q", dhcp.jobs[0].Type, dhcp.jobs[0].Mode)
+	}
 }
 
 func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
@@ -149,8 +160,11 @@ func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
 	dns := &recordingDiscoverer{fn: func(job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
 		return nil, []scanner.ScanError{{Code: "dns_unresolved", Message: "no PTR record for this address", Target: "192.168.10.20"}}, nil
 	}}
+	dhcp := &recordingDiscoverer{fn: func(job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		return nil, []scanner.ScanError{{Code: "dhcp_unconfigured", Message: "no DHCP lease file configured"}}, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp, names, dns)
+	c := NewCombinedDiscoverer(nmap, snmp, names, dns, dhcp)
 	obs, notices, err := c.Discover(context.Background(), combinedJob())
 	if err != nil {
 		t.Fatalf("combined must not fail when enrichment is silent: %v", err)
@@ -158,8 +172,8 @@ func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
 	if len(obs) != 1 || obs[0].IP != "192.168.10.20" {
 		t.Fatalf("expected the nmap observation to survive, got %+v", obs)
 	}
-	// One ignored notice per enrichment pass: ARP, inventory, name lookup, DNS, LLDP/CDP.
-	if len(notices) != 5 {
+	// One ignored notice per enrichment pass: ARP, inventory, name lookup, DNS, DHCP, LLDP/CDP.
+	if len(notices) != 6 {
 		t.Fatalf("expected one ignored notice per enrichment pass, got %+v", notices)
 	}
 	for _, n := range notices {
@@ -185,8 +199,12 @@ func TestCombinedNmapFailureFails(t *testing.T) {
 		t.Fatal("DNS lookup must not run when nmap fails")
 		return nil, nil, nil
 	}}
+	dhcp := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		t.Fatal("DHCP lookup must not run when nmap fails")
+		return nil, nil, nil
+	}}
 
-	c := NewCombinedDiscoverer(nmap, snmp, names, dns)
+	c := NewCombinedDiscoverer(nmap, snmp, names, dns, dhcp)
 	if _, _, err := c.Discover(context.Background(), combinedJob()); err == nil {
 		t.Fatal("expected combined to fail when its core nmap scan fails")
 	}
@@ -198,6 +216,9 @@ func TestCombinedNmapFailureFails(t *testing.T) {
 	}
 	if len(dns.jobs) != 0 {
 		t.Fatalf("DNS lookup should not have been dispatched, got %d jobs", len(dns.jobs))
+	}
+	if len(dhcp.jobs) != 0 {
+		t.Fatalf("DHCP lookup should not have been dispatched, got %d jobs", len(dhcp.jobs))
 	}
 }
 
@@ -217,11 +238,15 @@ func TestCombinedSkipsSNMPForCIDRTargets(t *testing.T) {
 		t.Fatal("DNS lookup cannot query a CIDR and must be skipped")
 		return nil, nil, nil
 	}}
+	dhcp := &recordingDiscoverer{fn: func(scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
+		t.Fatal("DHCP lookup cannot query a CIDR and must be skipped")
+		return nil, nil, nil
+	}}
 
 	job := combinedJob()
 	job.Targets = []string{"192.168.10.0/24"}
 
-	c := NewCombinedDiscoverer(nmap, snmp, names, dns)
+	c := NewCombinedDiscoverer(nmap, snmp, names, dns, dhcp)
 	obs, notices, err := c.Discover(context.Background(), job)
 	if err != nil {
 		t.Fatalf("combined discover: %v", err)
@@ -238,9 +263,12 @@ func TestCombinedSkipsSNMPForCIDRTargets(t *testing.T) {
 	if len(dns.jobs) != 0 {
 		t.Fatalf("DNS lookup should not run for a CIDR target, got %d jobs", len(dns.jobs))
 	}
+	if len(dhcp.jobs) != 0 {
+		t.Fatalf("DHCP lookup should not run for a CIDR target, got %d jobs", len(dhcp.jobs))
+	}
 	// One ignored notice per skipped enrichment pass: ARP, inventory, name lookup,
-	// DNS, LLDP/CDP.
-	if len(notices) != 5 {
+	// DNS, DHCP, LLDP/CDP.
+	if len(notices) != 6 {
 		t.Fatalf("expected an ignored notice per skipped enrichment pass, got %+v", notices)
 	}
 }
