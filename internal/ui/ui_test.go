@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
 
@@ -55,6 +56,7 @@ func TestRenderTemplates(t *testing.T) {
 			State:      "assigned",
 			Hostname:   "nas-1",
 			Notes:      "Storage",
+			VLAN:       &vlan,
 		}},
 		AddressStates: []string{"available", "reserved", "assigned", "deprecated", "conflict"},
 		Devices: []store.Device{{
@@ -169,7 +171,21 @@ func TestRenderTemplates(t *testing.T) {
 			IntervalSeconds: 3600,
 			Enabled:         true,
 		},
-		ScanTypes:     []string{"host_discovery", "service_detection", "os_probe", "combined"},
+		ScanObservations: []scanner.Observation{{
+			IP:       "192.168.10.42",
+			MAC:      "aa:bb:cc:dd:ee:ff",
+			Hostname: "printer.local",
+			OSFamily: "Linux",
+			OSDetail: "Linux 5.x",
+			VLAN:     30,
+			Services: []scanner.ServiceObservation{{Protocol: "tcp", Port: 9100, State: "open", ServiceName: "jetdirect"}},
+			Evidence: []scanner.Evidence{{Source: "snmp", Summary: "VLAN 30 (Printers)"}},
+		}},
+		ScanTypes: []string{"host_discovery", "service_detection", "os_probe", "combined"},
+		ScanTypeGroups: []ScanTypeGroup{
+			{Label: "Recommended", Types: []string{"combined"}},
+			{Label: "Single-source (advanced)", Types: []string{"arp_table", "snmp_inventory", "name_lookup", "dns_lookup", "dhcp_leases", "lldp_cdp"}},
+		},
 		ScanModes:     []string{"passive", "light_active", "standard_active", "deep_active"},
 		AgentStatuses: []string{"pending", "active", "disabled", "revoked"},
 		DispatchReady: true,
@@ -182,6 +198,7 @@ func TestRenderTemplates(t *testing.T) {
 			OSFamily:        "Linux",
 			OSDetail:        "Linux 5.x",
 			Services:        []store.DiscoveryService{{Protocol: "tcp", Port: 9100, State: "open", ServiceName: "jetdirect"}},
+			VLAN:            30,
 			Status:          "pending",
 			ReconcileStatus: "conflict",
 			Conflict:        "Address is assigned to NAS with a different MAC",

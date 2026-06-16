@@ -55,21 +55,24 @@ and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-a
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 (migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
-**Roadmap Phase 4 is underway:** four agent-side discovery sources beyond nmap
-are merged — SNMP ARP-table harvesting (`arp_table` scan type, ADR 0006), SNMP
-device inventory (`snmp_inventory` scan type, ADR 0007), NetBIOS/mDNS name
-resolution (`name_lookup` scan type, ADR 0010), and LLDP/CDP neighbor harvesting
-(`lldp_cdp` scan type, ADR 0011) — see "Scanner SNMP ARP Discovery", "Scanner SNMP
-Inventory", "Scanner NetBIOS/mDNS Names", and "Scanner LLDP/CDP Neighbors" below.
-On top of those, the scan experience was overhauled (#44/#45, ADRs 0008/0009): a
-`combined` scan now runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names +
-LLDP/CDP neighbors merged per host (a silent enrichment pass is ignored not
-failed), scan modes are simplified to Light/Standard/Deep, nmap runs **staged**
-(host discovery → service/OS on live hosts only), and scan timeouts are dynamic
-per-type via the shared `scanner.ScanBudget` (fixing multi-host "context deadline
-exceeded"). See the #44/#45 bullets under "Recent UI / IPAM work". Next candidate
-work is the rest of Phase 4 (DHCP leases, DNS enrichment, VLAN/interface mapping)
-or the follow-ups under "Next" below.
+**Roadmap Phase 4 (Network Context) is complete.** Beyond nmap the agent now has
+five unprivileged discovery sources, all reusing the discovery review-queue +
+reconciliation and merging per host: SNMP ARP-table harvesting (`arp_table`, ADR
+0006), SNMP device inventory **with 802.1Q VLAN + interface mapping** (`snmp_inventory`,
+ADRs 0007/0013), NetBIOS/mDNS name resolution (`name_lookup`, ADR 0010), DNS
+forward/reverse enrichment (`dns_lookup`, ADR 0012), DHCP lease ingestion
+(`dhcp_leases`, ADR 0014), and LLDP/CDP neighbor harvesting (`lldp_cdp`, ADR 0011) —
+see the "Scanner …" sections below. The scan experience was overhauled (#44/#45,
+ADRs 0008/0009) and a single `combined` scan runs deep nmap + ARP + SNMP inventory
+(VLAN) + NetBIOS/mDNS names + DNS names + DHCP leases + LLDP/CDP neighbors merged per
+host (a silent/unconfigured enrichment pass is ignored not failed); scan modes are
+simplified to Light/Standard/Deep, nmap runs **staged** (host discovery → service/OS
+on live hosts only), and scan timeouts are dynamic per-type via the shared
+`scanner.ScanBudget`. The scan form leads with **Combined** (the default,
+`<optgroup>`-grouped over the single-source advanced scans). VLAN findings backfill
+the containing subnet's VLAN when empty (migration 11), so they reach the Subnets and
+Devices pages. Next candidate work is Phase 5 (Production Hardening) or the follow-ups
+under "Next" below.
 
 Issue #10 (merged) scope:
 
@@ -211,6 +214,53 @@ overwriting an existing hostname). New scan type in `scanTypeOptions()`,
 `scan_form.js`, and the scan-form help text. See `docs/SCANNER_DISCOVERY.md`,
 ADR 0011.
 
+## Scanner DNS Names (merged, Phase 4, ADR 0012)
+
+`internal/scanner/agent/dns.go` (`DNSDiscoverer`) adds the `dns_lookup` scan type:
+per target it does a reverse (PTR) lookup to name the IP, then a forward (A) lookup
+to confirm the name maps back, emitting one observation per host with a PTR record
+and the forward-confirmation result as `dns` evidence (a stale/mismatched PTR is
+surfaced, not trusted, but the name is kept). Where `name_lookup` (NetBIOS/mDNS)
+names hosts with **no** DNS record, this reads the authoritative DNS the network
+already runs. Unprivileged UDP/TCP/53 via `*net.Resolver` behind an injectable
+`NameResolver` (hermetic tests); `AGENT_DNS_SERVER` picks an explicit resolver
+(default system), `AGENT_DNS_TIMEOUT` bounds each lookup. Single-host targets only
+(a CIDR/no-PTR is a per-target `dns_unresolved` notice, never a job failure). Folded
+into `combined` (the `CombinedDiscoverer` was refactored to an ordered list of
+best-effort enrichment passes); reuses the same review-queue + reconciliation. No
+schema change. New scan type wired through the form, router, and docs.
+
+## Scanner VLAN + Interface Mapping (merged, Phase 4, ADR 0013)
+
+`snmp_inventory` (no new scan type) now reads each interface's 802.1Q access VLAN and
+operational status in `internal/scanner/agent/snmp.go` (`walkVLANs`): best-effort
+Q-BRIDGE-MIB walks (`dot1qPvid` keyed by bridge port, joined through
+`dot1dBasePortIfIndex` to ifIndex; `dot1qVlanStaticName` for names) plus
+`ifOperStatus`, stamping each owned IP's observation with its interface's VLAN
+(interface name/status + VLAN ride as evidence). `scanner.Observation.VLAN` carries
+it; `scan_discoveries.vlan` (migration 11) stores it, preserved across merges like
+the service list. On import **and** every re-sync, a discovered VLAN backfills the
+**containing subnet's** VLAN when it has none (`backfillSubnetVLAN`, `cidr >>= ip`),
+never overwriting an operator value — so VLAN findings reach the Subnets page; the
+device's linked-addresses list shows each address's subnet VLAN, the scan detail and
+discovery queue show the VLAN. Unprivileged (UDP/161), no new dependency, parsing
+behind the same injectable `snmpSession`.
+
+## Scanner DHCP Leases (merged, Phase 4, ADR 0014)
+
+`internal/scanner/agent/dhcp.go` (`DHCPDiscoverer`) adds the `dhcp_leases` scan type:
+the agent reads the DHCP server's lease file and emits one observation per **active**
+lease — the authoritative IP↔MAC binding plus the client-supplied hostname. Two
+formats parsed behind an injectable `leaseReader` (hermetic fixture tests): ISC
+dhcpd's `dhcpd.leases` blocks (active-only, last block per IP wins) and dnsmasq's
+leases file; `AGENT_DHCP_LEASE_FORMAT` picks one or auto-sniffs. The job's targets
+scope which IP ranges to ingest (`scopeFromTargets`); the allowlist still bounds them.
+`AGENT_DHCP_LEASE_FILE` (mounted read-only) names the file — reading it needs no
+privilege. Opt-in and never fatal: an unconfigured file is a clear `dhcp_unconfigured`
+notice (combined → muted Skipped line). Folded into `combined` as a fifth enrichment
+pass; reuses the same review-queue + reconciliation. No schema change. New scan type
+wired through the form, router, and docs.
+
 Phase 3 follow-ups (merged, #18):
 
 - **Per-agent auto-import** (`scan_agents.auto_import`, migration 8). When set,
@@ -323,9 +373,9 @@ The app auto-enrolls the bundled agent (pending) on boot; approve it under
 `/discoveries`. Agent allowlist is `AGENT_ALLOWED_CIDRS` (defaults
 `192.168.0.0/16,10.0.0.0/8`); scan targets must fall inside it.
 
-## Next (Phase 3 complete)
+## Next (Phases 3 and 4 complete)
 
-The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
+The initial backlog and Roadmap Phases 3 and 4 are done, plus two Phase 3 follow-ups:
 
 - **Per-agent auto-import (done).** `scan_agents.auto_import` (migration 8). When
   set, the orchestrator imports an agent's non-conflicting, still-pending
@@ -339,12 +389,15 @@ The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 
 Remaining candidate follow-ups, roughly in priority order:
 
-- **Phase 4 (Network Context):** SNMP ARP-table harvesting (ADR 0006), SNMP
-  device inventory (interfaces/sysDescr, ADR 0007), NetBIOS/mDNS name resolution
-  (`name_lookup`, ADR 0010), and LLDP/CDP neighbor harvesting (`lldp_cdp`, ADR
-  0011) are **done**. Remaining: DHCP lease ingestion, DNS enrichment,
-  VLAN/interface mapping. Each new source should reuse the discovery review-queue +
-  reconciliation pattern and stay in the agent, not the app.
+- **Phase 4 (Network Context) — complete.** All sources are done and reuse the
+  discovery review-queue + reconciliation, in the agent: SNMP ARP-table harvesting
+  (ADR 0006), SNMP device inventory + 802.1Q VLAN/interface mapping (ADRs 0007/0013),
+  NetBIOS/mDNS name resolution (`name_lookup`, ADR 0010), DNS forward/reverse
+  enrichment (`dns_lookup`, ADR 0012), DHCP lease ingestion (`dhcp_leases`, ADR 0014),
+  and LLDP/CDP neighbor harvesting (`lldp_cdp`, ADR 0011). A `combined` scan runs them
+  all. Possible Phase-4 polish if desired: tagged/trunk VLAN membership (only access
+  PVID is mapped today), per-interface speed/alias, and an SNMP/API-based DHCP source
+  for appliances that do not expose a lease file.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
   (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 
