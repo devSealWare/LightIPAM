@@ -47,10 +47,11 @@ Light / Standard / Deep.
 | `host_discovery`    | `-sn` ping/ARP sweep, no port scan (mode ignored).            |
 | `service_detection` | `-sV` over the mode's ports; `--version-all` on standard. |
 | `os_probe`          | `-O`; standard/deep also add `-sV` over the mode's ports.     |
-| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, and NetBIOS/mDNS name lookup of the targets, merged per host (see below). |
+| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, NetBIOS/mDNS name lookup, and LLDP/CDP neighbor harvest of the targets, merged per host (see below). |
 | `arp_table`         | SNMP walk of a gateway's ARP cache, no nmap (mode ignored).   |
 | `snmp_inventory`    | SNMP read of a device's identity + interfaces, no nmap (mode ignored). |
 | `name_lookup`       | NetBIOS (UDP/137) + mDNS (UDP/5353) name query, no nmap (mode ignored). |
+| `lldp_cdp`          | SNMP read of a switch/router's LLDP + CDP neighbor caches, no nmap (mode ignored). |
 
 Job rate limits map to `--max-rate` / `--max-parallelism`; the job timeout maps
 to `--host-timeout` and feeds the agent/app budgets (see "Timeouts" below).
@@ -82,8 +83,8 @@ privileges.
 `ScanJob.TimeoutSeconds` is the **per-host** budget (nmap's `--host-timeout`). The
 form leaves it blank by default and the app fills a generous per-type default
 (`app.defaultTimeoutForType`: host_discovery 120s, service_detection 600s, os_probe
-900s, combined 1200s, arp_table 180s, snmp_inventory 300s, name_lookup 120s). From
-that per-host
+900s, combined 1200s, arp_table 180s, snmp_inventory 300s, name_lookup 120s,
+lldp_cdp 300s). From that per-host
 budget, `scanner.ScanBudget(perHost, targets)` derives the **whole-job** budget
 (`perHost × host-count + discovery allowance + grace`, capped at 4h). Both the
 agent (supervising the discoverer) and the app (bounding the blocking dispatch
@@ -192,6 +193,44 @@ Observations reuse the **same** review queue and reconciliation as every other
 source, so a name merges onto the same discovery row as an nmap service scan, an
 ARP MAC, and an SNMP inventory record. See ADR 0010.
 
+## LLDP/CDP neighbor harvesting (`lldp_cdp`)
+
+Where the other sources answer "what is at this IP?", `lldp_cdp` answers "how is
+the network wired?". A managed switch or router passively records the neighbors it
+hears on each port — over the vendor-neutral **LLDP** and Cisco's **CDP** — and
+exposes both caches over SNMP. Asking one core switch typically reveals its whole
+directly-connected neighborhood at once.
+
+- **Targets are the switch/router IPs to query**, not a host range. The agent
+  walks the **CISCO-CDP-MIB** `cdpCacheTable` and the **LLDP-MIB** `lldpRemTable`
+  (+ `lldpRemManAddrTable`) and emits one observation per neighbor.
+- **Both protocols, merged per neighbor.** CDP carries the neighbor IP, device id,
+  platform, and remote port directly. LLDP carries the IP in its management-address
+  table (joined to the neighbor row by the shared `timeMark.localPort.remIndex`
+  index), the system name/description, the remote port, and — when the chassis id
+  is MAC-typed — the neighbor's **MAC**. A neighbor seen via both protocols, or via
+  two switches, is merged by IP (`mergeObservations`). The reporting device,
+  protocol, and remote port ride as evidence (`cdp` / `lldp` sources).
+- **Only neighbors with a management IP are emitted.** IPAM keys on an address, so
+  a neighbor that advertises none (common for endpoints) is dropped — pair an
+  `lldp_cdp` scan with `arp_table` / nmap to place those by IP. IPv4 only: a
+  non-IPv4 LLDP management address is skipped.
+- **Unprivileged, no new dependency.** SNMP is UDP/161 from a normal socket — no
+  `NET_RAW`. The one `SNMPDiscoverer` handles `arp_table`, `snmp_inventory`, and
+  `lldp_cdp`; the `DiscoveryRouter` registers it for all three. Same agent-only
+  `AGENT_SNMP_*` read community as the other SNMP scans.
+- **Non-response is not a failure.** A device that cannot be reached over SNMP is a
+  per-target `snmp_failed` error and the job still succeeds for the rest; a
+  reachable switch with no neighbors is a clean empty result.
+
+`internal/scanner/agent/neighbors.go` decodes the CDP/LLDP OIDs (and the address
+encoded in the LLDP management-address row index) behind the same injectable
+`snmpSession` as the other SNMP scans, so the parsing is unit-tested against
+hand-built PDUs with no device. Observations reuse the **same** review queue and
+reconciliation as every other source, so a neighbor record merges onto the same
+discovery row as an nmap service scan, an ARP MAC, an SNMP inventory record, and a
+name. See ADR 0011.
+
 ## Combined scan (`combined`)
 
 `combined` runs every backend against the targets in one job and merges their
@@ -199,10 +238,12 @@ findings into the most complete picture per host:
 
 - a **deep nmap** scan (every TCP port, `-sV` + `-O`) — the core of the job,
 - an **SNMP ARP harvest** (`arp_table`) of the single-host targets,
-- an **SNMP inventory** (`snmp_inventory`) of the single-host targets, and
-- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets.
+- an **SNMP inventory** (`snmp_inventory`) of the single-host targets,
+- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets, and
+- an **LLDP/CDP neighbor harvest** (`lldp_cdp`) of the single-host targets (if a
+  target is a switch/router, its neighbors are harvested too).
 
-nmap is authoritative: if it fails, the combined job fails. The three enrichment
+nmap is authoritative: if it fails, the combined job fails. The four enrichment
 passes are **best-effort** — a host that does not answer SNMP or a name protocol
 (or a CIDR target, which these unicast queries cannot expand) is reported as
 *ignored*, never failed. Ignored notices carry the `scan_ignored` code; the
@@ -210,13 +251,13 @@ orchestrator never promotes them to the job's headline error, and `/scans/{id}`
 renders them in a muted **Skipped** section rather than as red errors.
 
 `internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap,
-SNMP, and name discoverers. It forces the nmap sub-job to deep mode, restricts the
-enrichment sub-jobs to bare-IP targets (`hostTargets`), and merges the per-IP
-observations (`mergeObservations`: the leading nmap source wins scalar fields,
-services union by port, evidence concatenates). Because the discovery store already
-merges by IP (`ON CONFLICT (ip)`), the consolidated observations land on one
-discovery row and, once imported, on one device (see Merge-on-rescan). See ADRs
-0008 and 0010.
+SNMP, and name discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It
+forces the nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
+targets (`hostTargets`), and merges the per-IP observations (`mergeObservations`:
+the leading nmap source wins scalar fields, services union by port, evidence
+concatenates). Because the discovery store already merges by IP
+(`ON CONFLICT (ip)`), the consolidated observations land on one discovery row and,
+once imported, on one device (see Merge-on-rescan). See ADRs 0008, 0010, and 0011.
 
 ## Review queue (`/discoveries`)
 
@@ -291,14 +332,17 @@ over ARP) left the device missing either its services or its MAC.
 Now, when a scan observes a host whose discovery is **already imported** and
 **not conflicting**, the orchestrator re-syncs the merged findings onto the linked
 device (`syncImported` → `store.SyncImportedDiscovery`): the OS guess, the open
-services, the discovery source, and any newly seen MAC (with its OUI vendor). This
-runs on **every** scan regardless of the agent's `auto_import` flag — importing
-the host was already the operator's decision to manage it, and a sync creates no
-new IPAM records, it only refreshes the existing device. It never renames the
-device (an operator may have named it), never wipes a richer value with an empty
-one, and skips conflicts (those stay in the queue for an operator). A per-job
-`scan.discovery.synced` count is audited. Devices imported before this behavior
-existed self-heal on their next scan.
+services, the discovery source, and any newly seen MAC (with its OUI vendor). It
+also backfills the imported **address's hostname** when that address has none yet,
+so a name learned by a later scan — a `name_lookup` NetBIOS/mDNS name or an
+`lldp_cdp` neighbor's system name — reaches a host nmap had imported without one;
+an existing hostname is left intact. This runs on **every** scan regardless of the
+agent's `auto_import` flag — importing the host was already the operator's decision
+to manage it, and a sync creates no new IPAM records, it only refreshes the
+existing device. It never renames the device (an operator may have named it), never
+wipes a richer value with an empty one, and skips conflicts (those stay in the
+queue for an operator). A per-job `scan.discovery.synced` count is audited. Devices
+imported before this behavior existed self-heal on their next scan.
 
 ## Scan result detail (`/scans/{id}`)
 
@@ -354,3 +398,8 @@ To learn what a device is (and the MACs of its own interfaces), run an
 **snmp_inventory** scan with the same community: pick the type and any active
 mode, and put the **SNMP device IP(s)** in Targets. Each device's name, OS, and
 interface IP↔MAC mapping land in the same `/discoveries` queue.
+
+To map physical topology — which devices are wired to which switch ports — run an
+**lldp_cdp** scan with the same community: pick the type and any active mode, and
+put the **switch/router IP(s)** in Targets. Each device's LLDP and CDP neighbors
+(with the remote port as evidence) land in the same `/discoveries` queue.

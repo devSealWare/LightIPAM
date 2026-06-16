@@ -357,7 +357,10 @@ WHERE id = $1`, discovery.ID, addressID, emptyToNil(deviceID)); err != nil {
 // types accumulate onto one device instead of only the first import's data
 // landing. It updates the device's OS guess, open services, and discovery source
 // (never clobbering a richer earlier value with an empty one) and attaches any
-// newly observed MAC with its vendor.
+// newly observed MAC with its vendor. It also backfills the imported address's
+// hostname when that address has none yet, so a name learned by a later scan —
+// a NetBIOS/mDNS name_lookup or an LLDP/CDP neighbor's system name — reaches a
+// host that nmap had imported without one; an existing hostname is left intact.
 //
 // It is deliberately conservative: it never renames the device (an operator may
 // have named it) and creates no new IPAM records. A discovery that is not
@@ -409,6 +412,17 @@ WHERE id = $1`, discovery.ImportedDeviceID, discovery.OSFamily, discovery.OSDeta
 	if discovery.MAC != "" {
 		if err := attachDiscoveryMAC(ctx, tx, discovery.ImportedDeviceID, discovery.MAC, discovery.Vendor); err != nil {
 			return err
+		}
+	}
+
+	// Backfill the imported address's hostname when it has none, so a name learned
+	// by a later name_lookup / LLDP-CDP scan lands on an nmap-imported host. Never
+	// overwrite an existing hostname.
+	if discovery.Hostname != "" && discovery.ImportedAddressID != "" {
+		if _, err := tx.Exec(ctx, `
+UPDATE ip_addresses SET hostname = $2, updated_at = now()
+WHERE id = $1 AND hostname = ''`, discovery.ImportedAddressID, discovery.Hostname); err != nil {
+			return fmt.Errorf("sync discovery hostname: %w", err)
 		}
 	}
 

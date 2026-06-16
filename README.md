@@ -9,11 +9,11 @@ The design is intentionally split so risk stays isolated:
 - **`app`** — the unprivileged web UI, auth, IPAM inventory, audit log, and scan
   orchestration. Runs with **zero Linux capabilities** and no scanning tools.
 - **`scanner-agent`** — an optional, isolated network sensor that runs nmap
-  (staged host-discovery → service/OS detection), SNMP (ARP-table harvesting +
-  device inventory over UDP/161), and NetBIOS/mDNS name resolution (UDP/137 and
-  UDP/5353) for discovery. nmap is the **only** thing granted a network capability
-  (`NET_RAW`), and only when enabled; the SNMP and name backends are plain unicast
-  UDP and need no extra privilege.
+  (staged host-discovery → service/OS detection), SNMP (ARP-table harvesting,
+  device inventory, and LLDP/CDP neighbor harvesting over UDP/161), and NetBIOS/mDNS
+  name resolution (UDP/137 and UDP/5353) for discovery. nmap is the **only** thing
+  granted a network capability (`NET_RAW`), and only when enabled; the SNMP and name
+  backends are plain unicast UDP and need no extra privilege.
 - **`db`** — PostgreSQL, using native `inet`/`cidr`/`macaddr` types.
 
 ## Features
@@ -36,16 +36,17 @@ The design is intentionally split so risk stays isolated:
   **depth** is a Light / Standard / Deep mode (top-1000 → +exhaustive versions+OS
   → all ports), applied to the nmap scan types only.
 - **SNMP backends (unprivileged, UDP/161):** `arp_table` harvests IP↔MAC bindings
-  from a gateway's ARP cache (recovering MACs across a router), and
-  `snmp_inventory` reads a device's own identity (name/OS) and the MACs of its
-  interfaces.
+  from a gateway's ARP cache (recovering MACs across a router), `snmp_inventory`
+  reads a device's own identity (name/OS) and the MACs of its interfaces, and
+  `lldp_cdp` reads a switch/router's LLDP/CDP neighbor caches to map which devices
+  are wired to which ports.
 - **Name resolution (unprivileged):** `name_lookup` asks a host directly for its
   name over NetBIOS (UDP/137) and unicast mDNS (UDP/5353), recovering hostnames for
   devices with no DNS PTR record; NetBIOS works across subnets.
-- **Combined** scan runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names in
-  one job, merged into one picture per host; an enrichment target that does not
-  answer (or a CIDR, which these unicast queries cannot expand) is *skipped*
-  (ignored), not failed.
+- **Combined** scan runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names +
+  LLDP/CDP neighbors in one job, merged into one picture per host; an enrichment
+  target that does not answer (or a CIDR, which these unicast queries cannot
+  expand) is *skipped* (ignored), not failed.
 - Manual and scheduled scans (in-process scheduler) with a full job lifecycle,
   audit trail, per-host result detail, and generous per-type scan timeouts.
 - **Review queue** (`/discoveries`): observations never auto-mutate IPAM. Each is
@@ -126,20 +127,24 @@ What is intentionally **not** built yet (and roughly where it lands on the
   is no managed issuance or rotation yet (Phase 5).
 - **No backup/restore tooling** and **no secret encryption at rest** yet (Phase 5).
 - **SNMP is v2c only** (the config is shaped for v3); one read community per agent.
-- **The SNMP and NetBIOS/mDNS backends are unverified against real hardware** —
-  they pass hermetic unit tests but await a live shakedown. mDNS cross-subnet
-  resolution is best-effort by design (the protocol is link-local).
+- **The SNMP, LLDP/CDP, and NetBIOS/mDNS backends are unverified against real
+  hardware** — they pass hermetic unit tests but await a live shakedown. mDNS
+  cross-subnet resolution is best-effort by design (the protocol is link-local).
 - **nmap does TCP only** — no UDP scanning or NSE scripting.
+- **LLDP/CDP imports need a management IP** — a neighbor that advertises no
+  management address (common for endpoints) is not placed in IPAM from `lldp_cdp`
+  alone; pair it with `arp_table`/nmap.
 - **No CSV/bulk import-export** in the UI yet, and remaining Phase 4 enrichment
-  (LLDP/CDP, DHCP leases, DNS, VLAN/interface mapping) is still to come.
+  (DHCP leases, DNS, VLAN/interface mapping) is still to come.
 
 ## Project status
 
 Phase 1 (Manual IPAM), Phase 2 (Scanner Agent Foundation), and Phase 3 (Nmap
 Discovery MVP) are complete. **Phase 4 (Network Context) is underway:** SNMP
-ARP-table harvesting, SNMP device inventory, and NetBIOS/mDNS name resolution have
-shipped, alongside a combined all-sources scan, staged nmap scanning, and dynamic
-per-type scan timeouts. See the roadmap for what's next.
+ARP-table harvesting, SNMP device inventory, NetBIOS/mDNS name resolution, and
+LLDP/CDP neighbor harvesting have shipped, alongside a combined all-sources scan,
+staged nmap scanning, and dynamic per-type scan timeouts. See the roadmap for
+what's next.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security Model](docs/SECURITY.md)

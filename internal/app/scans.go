@@ -14,7 +14,7 @@ import (
 )
 
 func scanTypeOptions() []string {
-	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table", "snmp_inventory", "name_lookup"}
+	return []string{"host_discovery", "service_detection", "os_probe", "combined", "arp_table", "snmp_inventory", "name_lookup", "lldp_cdp"}
 }
 
 // scanModeOptions lists the user-selectable scan depths for nmap-based scan
@@ -48,6 +48,8 @@ func defaultTimeoutForType(scanType string) int {
 		return 300
 	case "name_lookup":
 		return 120
+	case "lldp_cdp":
+		return 300
 	default:
 		return 300
 	}
@@ -61,7 +63,7 @@ func defaultTimeoutForType(scanType string) int {
 // with JavaScript disabled.
 func modeForType(scanType, mode string) (string, error) {
 	switch scanType {
-	case "arp_table", "snmp_inventory", "name_lookup":
+	case "arp_table", "snmp_inventory", "name_lookup", "lldp_cdp":
 		return "standard_active", nil // SNMP/name lookups have no depth; any active mode runs them
 	case "combined":
 		return "deep_active", nil // combined always runs the full deep scan + ARP + SNMP
