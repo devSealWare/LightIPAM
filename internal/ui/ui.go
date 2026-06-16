@@ -128,13 +128,15 @@ func optionLabel(value string) string {
 	case "os_probe":
 		return "OS probe"
 	case "combined":
-		return "Combined (nmap + ARP + SNMP + names + LLDP/CDP)"
+		return "Combined (nmap + ARP + SNMP + names + DNS + LLDP/CDP)"
 	case "arp_table":
 		return "ARP table (SNMP)"
 	case "snmp_inventory":
 		return "SNMP inventory"
 	case "name_lookup":
 		return "Names (NetBIOS + mDNS)"
+	case "dns_lookup":
+		return "DNS names (reverse + forward)"
 	case "lldp_cdp":
 		return "LLDP/CDP neighbors (SNMP)"
 	default:
