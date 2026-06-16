@@ -41,9 +41,11 @@ Use a separate scanner agent, even when it runs on the same Docker host as the a
 As-built scan types and modes:
 
 - **Scan types:** `host_discovery`, `service_detection`, `os_probe`, `combined`
-  (deep nmap + SNMP ARP + SNMP inventory + NetBIOS/mDNS names, merged per host),
-  `arp_table` (SNMP ARP-cache harvesting), `snmp_inventory` (SNMP device identity +
-  interface MACs), and `name_lookup` (NetBIOS + mDNS host-name resolution).
+  (deep nmap + SNMP ARP + SNMP inventory + NetBIOS/mDNS names + LLDP/CDP neighbors,
+  merged per host), `arp_table` (SNMP ARP-cache harvesting), `snmp_inventory` (SNMP
+  device identity + interface MACs), `name_lookup` (NetBIOS + mDNS host-name
+  resolution), and `lldp_cdp` (SNMP LLDP/CDP neighbor harvesting — physical
+  topology).
 - **Modes** (nmap depth knob only; SNMP/name/combined ignore it): Light (top-1000
   service detection), Standard (top-1000 + exhaustive versions + OS), Deep (all
   ports + OS, tuned for speed). The protocol still defines `passive` (no packets)

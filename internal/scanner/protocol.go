@@ -49,6 +49,16 @@ const (
 	// with no DNS PTR record — common on small-business LANs — and works across
 	// subnets for NetBIOS (the query is unicast), unlike multicast-only mDNS.
 	ScanNameLookup ScanType = "name_lookup"
+	// ScanLLDPCDP harvests a switch/router's link-layer neighbor caches over SNMP:
+	// the standard LLDP-MIB (lldpRemTable + lldpRemManAddrTable) and Cisco's
+	// CISCO-CDP-MIB (cdpCacheTable). Targets are the network device(s) to query; the
+	// agent emits one observation per discovered neighbor whose management address
+	// falls within the job allowlist — its IP, name, platform/OS, and (from an LLDP
+	// MAC-typed chassis id) MAC, with the local/remote port relationship as
+	// evidence. This maps physical topology — which devices are wired to which
+	// switch ports — that no host probe reveals, over plain UDP/161 with no
+	// NET_RAW.
+	ScanLLDPCDP ScanType = "lldp_cdp"
 )
 
 type ScanMode string
@@ -161,7 +171,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup, ScanLLDPCDP:
 		return true
 	default:
 		return false

@@ -60,10 +60,10 @@ Supported modes:
   in the queue.
 
 Nmap is the active scanner for OS probing and service detection; SNMP
-(`arp_table`, `snmp_inventory`) and NetBIOS/mDNS (`name_lookup`) provide
-unprivileged passive imports, and a `combined` scan fuses them.
+(`arp_table`, `snmp_inventory`, `lldp_cdp`) and NetBIOS/mDNS (`name_lookup`)
+provide unprivileged passive imports, and a `combined` scan fuses them.
 
-Further passive integrations such as DHCP, DNS, LLDP/CDP, firewall, and controller imports are planned as optional integrations. Light IPAM should not require connection to a DHCP server for the first scanner workflow.
+Further passive integrations such as DHCP, DNS, firewall, and controller imports are planned as optional integrations. Light IPAM should not require connection to a DHCP server for the first scanner workflow.
 
 ## Security
 

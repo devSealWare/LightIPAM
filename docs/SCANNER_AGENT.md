@@ -4,10 +4,10 @@ The scanner agent is the isolated component that performs active network
 discovery for Light IPAM. It runs as a separate container so the web app can
 stay unprivileged. It performs **real active discovery** for non-passive jobs:
 nmap for host/service/OS scanning (the only thing needing `NET_RAW`, scoped to
-this component), SNMP for ARP-table harvesting and device inventory (plain
-UDP/161), and NetBIOS/mDNS for host-name resolution (plain UDP/137 and UDP/5353) —
-the SNMP and name backends need no extra privilege. See
-`docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flow and the
+this component), SNMP for ARP-table harvesting, device inventory, and LLDP/CDP
+neighbor harvesting (plain UDP/161), and NetBIOS/mDNS for host-name resolution
+(plain UDP/137 and UDP/5353) — the SNMP and name backends need no extra privilege.
+See `docs/SCANNER_DISCOVERY.md` for the discovery/enrollment flow and the
 per-scan-type behavior.
 
 ## Responsibilities
@@ -18,9 +18,10 @@ per-scan-type behavior.
   `scanner.ValidateAgentScope` (allowlist containment).
 - Route each job to the right backend by scan type (a `DiscoveryRouter`): nmap for
   `host_discovery`/`service_detection`/`os_probe`, SNMP for
-  `arp_table`/`snmp_inventory`, NetBIOS/mDNS for `name_lookup`, and a combined
-  discoverer for `combined` (deep nmap + both SNMP passes + the name lookup, merged
-  per host, a silent enrichment pass ignored not failed).
+  `arp_table`/`snmp_inventory`/`lldp_cdp`, NetBIOS/mDNS for `name_lookup`, and a
+  combined discoverer for `combined` (deep nmap + both SNMP passes + the name lookup
+  + the LLDP/CDP harvest, merged per host, a silent enrichment pass ignored not
+  failed).
 - Run nmap in **stages** — a fast host-discovery sweep, then service/OS detection
   on only the live hosts — and report observations; passive jobs return an empty,
   successful result.
@@ -183,8 +184,8 @@ each target at that many seconds, then moves on and exits cleanly with whatever
 it found. The scan form leaves the field blank by default and the app fills a
 **generous per-type default** (`app.defaultTimeoutForType`: host_discovery 120s,
 service_detection 600s, os_probe 900s, combined 1200s, arp_table 180s,
-snmp_inventory 300s) — a high `--host-timeout` is only a ceiling, harmless to fast
-hosts and protective of slow ones.
+snmp_inventory 300s, name_lookup 120s, lldp_cdp 300s) — a high `--host-timeout` is
+only a ceiling, harmless to fast hosts and protective of slow ones.
 
 From that per-host budget, `scanner.ScanBudget(perHost, targets)` derives the
 **whole-job** budget (`perHost × host-count + host-discovery allowance + grace`,

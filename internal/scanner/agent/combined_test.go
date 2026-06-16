@@ -48,6 +48,9 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 		case scanner.ScanSNMPInventory:
 			return []scanner.Observation{{IP: "192.168.10.20", Hostname: "nas",
 				Evidence: []scanner.Evidence{{Source: "snmp", Summary: "inventory"}}}}, nil, nil
+		case scanner.ScanLLDPCDP:
+			return []scanner.Observation{{IP: "192.168.10.20",
+				Evidence: []scanner.Evidence{{Source: "cdp", Summary: "CDP neighbor reported by 192.168.10.20"}}}}, nil, nil
 		default:
 			t.Fatalf("unexpected snmp sub-job type %q", job.Type)
 			return nil, nil, nil
@@ -67,7 +70,7 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 		t.Fatalf("expected no notices when every backend answered, got %+v", notices)
 	}
 	if len(obs) != 1 {
-		t.Fatalf("expected the four sources to merge into one observation, got %d: %+v", len(obs), obs)
+		t.Fatalf("expected the five sources to merge into one observation, got %d: %+v", len(obs), obs)
 	}
 	got := obs[0]
 	if got.IP != "192.168.10.20" {
@@ -86,8 +89,8 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if len(got.Services) != 1 || got.Services[0].Port != 22 {
 		t.Fatalf("expected nmap services preserved, got %+v", got.Services)
 	}
-	if len(got.Evidence) != 3 {
-		t.Fatalf("expected evidence from both SNMP passes and the name lookup, got %+v", got.Evidence)
+	if len(got.Evidence) != 4 {
+		t.Fatalf("expected evidence from both SNMP passes, the name lookup, and LLDP/CDP, got %+v", got.Evidence)
 	}
 
 	// nmap must be driven at full depth.
@@ -97,9 +100,10 @@ func TestCombinedMergesAllBackends(t *testing.T) {
 	if nmap.jobs[0].Mode != scanner.ModeDeepActive || nmap.jobs[0].Type != scanner.ScanCombined {
 		t.Fatalf("nmap sub-job should be deep combined, got %q/%q", nmap.jobs[0].Type, nmap.jobs[0].Mode)
 	}
-	// SNMP runs both passes, active, against the single-host targets.
-	if len(snmp.jobs) != 2 {
-		t.Fatalf("expected two SNMP sub-jobs (arp + inventory), got %d", len(snmp.jobs))
+	// SNMP runs all three passes (arp + inventory + lldp_cdp), active, against the
+	// single-host targets.
+	if len(snmp.jobs) != 3 {
+		t.Fatalf("expected three SNMP sub-jobs (arp + inventory + lldp_cdp), got %d", len(snmp.jobs))
 	}
 	for _, j := range snmp.jobs {
 		if j.Mode == scanner.ModePassive {
@@ -140,8 +144,8 @@ func TestCombinedIgnoresSNMPNoResponse(t *testing.T) {
 	if len(obs) != 1 || obs[0].IP != "192.168.10.20" {
 		t.Fatalf("expected the nmap observation to survive, got %+v", obs)
 	}
-	// One ignored notice per enrichment pass: ARP, inventory, and name lookup.
-	if len(notices) != 3 {
+	// One ignored notice per enrichment pass: ARP, inventory, name lookup, LLDP/CDP.
+	if len(notices) != 4 {
 		t.Fatalf("expected one ignored notice per enrichment pass, got %+v", notices)
 	}
 	for _, n := range notices {
@@ -206,8 +210,9 @@ func TestCombinedSkipsSNMPForCIDRTargets(t *testing.T) {
 	if len(names.jobs) != 0 {
 		t.Fatalf("name lookup should not run for a CIDR target, got %d jobs", len(names.jobs))
 	}
-	// One ignored notice per skipped enrichment pass: ARP, inventory, name lookup.
-	if len(notices) != 3 {
+	// One ignored notice per skipped enrichment pass: ARP, inventory, name lookup,
+	// LLDP/CDP.
+	if len(notices) != 4 {
 		t.Fatalf("expected an ignored notice per skipped enrichment pass, got %+v", notices)
 	}
 }

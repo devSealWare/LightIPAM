@@ -103,11 +103,13 @@ type snmpSession interface {
 type snmpDialer func(target string, cfg SNMPConfig) (snmpSession, error)
 
 // SNMPDiscoverer is the agent's SNMP discovery backend. Selected by scan type it
-// performs two jobs over UDP/161: arp_table harvests IP↔MAC bindings from a
-// gateway's ARP/neighbor cache, and snmp_inventory reads a device's own identity
-// (system group) plus its interface/IP-address tables. Unlike nmap it sends no
-// raw probes and needs no NET_RAW: an ordinary socket suffices. It implements the
-// Discoverer interface so the agent can route both job types to it.
+// performs three jobs over UDP/161: arp_table harvests IP↔MAC bindings from a
+// gateway's ARP/neighbor cache, snmp_inventory reads a device's own identity
+// (system group) plus its interface/IP-address tables, and lldp_cdp harvests a
+// switch/router's LLDP and CDP link-layer neighbor caches (see neighbors.go).
+// Unlike nmap it sends no raw probes and needs no NET_RAW: an ordinary socket
+// suffices. It implements the Discoverer interface so the agent can route all
+// three job types to it.
 type SNMPDiscoverer struct {
 	cfg  SNMPConfig
 	dial snmpDialer
@@ -145,6 +147,8 @@ func (d *SNMPDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 	switch job.Type {
 	case scanner.ScanSNMPInventory:
 		return d.discoverInventory(ctx, job, scope, now)
+	case scanner.ScanLLDPCDP:
+		return d.discoverNeighbors(ctx, job, scope, now)
 	default:
 		return d.discoverARP(ctx, job, scope, now)
 	}
