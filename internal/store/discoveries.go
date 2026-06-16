@@ -49,6 +49,7 @@ type Discovery struct {
 	Hostname          string
 	OSFamily          string
 	OSDetail          string
+	VLAN              int
 	Services          []DiscoveryService
 	Status            string
 	ReconcileStatus   string
@@ -69,6 +70,7 @@ type DiscoveryInput struct {
 	Hostname string
 	OSFamily string
 	OSDetail string
+	VLAN     int
 	Services []DiscoveryService
 }
 
@@ -109,8 +111,8 @@ func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) (Disc
 
 	out := DiscoveryUpsert{ReconcileStatus: status}
 	if err := s.db.QueryRow(ctx, `
-INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, vendor, hostname, os_family, os_detail, services, reconcile_status, conflict, last_seen_at)
-VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9, $10::jsonb, $11, $12, now())
+INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, vendor, hostname, os_family, os_detail, vlan, services, reconcile_status, conflict, last_seen_at)
+VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, now())
 ON CONFLICT (ip) DO UPDATE SET
 	job_id = EXCLUDED.job_id,
 	agent_id = EXCLUDED.agent_id,
@@ -119,6 +121,9 @@ ON CONFLICT (ip) DO UPDATE SET
 	hostname = CASE WHEN EXCLUDED.hostname <> '' THEN EXCLUDED.hostname ELSE scan_discoveries.hostname END,
 	os_family = CASE WHEN EXCLUDED.os_family <> '' THEN EXCLUDED.os_family ELSE scan_discoveries.os_family END,
 	os_detail = CASE WHEN EXCLUDED.os_detail <> '' THEN EXCLUDED.os_detail ELSE scan_discoveries.os_detail END,
+	-- Preserve a known VLAN when a later (non-inventory) source merges onto the same
+	-- IP with none, mirroring the service-list merge.
+	vlan = CASE WHEN EXCLUDED.vlan <> 0 THEN EXCLUDED.vlan ELSE scan_discoveries.vlan END,
 	-- Preserve a richer earlier service list when this observation has none, so a
 	-- MAC-only source (SNMP ARP harvest) merging onto the same IP does not wipe
 	-- the services an nmap scan recorded. A non-empty list still replaces wholesale.
@@ -129,7 +134,7 @@ ON CONFLICT (ip) DO UPDATE SET
 	updated_at = now()
 RETURNING id, status`,
 		id, emptyToNil(input.JobID), emptyToNil(input.AgentID), input.IP, emptyToNil(input.MAC),
-		input.Vendor, input.Hostname, input.OSFamily, input.OSDetail, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
+		input.Vendor, input.Hostname, input.OSFamily, input.OSDetail, input.VLAN, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
 		return DiscoveryUpsert{}, fmt.Errorf("upsert discovery: %w", err)
 	}
 
@@ -228,7 +233,7 @@ func (s *Store) ListDiscoveries(ctx context.Context, status, reconcile string, l
 	}
 	rows, err := s.db.Query(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.vlan, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -255,7 +260,7 @@ LIMIT $3`, status, reconcile, limit)
 func (s *Store) GetDiscovery(ctx context.Context, id string) (Discovery, error) {
 	discovery, err := scanDiscovery(s.db.QueryRow(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.vlan, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -310,6 +315,10 @@ SELECT id FROM subnets WHERE cidr >>= $1::inet ORDER BY masklen(cidr) DESC LIMIT
 			return Discovery{}, ErrNoContainingSubnet
 		}
 		return Discovery{}, fmt.Errorf("find containing subnet: %w", err)
+	}
+
+	if err := backfillSubnetVLAN(ctx, tx, discovery.IP, discovery.VLAN); err != nil {
+		return Discovery{}, err
 	}
 
 	deviceID, err := importDiscoveryDevice(ctx, tx, discovery, name)
@@ -426,7 +435,30 @@ WHERE id = $1 AND hostname = ''`, discovery.ImportedAddressID, discovery.Hostnam
 		}
 	}
 
+	// Backfill the containing subnet's VLAN when a later snmp_inventory scan learns
+	// one and the subnet has none yet, so VLAN findings reach the Subnets page on a
+	// re-scan, not only at first import.
+	if err := backfillSubnetVLAN(ctx, tx, discovery.IP, discovery.VLAN); err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
+}
+
+// backfillSubnetVLAN sets the VLAN of the subnet containing ip when the scan
+// learned one (vlan > 0) and that subnet has none yet. It never overwrites an
+// operator-set VLAN. Overlapping subnets are blocked, so at most the one containing
+// subnet matches; a VLAN with no managed subnet is a no-op.
+func backfillSubnetVLAN(ctx context.Context, tx pgx.Tx, ip string, vlan int) error {
+	if vlan <= 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE subnets SET vlan = $2, updated_at = now()
+WHERE vlan IS NULL AND cidr >>= $1::inet`, ip, vlan); err != nil {
+		return fmt.Errorf("backfill subnet vlan: %w", err)
+	}
+	return nil
 }
 
 // importDiscoveryDevice creates (or reuses) the device a discovery imports into
@@ -563,7 +595,7 @@ func scanDiscovery(row subnetScanner) (Discovery, error) {
 	var servicesJSON string
 	if err := row.Scan(
 		&d.ID, &d.JobID, &d.AgentID, &d.AgentName,
-		&d.IP, &d.MAC, &d.Vendor, &d.Hostname, &d.OSFamily, &d.OSDetail, &servicesJSON,
+		&d.IP, &d.MAC, &d.Vendor, &d.Hostname, &d.OSFamily, &d.OSDetail, &d.VLAN, &servicesJSON,
 		&d.Status, &d.ReconcileStatus, &d.Conflict, &d.ImportedAddressID, &d.ImportedDeviceID, &d.FirstSeenAt, &d.LastSeenAt,
 	); err != nil {
 		return Discovery{}, fmt.Errorf("scan discovery: %w", err)

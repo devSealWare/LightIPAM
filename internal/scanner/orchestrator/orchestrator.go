@@ -164,6 +164,7 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 			Hostname: obs.Hostname,
 			OSFamily: obs.OSFamily,
 			OSDetail: obs.OSDetail,
+			VLAN:     obs.VLAN,
 			Services: servicesFromObservation(obs.Services),
 		})
 		if err != nil {

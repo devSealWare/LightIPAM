@@ -54,7 +54,8 @@
           {{ if .MAC }}<span class="block font-mono">{{ .MAC }}</span>{{ end }}
           {{ if .Vendor }}<span class="block text-zinc-400">{{ .Vendor }}</span>{{ end }}
           {{ if .OSDetail }}<span class="block">{{ .OSDetail }}</span>{{ else if .OSFamily }}<span class="block">{{ .OSFamily }}</span>{{ end }}
-          {{ if and (not .MAC) (not .OSDetail) (not .OSFamily) }}<span class="text-zinc-400">—</span>{{ end }}
+          {{ if .VLAN }}<span class="mt-1 inline-block rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">VLAN {{ .VLAN }}</span>{{ end }}
+          {{ if and (not .MAC) (not .OSDetail) (not .OSFamily) (not .VLAN) }}<span class="text-zinc-400">—</span>{{ end }}
         </span>
         <span class="min-w-0 text-xs text-zinc-600 dark:text-zinc-300">
           {{ if .Services }}

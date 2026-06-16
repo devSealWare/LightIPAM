@@ -321,6 +321,17 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS discovery_source text NOT NULL DEFA
 ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS vendor text NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 11,
+		sql: `
+-- 802.1Q access VLAN discovered for a host's interface during an snmp_inventory
+-- scan (dot1qPvid, joined through the bridge-port table). 0 means unknown. On
+-- import/re-sync, a non-zero VLAN fills the containing subnet's VLAN when it has
+-- none, so VLAN findings reach the Subnets page; an existing VLAN is never
+-- overwritten.
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS vlan integer NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

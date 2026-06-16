@@ -46,7 +46,7 @@
     os_probe: "Fingerprints the operating system. Mode sets depth.",
     combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory + NetBIOS/mDNS names + DNS names + LLDP/CDP neighbors, merged into one picture. Unreachable enrichment is skipped, not failed.",
     arp_table: "Asks gateway/L3 devices for their ARP cache over SNMP to recover IP↔MAC bindings across subnets. Targets are the gateway IPs.",
-    snmp_inventory: "Asks SNMP devices about themselves — name, OS, and the MACs of their own interfaces. Targets are the device IPs.",
+    snmp_inventory: "Asks SNMP devices about themselves — name, OS, their interfaces (MAC, status, 802.1Q VLAN), and the IPs they own. A discovered VLAN fills the containing subnet's VLAN when it has none. Targets are the device IPs.",
     name_lookup: "Asks hosts for their name over NetBIOS (UDP/137) and mDNS (UDP/5353) — recovers names with no DNS record. Targets are the host IPs.",
     dns_lookup: "Resolves each host's name from your DNS (reverse PTR) and forward-confirms it. Targets are the host IPs.",
     lldp_cdp: "Asks switches/routers for their LLDP and CDP neighbor tables over SNMP — maps which devices are wired where. Targets are the switch/router IPs."
