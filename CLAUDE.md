@@ -55,20 +55,21 @@ and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-a
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import
 (migration 8: `scan_agents.auto_import`) and a structured scan-result detail UI.
-**Roadmap Phase 4 is underway:** three agent-side discovery sources beyond nmap
+**Roadmap Phase 4 is underway:** four agent-side discovery sources beyond nmap
 are merged — SNMP ARP-table harvesting (`arp_table` scan type, ADR 0006), SNMP
-device inventory (`snmp_inventory` scan type, ADR 0007), and NetBIOS/mDNS name
-resolution (`name_lookup` scan type, ADR 0010) — see "Scanner SNMP ARP
-Discovery", "Scanner SNMP Inventory", and "Scanner NetBIOS/mDNS Names" below. On
-top of those, the scan experience was overhauled (#44/#45, ADRs 0008/0009): a
-`combined` scan now runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names
-merged per host (a silent enrichment pass is ignored not failed), scan modes are
-simplified to Light/Standard/Deep, nmap runs **staged** (host discovery →
-service/OS on live hosts only), and scan timeouts are dynamic per-type via the
-shared `scanner.ScanBudget` (fixing multi-host "context deadline exceeded"). See
-the #44/#45 bullets under "Recent UI / IPAM work". Next candidate work is the rest
-of Phase 4 (LLDP/CDP, DHCP leases, DNS enrichment, VLAN/interface mapping) or the
-follow-ups under "Next" below.
+device inventory (`snmp_inventory` scan type, ADR 0007), NetBIOS/mDNS name
+resolution (`name_lookup` scan type, ADR 0010), and LLDP/CDP neighbor harvesting
+(`lldp_cdp` scan type, ADR 0011) — see "Scanner SNMP ARP Discovery", "Scanner SNMP
+Inventory", "Scanner NetBIOS/mDNS Names", and "Scanner LLDP/CDP Neighbors" below.
+On top of those, the scan experience was overhauled (#44/#45, ADRs 0008/0009): a
+`combined` scan now runs deep nmap + ARP + SNMP inventory + NetBIOS/mDNS names +
+LLDP/CDP neighbors merged per host (a silent enrichment pass is ignored not
+failed), scan modes are simplified to Light/Standard/Deep, nmap runs **staged**
+(host discovery → service/OS on live hosts only), and scan timeouts are dynamic
+per-type via the shared `scanner.ScanBudget` (fixing multi-host "context deadline
+exceeded"). See the #44/#45 bullets under "Recent UI / IPAM work". Next candidate
+work is the rest of Phase 4 (DHCP leases, DNS enrichment, VLAN/interface mapping)
+or the follow-ups under "Next" below.
 
 Issue #10 (merged) scope:
 
@@ -178,6 +179,37 @@ merges onto the same discovery row (and device) as nmap services, an ARP MAC, an
 an SNMP inventory record. New scan type in `scanTypeOptions()`, `optionLabel`,
 `scan_form.js`, and the scan-form help text. See `docs/SCANNER_DISCOVERY.md`,
 ADR 0010.
+
+## Scanner LLDP/CDP Neighbors (merged, Phase 4, ADR 0011)
+
+`internal/scanner/agent/neighbors.go` adds a fourth discovery behavior, a *third*
+on the existing `SNMPDiscoverer`: the `lldp_cdp` scan type maps physical
+topology — which devices are wired to which switch ports. Targets are the
+switch/router IPs to query; per target the agent walks the Cisco **CDP** cache
+(`cdpCacheTable`) and the vendor-neutral **LLDP** remote table (`lldpRemTable` +
+`lldpRemManAddrTable`) over UDP/161 and emits one observation per neighbor. CDP
+carries the neighbor IP/device-id/platform/port directly; LLDP carries the IP in
+its management-address table (joined to the neighbor row by the shared
+`timeMark.localPort.remIndex` index), the system name/desc, the remote port, and —
+when the chassis id is MAC-typed — the neighbor's **MAC**. A neighbor seen via both
+protocols (or via two switches) merges by IP (`mergeObservations`); the reporting
+device + protocol + remote port ride as evidence (`cdp`/`lldp`). Only neighbors
+with a management IP are emitted (IPAM keys on an address); IPv4 only. **No new
+privilege, dependency, or migration** — UDP/161, `gosnmp` already in tree, OID
+parsing behind the same injectable `snmpSession` (hermetic PDU tests). The
+`DiscoveryRouter` registers the one `SNMPDiscoverer` for `arp_table`,
+`snmp_inventory`, **and** `lldp_cdp`; `combined` runs it as a fourth best-effort
+pass (reusing its `snmp` field, no constructor change). A device unreachable over
+SNMP is a per-target `snmp_failed`; a reachable switch with no neighbors is a clean
+empty result. Observations reuse the same review-queue + reconciliation, so a
+neighbor merges onto the same discovery row (and device) as nmap services, an ARP
+MAC, an SNMP inventory record, and a name. **Also:** `SyncImportedDiscovery` now
+backfills an imported address's hostname when empty, so a name from `name_lookup`
+or an LLDP/CDP neighbor's system name reaches an already-imported host (never
+overwriting an existing hostname). New scan type in `scanTypeOptions()`,
+`defaultTimeoutForType` (300s), `modeForType` (no-depth), `optionLabel`,
+`scan_form.js`, and the scan-form help text. See `docs/SCANNER_DISCOVERY.md`,
+ADR 0011.
 
 Phase 3 follow-ups (merged, #18):
 
@@ -306,11 +338,11 @@ The initial backlog and Roadmap Phase 3 are done, plus two Phase 3 follow-ups:
 Remaining candidate follow-ups, roughly in priority order:
 
 - **Phase 4 (Network Context):** SNMP ARP-table harvesting (ADR 0006), SNMP
-  device inventory (interfaces/sysDescr, ADR 0007), and NetBIOS/mDNS name
-  resolution (`name_lookup`, ADR 0010) are **done**. Remaining: LLDP/CDP
-  neighbors, DHCP lease ingestion, DNS enrichment, VLAN/interface mapping. Each
-  new source should reuse the discovery review-queue + reconciliation pattern and
-  stay in the agent, not the app.
+  device inventory (interfaces/sysDescr, ADR 0007), NetBIOS/mDNS name resolution
+  (`name_lookup`, ADR 0010), and LLDP/CDP neighbor harvesting (`lldp_cdp`, ADR
+  0011) are **done**. Remaining: DHCP lease ingestion, DNS enrichment,
+  VLAN/interface mapping. Each new source should reuse the discovery review-queue +
+  reconciliation pattern and stay in the agent, not the app.
 - **Phase 5 (Production Hardening):** managed certificate issuance/rotation
   (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
 

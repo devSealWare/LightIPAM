@@ -21,6 +21,7 @@
     arp_table: true,
     snmp_inventory: true,
     name_lookup: true,
+    lldp_cdp: true,
     combined: true
   };
 
@@ -33,17 +34,19 @@
     combined: 1200,
     arp_table: 180,
     snmp_inventory: 300,
-    name_lookup: 120
+    name_lookup: 120,
+    lldp_cdp: 300
   };
 
   var HINTS = {
     host_discovery: "Ping/ARP sweep to find live hosts. Mode sets scan depth.",
     service_detection: "Probes open TCP ports for running services. Mode sets port breadth and version depth.",
     os_probe: "Fingerprints the operating system. Mode sets depth.",
-    combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory + NetBIOS/mDNS names, merged into one picture. Unreachable enrichment is skipped, not failed.",
+    combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory + NetBIOS/mDNS names + LLDP/CDP neighbors, merged into one picture. Unreachable enrichment is skipped, not failed.",
     arp_table: "Asks gateway/L3 devices for their ARP cache over SNMP to recover IP↔MAC bindings across subnets. Targets are the gateway IPs.",
     snmp_inventory: "Asks SNMP devices about themselves — name, OS, and the MACs of their own interfaces. Targets are the device IPs.",
-    name_lookup: "Asks hosts for their name over NetBIOS (UDP/137) and mDNS (UDP/5353) — recovers names with no DNS record. Targets are the host IPs."
+    name_lookup: "Asks hosts for their name over NetBIOS (UDP/137) and mDNS (UDP/5353) — recovers names with no DNS record. Targets are the host IPs.",
+    lldp_cdp: "Asks switches/routers for their LLDP and CDP neighbor tables over SNMP — maps which devices are wired where. Targets are the switch/router IPs."
   };
 
   function ready(fn) {

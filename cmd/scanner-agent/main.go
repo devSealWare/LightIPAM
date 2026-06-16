@@ -1,11 +1,11 @@
 // Command scanner-agent runs the Light IPAM scanner agent. It authenticates the
 // app over mTLS, validates submitted scan jobs against its registered allowlist,
 // and runs the discovery backend selected by scan type: nmap for active
-// host/service/OS probing (raw sockets, NET_RAW), SNMP for ARP-table harvesting
-// and device inventory (ordinary UDP/161), and NetBIOS/mDNS for host-name
-// resolution (ordinary UDP/137 and UDP/5353) — the SNMP and name backends need no
-// extra privilege. All privileged behavior is isolated to this component; the web
-// app never carries it.
+// host/service/OS probing (raw sockets, NET_RAW), SNMP for ARP-table harvesting,
+// device inventory, and LLDP/CDP neighbor harvesting (ordinary UDP/161), and
+// NetBIOS/mDNS for host-name resolution (ordinary UDP/137 and UDP/5353) — the SNMP
+// and name backends need no extra privilege. All privileged behavior is isolated
+// to this component; the web app never carries it.
 package main
 
 import (
@@ -77,9 +77,10 @@ func main() {
 	nmap := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
 
 	// SNMP is a separate, unprivileged backend: it speaks UDP/161 from an ordinary
-	// socket (no NET_RAW) to read a gateway's neighbor cache (arp_table) or a
-	// device's own identity and interface/IP tables (snmp_inventory). The router
-	// sends both SNMP job types to it and everything else to nmap.
+	// socket (no NET_RAW) to read a gateway's neighbor cache (arp_table), a device's
+	// own identity and interface/IP tables (snmp_inventory), or a switch/router's
+	// LLDP and CDP link-layer neighbor caches (lldp_cdp). The router sends all three
+	// SNMP job types to it and everything else to nmap.
 	snmp := resolveSNMP(logger)
 
 	// Names is a third unprivileged backend: it speaks NetBIOS (UDP/137) and mDNS
@@ -96,6 +97,7 @@ func main() {
 	router := agent.NewDiscoveryRouter(nmap).
 		Register(scanner.ScanARPTable, snmp).
 		Register(scanner.ScanSNMPInventory, snmp).
+		Register(scanner.ScanLLDPCDP, snmp).
 		Register(scanner.ScanNameLookup, names).
 		Register(scanner.ScanCombined, combined)
 
@@ -180,7 +182,7 @@ func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 		Timeout:   time.Duration(atoiDefault(os.Getenv("AGENT_SNMP_TIMEOUT"), 5)) * time.Second,
 		Retries:   atoiDefault(os.Getenv("AGENT_SNMP_RETRIES"), 1),
 	}
-	logger.Info("SNMP discovery enabled (arp_table + snmp_inventory)",
+	logger.Info("SNMP discovery enabled (arp_table + snmp_inventory + lldp_cdp)",
 		"version", cfg.Version,
 		"port", cfg.Port,
 		"timeout", cfg.Timeout.String(),

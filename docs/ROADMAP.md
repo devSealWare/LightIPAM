@@ -57,7 +57,14 @@ Follow-ups merged on top of Phase 3 (#18):
   with no DNS PTR record; NetBIOS works across subnets. Folded into the `combined`
   scan as a best-effort enrichment pass. Unprivileged unicast UDP, no new
   dependency; reuses the discovery review-queue + reconciliation, in the agent.
-- LLDP/CDP neighbor ingestion.
+- LLDP/CDP neighbor ingestion (**done**, ADR 0011). The `lldp_cdp` scan type reads
+  a switch/router's LLDP (`lldpRemTable` + `lldpRemManAddrTable`) and CDP
+  (`cdpCacheTable`) neighbor caches over SNMP to map physical topology — which
+  devices are wired to which ports. Targets are the switch/router IPs; each neighbor
+  with a management address becomes an IP-keyed observation (name, platform/OS, and
+  an LLDP MAC-typed chassis id). Unprivileged (UDP/161, no `NET_RAW`); folded into
+  the `combined` scan; reuses the discovery review-queue + reconciliation, in the
+  agent.
 - DHCP lease ingestion.
 - DNS forward/reverse enrichment.
 - VLAN and interface mapping.
