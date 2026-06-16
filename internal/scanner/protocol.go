@@ -49,6 +49,14 @@ const (
 	// with no DNS PTR record — common on small-business LANs — and works across
 	// subnets for NetBIOS (the query is unicast), unlike multicast-only mDNS.
 	ScanNameLookup ScanType = "name_lookup"
+	// ScanDNSLookup resolves host names from the network's authoritative DNS, with
+	// no nmap or SNMP: a reverse (PTR) lookup turns each target IP into a name, and a
+	// forward (A) lookup confirms the name maps back to the same IP. Targets are the
+	// host IPs to name; the agent emits one observation per IP that has a PTR record.
+	// Where name_lookup recovers names for hosts with *no* DNS record (NetBIOS/mDNS),
+	// this reads the DNS the network already runs — the common case for managed hosts
+	// — and forward-confirms it, over ordinary UDP/TCP/53 with no NET_RAW.
+	ScanDNSLookup ScanType = "dns_lookup"
 	// ScanLLDPCDP harvests a switch/router's link-layer neighbor caches over SNMP:
 	// the standard LLDP-MIB (lldpRemTable + lldpRemManAddrTable) and Cisco's
 	// CISCO-CDP-MIB (cdpCacheTable). Targets are the network device(s) to query; the
@@ -171,7 +179,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup, ScanLLDPCDP:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup, ScanDNSLookup, ScanLLDPCDP:
 		return true
 	default:
 		return false

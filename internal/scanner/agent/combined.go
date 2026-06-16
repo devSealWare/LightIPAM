@@ -8,38 +8,60 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 )
 
+// enrichment is one best-effort pass the combined scan runs after the core nmap
+// scan, against the single-host targets: a discoverer, the scan type to ask it
+// for, and a human label for the skipped-notice message. nmap is authoritative,
+// but each enrichment may be skipped (ignored, not failed) when it cannot run
+// (a CIDR target) or gets no response.
+type enrichment struct {
+	discoverer Discoverer
+	scanType   scanner.ScanType
+	label      string
+}
+
 // CombinedDiscoverer runs the full picture for a host in one job: a deep nmap
-// scan (all ports, service + OS detection) plus an SNMP ARP-cache harvest, an
-// SNMP self-inventory, a NetBIOS/mDNS name lookup, and an LLDP/CDP neighbor
-// harvest of the same targets. nmap is the core — if it fails the combined job
-// fails — but the four enrichment passes are best-effort: a host that does not
-// answer SNMP or a name protocol is *ignored*, not failed, so a combined scan of
-// a plain host still succeeds with whatever nmap found.
+// scan (all ports, service + OS detection) plus a set of best-effort enrichment
+// passes against the same targets — an SNMP ARP-cache harvest, an SNMP
+// self-inventory, a NetBIOS/mDNS name lookup, a DNS forward/reverse lookup, and an
+// LLDP/CDP neighbor harvest. nmap is the core — if it fails the combined job fails
+// — but every enrichment pass is best-effort: a host that does not answer SNMP, a
+// name protocol, or DNS is *ignored*, not failed, so a combined scan of a plain
+// host still succeeds with whatever nmap found.
 //
 // Observations from every backend are merged per IP (see mergeObservations) so a
 // host's services, OS, MAC, identity, name, and any neighbors that resolve to it
 // land on one record rather than several. The enrichment passes only query
 // single-host targets; CIDR targets are scanned by nmap and skipped (ignored) for
-// SNMP and name lookup, since those are unicast queries that must be pointed at a
-// specific device. The LLDP/CDP pass reuses the SNMP backend (the snmp field).
+// the enrichment passes, since those are unicast queries that must be pointed at a
+// specific device. The LLDP/CDP pass reuses the SNMP backend.
 type CombinedDiscoverer struct {
-	nmap  Discoverer
-	snmp  Discoverer
-	names Discoverer
+	nmap        Discoverer
+	enrichments []enrichment
 }
 
-// NewCombinedDiscoverer composes the nmap, SNMP, and name backends into the
-// combined discoverer. Each is taken as the Discoverer interface so tests can
-// inject fakes without nmap, a real SNMP device, or a live host.
-func NewCombinedDiscoverer(nmap, snmp, names Discoverer) *CombinedDiscoverer {
-	return &CombinedDiscoverer{nmap: nmap, snmp: snmp, names: names}
+// NewCombinedDiscoverer composes the nmap core with the SNMP, name, and DNS
+// backends into the combined discoverer and fixes the order of enrichment passes.
+// Each is taken as the Discoverer interface so tests can inject fakes without
+// nmap, a real SNMP device, a live host, or real DNS. The SNMP backend is reused
+// for three passes (ARP, inventory, LLDP/CDP).
+func NewCombinedDiscoverer(nmap, snmp, names, dns Discoverer) *CombinedDiscoverer {
+	return &CombinedDiscoverer{
+		nmap: nmap,
+		enrichments: []enrichment{
+			{snmp, scanner.ScanARPTable, "ARP harvest"},
+			{snmp, scanner.ScanSNMPInventory, "SNMP inventory"},
+			{names, scanner.ScanNameLookup, "name lookup"},
+			{dns, scanner.ScanDNSLookup, "DNS lookup"},
+			{snmp, scanner.ScanLLDPCDP, "LLDP/CDP neighbors"},
+		},
+	}
 }
 
-// Discover runs the deep nmap scan, then the four best-effort enrichment passes
-// (SNMP ARP, SNMP inventory, NetBIOS/mDNS names, LLDP/CDP neighbors), and returns
-// the merged observations. The returned error is non-nil only when the core nmap
-// scan itself fails; enrichment failures are folded into the returned scan errors
-// as ignored notices.
+// Discover runs the deep nmap scan, then each best-effort enrichment pass in turn
+// (SNMP ARP, SNMP inventory, NetBIOS/mDNS names, DNS, LLDP/CDP neighbors), and
+// returns the merged observations. The returned error is non-nil only when the
+// core nmap scan itself fails; enrichment failures are folded into the returned
+// scan errors as ignored notices.
 func (c *CombinedDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
 	// nmap is the core of a combined scan and always runs at full depth.
 	nmapJob := job
@@ -59,23 +81,11 @@ func (c *CombinedDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) 
 
 	// Best-effort enrichment of the single-host targets. No pass can fail the job;
 	// a non-response becomes an ignored notice.
-	arpObs, arpNotices := c.runOptional(ctx, c.snmp, job, scanner.ScanARPTable, "ARP harvest")
-	observations = append(observations, arpObs...)
-	notices = append(notices, arpNotices...)
-
-	invObs, invNotices := c.runOptional(ctx, c.snmp, job, scanner.ScanSNMPInventory, "SNMP inventory")
-	observations = append(observations, invObs...)
-	notices = append(notices, invNotices...)
-
-	nameObs, nameNotices := c.runOptional(ctx, c.names, job, scanner.ScanNameLookup, "name lookup")
-	observations = append(observations, nameObs...)
-	notices = append(notices, nameNotices...)
-
-	// LLDP/CDP reuses the SNMP backend: if a target is a switch/router, harvest the
-	// neighbors it sees. A target that speaks neither protocol is ignored.
-	neighObs, neighNotices := c.runOptional(ctx, c.snmp, job, scanner.ScanLLDPCDP, "LLDP/CDP neighbors")
-	observations = append(observations, neighObs...)
-	notices = append(notices, neighNotices...)
+	for _, e := range c.enrichments {
+		obs, passNotices := c.runOptional(ctx, e.discoverer, job, e.scanType, e.label)
+		observations = append(observations, obs...)
+		notices = append(notices, passNotices...)
+	}
 
 	return mergeObservations(observations), notices, nil
 }

@@ -63,6 +63,10 @@ services:
       # (NetBIOS) and UDP/5353 (mDNS), recovering names for hosts with no DNS PTR
       # record. Unprivileged unicast UDP — no NET_RAW. Ports/timeout are tunable:
       #   AGENT_NETBIOS_PORT (137), AGENT_MDNS_PORT (5353), AGENT_NAME_TIMEOUT (2s)
+      # DNS name enrichment (dns_lookup scan type, also part of a combined scan):
+      # the agent resolves each host's name from DNS (reverse PTR) and forward-
+      # confirms it. Unprivileged UDP/TCP/53 — no NET_RAW. Tunable:
+      #   AGENT_DNS_SERVER (system resolver by default), AGENT_DNS_TIMEOUT (3s)
     volumes:
       - ./deploy/scanner-certs:/certs:ro
     read_only: true

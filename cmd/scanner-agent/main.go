@@ -88,17 +88,23 @@ func main() {
 	// and ".local" name. The router sends name_lookup jobs to it.
 	names := resolveNames(logger)
 
+	// DNS is a fourth unprivileged backend: it queries the network's authoritative
+	// DNS (UDP/TCP/53, no NET_RAW) for a host's reverse (PTR) name and forward-
+	// confirms it. The router sends dns_lookup jobs to it.
+	dns := resolveDNS(logger)
+
 	// Combined runs every backend against the targets — deep nmap, plus the two
-	// SNMP passes and the name lookup as best-effort enrichment — and merges the
-	// findings into one picture per host. An unreachable enrichment pass is
-	// ignored, not failed.
-	combined := agent.NewCombinedDiscoverer(nmap, snmp, names)
+	// SNMP passes, the name lookup, and the DNS lookup as best-effort enrichment —
+	// and merges the findings into one picture per host. An unreachable enrichment
+	// pass is ignored, not failed.
+	combined := agent.NewCombinedDiscoverer(nmap, snmp, names, dns)
 
 	router := agent.NewDiscoveryRouter(nmap).
 		Register(scanner.ScanARPTable, snmp).
 		Register(scanner.ScanSNMPInventory, snmp).
 		Register(scanner.ScanLLDPCDP, snmp).
 		Register(scanner.ScanNameLookup, names).
+		Register(scanner.ScanDNSLookup, dns).
 		Register(scanner.ScanCombined, combined)
 
 	a := agent.New(agent.Config{
@@ -205,6 +211,26 @@ func resolveNames(logger *slog.Logger) *agent.NameDiscoverer {
 		"timeout", cfg.Timeout.String(),
 	)
 	return agent.NewNameDiscoverer(cfg)
+}
+
+// resolveDNS builds the DNS enrichment backend from the agent's environment. With
+// AGENT_DNS_SERVER set the agent queries that resolver directly (host or host:port,
+// defaulting to :53); otherwise it uses the agent's system resolver. Both lookups
+// are ordinary UDP/TCP/53 — no extra privilege.
+func resolveDNS(logger *slog.Logger) *agent.DNSDiscoverer {
+	cfg := agent.DNSConfig{
+		Server:  strings.TrimSpace(os.Getenv("AGENT_DNS_SERVER")),
+		Timeout: time.Duration(atoiDefault(os.Getenv("AGENT_DNS_TIMEOUT"), 3)) * time.Second,
+	}
+	resolver := cfg.Server
+	if resolver == "" {
+		resolver = "system"
+	}
+	logger.Info("DNS enrichment enabled (reverse PTR + forward confirm)",
+		"resolver", resolver,
+		"timeout", cfg.Timeout.String(),
+	)
+	return agent.NewDNSDiscoverer(cfg)
 }
 
 // atoiDefault parses s as a base-10 int, returning fallback when s is empty or
