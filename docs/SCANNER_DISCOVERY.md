@@ -30,7 +30,7 @@ in the same agent without widening its capability set.
 
 Scan **type** selects what to collect; scan **mode** selects intensity. Mode is a
 depth knob for the nmap scan types only — `arp_table`, `snmp_inventory`,
-`name_lookup`, `dns_lookup`, `lldp_cdp`, and `combined` ignore it (combined always runs at full depth), so
+`name_lookup`, `dns_lookup`, `dhcp_leases`, `lldp_cdp`, and `combined` ignore it (combined always runs at full depth), so
 the scan form hides the Mode picker for those. The protocol still defines a
 `passive` mode (the agent's no-packets short-circuit), but it produces zero results
 for every backend, so it is no longer offered as a UI choice; the depths are
@@ -47,11 +47,12 @@ Light / Standard / Deep.
 | `host_discovery`    | `-sn` ping/ARP sweep, no port scan (mode ignored).            |
 | `service_detection` | `-sV` over the mode's ports; `--version-all` on standard. |
 | `os_probe`          | `-O`; standard/deep also add `-sV` over the mode's ports.     |
-| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, NetBIOS/mDNS name lookup, DNS name lookup, and LLDP/CDP neighbor harvest of the targets, merged per host (see below). |
+| `combined`          | Deep nmap (all ports, `-sV` + `-O`) **plus** SNMP ARP harvest, SNMP inventory, NetBIOS/mDNS name lookup, DNS name lookup, DHCP lease lookup, and LLDP/CDP neighbor harvest of the targets, merged per host (see below). |
 | `arp_table`         | SNMP walk of a gateway's ARP cache, no nmap (mode ignored).   |
-| `snmp_inventory`    | SNMP read of a device's identity + interfaces, no nmap (mode ignored). |
+| `snmp_inventory`    | SNMP read of a device's identity + interfaces + VLAN, no nmap (mode ignored). |
 | `name_lookup`       | NetBIOS (UDP/137) + mDNS (UDP/5353) name query, no nmap (mode ignored). |
 | `dns_lookup`        | DNS reverse (PTR) + forward-confirm name query, no nmap (mode ignored). |
+| `dhcp_leases`       | Read active leases from the DHCP server's lease file on the agent, no nmap (mode ignored). |
 | `lldp_cdp`          | SNMP read of a switch/router's LLDP + CDP neighbor caches, no nmap (mode ignored). |
 
 Job rate limits map to `--max-rate` / `--max-parallelism`; the job timeout maps
@@ -233,6 +234,35 @@ source, so a DNS name merges onto the same discovery row (and device) as an nmap
 service scan, an ARP MAC, an SNMP inventory record, and a NetBIOS/mDNS name. See
 `internal/scanner/agent/dns.go`, ADR 0012.
 
+## DHCP lease ingestion (`dhcp_leases`)
+
+A DHCP server holds the authoritative IP↔MAC binding and the **client-supplied
+hostname** (option 12) for every lease — often the most accurate name a host has on
+a small LAN. `dhcp_leases` ingests that record from the server's lease file:
+
+- **Reads a lease file, not the wire.** The agent reads the configured lease file
+  (`AGENT_DHCP_LEASE_FILE`, mounted read-only into the agent) and emits one
+  observation per **active** lease — IP, MAC, client hostname — with the lease
+  state/expiry as `dhcp` evidence. Active DHCP probing would need raw sockets; reading
+  a file needs no privilege.
+- **Two formats, auto-sniffed.** `AGENT_DHCP_LEASE_FORMAT` selects `isc` (ISC
+  dhcpd's `dhcpd.leases` blocks) or `dnsmasq` (one line per lease); the default
+  (`auto`) sniffs the file. ISC keeps only `binding state active` leases, last block
+  per IP winning.
+- **Targets scope which ranges to ingest.** The data source is a local file, so the
+  job's targets (host or CIDR) select which leases to emit; the allowlist still bounds
+  the targets. In a `combined` scan the per-host targets limit DHCP to the hosts being
+  scanned.
+- **Opt-in, never fatal.** With no lease file configured, a standalone scan reports a
+  clear `dhcp_unconfigured` notice (set `AGENT_DHCP_LEASE_FILE`); inside `combined` it
+  is a muted "Skipped" line. A read/parse error is likewise a per-job notice.
+
+`dhcp_leases` is the fifth best-effort enrichment pass folded into `combined`, and
+its findings flow through the **same** review queue and reconciliation as every other
+source, so a lease's MAC and hostname merge onto the same discovery row (and device)
+as nmap services, an ARP MAC, an SNMP inventory record, and a DNS/NetBIOS name. See
+`internal/scanner/agent/dhcp.go`, ADR 0014.
+
 ## LLDP/CDP neighbor harvesting (`lldp_cdp`)
 
 Where the other sources answer "what is at this IP?", `lldp_cdp` answers "how is
@@ -280,7 +310,9 @@ findings into the most complete picture per host:
 - an **SNMP ARP harvest** (`arp_table`) of the single-host targets,
 - an **SNMP inventory** (`snmp_inventory`) of the single-host targets,
 - a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets,
-- a **DNS name lookup** (`dns_lookup`) of the single-host targets, and
+- a **DNS name lookup** (`dns_lookup`) of the single-host targets,
+- a **DHCP lease lookup** (`dhcp_leases`) for the single-host targets (if a lease
+  file is configured on the agent), and
 - an **LLDP/CDP neighbor harvest** (`lldp_cdp`) of the single-host targets (if a
   target is a switch/router, its neighbors are harvested too).
 
@@ -293,8 +325,8 @@ renders them in a muted **Skipped** section rather than as red errors.
 
 `internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap core
 with an ordered list of best-effort enrichment passes drawn from the SNMP, name,
-and DNS discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It forces the
-nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
+DNS, and DHCP discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It forces
+the nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
 targets (`hostTargets`), and merges the per-IP observations (`mergeObservations`:
 the leading nmap source wins scalar fields, services union by port, evidence
 concatenates). Because the discovery store already merges by IP
