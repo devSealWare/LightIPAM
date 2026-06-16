@@ -130,7 +130,9 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   (import/dismiss), `/search`, and `/static/scan_form.js` (+ `/static/columns.js`).
   Migration 5 adds `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds
   `scan_discoveries` (migration 7 adds its reconciliation columns; migration 8
-  adds `scan_agents.auto_import`).
+  adds `scan_agents.auto_import`; migration 9 adds discovery-derived inventory
+  fields on `devices`; migration 10 carries scanner-reported MAC vendor on
+  `scan_discoveries`).
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
   service stays at zero capabilities.
@@ -171,4 +173,3 @@ NetBIOS/mDNS backends are unverified against real hardware; IPv4 only; the dev C
 has no rotation; single admin role, no MFA/OIDC; no backup/restore yet.
 
 Branch from `main` and confirm the next item with the user before starting.
-

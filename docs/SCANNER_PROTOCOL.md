@@ -1,6 +1,9 @@
 # Scanner Agent Protocol
 
-Issue #7 defines the contract between the Light IPAM web app and future scanner agents. This document describes the protocol before the scanner-agent container or Nmap execution exists.
+Issue #7 defined the contract between the Light IPAM web app and scanner agents.
+The contract is now implemented by the app-side dispatcher and the optional
+scanner-agent container; later discovery work has extended the scan types while
+keeping the same versioned message boundary.
 
 ## Principles
 
@@ -13,7 +16,7 @@ Issue #7 defines the contract between the Light IPAM web app and future scanner 
 
 ## Transport
 
-Initial transport target:
+Implemented transport:
 
 - HTTPS JSON API.
 - mTLS between app and agent.
@@ -40,12 +43,15 @@ Fields:
 
 ## mTLS Identity Model
 
-Each agent has a unique client certificate. The app stores the expected identity at registration time.
+The app is the mTLS client and presents the app client certificate. Each agent
+presents a server certificate; the app verifies it against the scanner CA and the
+agent endpoint host. The agent requires the app client certificate and checks the
+configured app client CommonName.
 
 Minimum checks:
 
 - Certificate chains to the configured Light IPAM scanner CA.
-- Certificate identity maps to exactly one active agent.
+- The endpoint and registered agent identity map to exactly one active agent.
 - Agent is not disabled or revoked.
 - Scan job requested CIDRs are contained by both the job allowlist and the agent allowlist.
 
@@ -151,5 +157,6 @@ renders these as a muted "Skipped" section. A result whose only errors are
 4. Agent accepts or rejects job.
 5. Agent reports status updates.
 6. Agent reports final result.
-7. App writes audit entries and converts observations into auto-created or review-queued IPAM records based on policy.
-
+7. App writes audit entries, persists observations into the discovery queue, and
+   imports them only by operator action or by the agent's explicit auto-import
+   trust setting.
