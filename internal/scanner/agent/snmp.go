@@ -39,6 +39,14 @@ const (
 	oidIPAdEntIfIndex = "1.3.6.1.2.1.4.20.1.2" // ipAddrTable: row index is the IP, value is its ifIndex
 	oidIfPhysAddress  = "1.3.6.1.2.1.2.2.1.6"  // ifTable: row index is the ifIndex, value is the MAC
 	oidIfDescr        = "1.3.6.1.2.1.2.2.1.2"  // ifTable: row index is the ifIndex, value is the name
+	oidIfOperStatus   = "1.3.6.1.2.1.2.2.1.8"  // ifTable: row index is the ifIndex, value is the oper status (1 up, 2 down)
+
+	// 802.1Q VLAN mapping (Q-BRIDGE-MIB, RFC 4363) plus the bridge-port→ifIndex join
+	// from the base BRIDGE-MIB. dot1qPvid is keyed by bridge port, not ifIndex, so it
+	// must be joined through dot1dBasePortIfIndex to reach the interface (and its IP).
+	oidDot1dBasePortIfIndex = "1.3.6.1.2.1.17.1.4.1.2"     // bridge port -> ifIndex
+	oidDot1qPvid            = "1.3.6.1.2.1.17.7.1.4.5.1.1" // bridge port -> PVID (untagged/access VLAN)
+	oidDot1qVlanStaticName  = "1.3.6.1.2.1.17.7.1.4.3.1.1" // VLAN id -> administrative name
 )
 
 // SNMPVersion selects the SNMP protocol version. Only v2c is wired today; the
@@ -336,6 +344,14 @@ func ipv4FromOIDSuffix(oid string) (string, bool) {
 // ifIndexFromOIDSuffix extracts the interface index from the last sub-identifier
 // of an ifTable row OID (…2.2.1.<col>.<ifIndex>).
 func ifIndexFromOIDSuffix(oid string) (int, bool) {
+	return lastOIDSubID(oid)
+}
+
+// lastOIDSubID returns the final sub-identifier of a table-row OID as an int. Many
+// row indices are a single integer key — an ifIndex (ifTable), a bridge port
+// (dot1dBasePortTable, dot1qPvid), or a VLAN id (dot1qVlanStaticTable) — so this one
+// decoder serves all of them.
+func lastOIDSubID(oid string) (int, bool) {
 	parts := strings.Split(strings.TrimPrefix(oid, "."), ".")
 	if len(parts) == 0 {
 		return 0, false
@@ -345,6 +361,23 @@ func ifIndexFromOIDSuffix(oid string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// operStatus maps an ifOperStatus integer (IF-MIB) to a short word, returning ""
+// for values other than up/down so an unknown state is simply not surfaced.
+func operStatus(pdu gosnmp.SnmpPDU) string {
+	n, ok := intFromPDU(pdu)
+	if !ok {
+		return ""
+	}
+	switch n {
+	case 1:
+		return "up"
+	case 2:
+		return "down"
+	default:
+		return ""
+	}
 }
 
 // macFromPDU formats an OctetString PDU value as a colon-separated MAC, rejecting
@@ -382,6 +415,9 @@ type deviceInventory struct {
 	sysUpTime   string         // human-readable, "" when unknown
 	ifMAC       map[int]string // ifIndex -> MAC
 	ifDescr     map[int]string // ifIndex -> interface name
+	ifOper      map[int]string // ifIndex -> oper status ("up"/"down"), "" when unknown
+	ifVLAN      map[int]int    // ifIndex -> access VLAN id (802.1Q PVID), 0 when unknown
+	vlanName    map[int]string // VLAN id -> administrative name
 	addrs       []inventoryAddr
 }
 
@@ -406,6 +442,7 @@ func (inv deviceInventory) observation(addr inventoryAddr, now time.Time, target
 	}
 	if addr.hasIf {
 		obs.MAC = inv.ifMAC[addr.ifIndex]
+		obs.VLAN = inv.ifVLAN[addr.ifIndex]
 	}
 	obs.Evidence = inv.evidence(addr, target)
 	return obs
@@ -416,10 +453,20 @@ func (inv deviceInventory) observation(addr inventoryAddr, now time.Time, target
 func (inv deviceInventory) evidence(addr inventoryAddr, target string) []scanner.Evidence {
 	ev := []scanner.Evidence{{Source: "snmp", Summary: "SNMP inventory from " + target, Raw: inv.sysDescr}}
 	if addr.hasIf {
+		label := fmt.Sprintf("ifIndex %d", addr.ifIndex)
 		if name := inv.ifDescr[addr.ifIndex]; name != "" {
-			ev = append(ev, scanner.Evidence{Source: "snmp", Summary: fmt.Sprintf("Interface %s (ifIndex %d)", name, addr.ifIndex)})
-		} else {
-			ev = append(ev, scanner.Evidence{Source: "snmp", Summary: fmt.Sprintf("Interface ifIndex %d", addr.ifIndex)})
+			label = fmt.Sprintf("%s (ifIndex %d)", name, addr.ifIndex)
+		}
+		if status := inv.ifOper[addr.ifIndex]; status != "" {
+			label += ", " + status
+		}
+		ev = append(ev, scanner.Evidence{Source: "snmp", Summary: "Interface " + label})
+		if vlan := inv.ifVLAN[addr.ifIndex]; vlan > 0 {
+			summary := fmt.Sprintf("VLAN %d", vlan)
+			if name := inv.vlanName[vlan]; name != "" {
+				summary += " (" + name + ")"
+			}
+			ev = append(ev, scanner.Evidence{Source: "snmp", Summary: summary})
 		}
 	}
 	if inv.sysLocation != "" {
@@ -452,7 +499,13 @@ func (d *SNMPDiscoverer) walkInventory(target string) (deviceInventory, error) {
 	}
 	defer session.Close()
 
-	inv := deviceInventory{ifMAC: map[int]string{}, ifDescr: map[int]string{}}
+	inv := deviceInventory{
+		ifMAC:    map[int]string{},
+		ifDescr:  map[int]string{},
+		ifOper:   map[int]string{},
+		ifVLAN:   map[int]int{},
+		vlanName: map[int]string{},
+	}
 
 	pkt, err := session.Get([]string{oidSysDescr, oidSysObjectID, oidSysUpTime, oidSysContact, oidSysName, oidSysLocation})
 	if err != nil {
@@ -511,8 +564,62 @@ func (d *SNMPDiscoverer) walkInventory(target string) (deviceInventory, error) {
 			}
 		}
 	}
+	if pdus, err := session.BulkWalkAll(oidIfOperStatus); err == nil {
+		for _, pdu := range pdus {
+			if ifIndex, ok := ifIndexFromOIDSuffix(pdu.Name); ok {
+				if status := operStatus(pdu); status != "" {
+					inv.ifOper[ifIndex] = status
+				}
+			}
+		}
+	}
+
+	d.walkVLANs(session, &inv)
 
 	return inv, nil
+}
+
+// walkVLANs reads the 802.1Q access-VLAN mapping for the device's interfaces. The
+// dot1qPvid table is keyed by bridge port, so it is joined through
+// dot1dBasePortIfIndex (bridge port → ifIndex) to land each PVID on its ifIndex;
+// dot1qVlanStaticName supplies VLAN names. All three walks are best-effort — a
+// device that is not an 802.1Q bridge simply yields no VLAN data and the interfaces
+// keep their other inventory.
+func (d *SNMPDiscoverer) walkVLANs(session snmpSession, inv *deviceInventory) {
+	portToIf := map[int]int{} // bridge port -> ifIndex
+	if pdus, err := session.BulkWalkAll(oidDot1dBasePortIfIndex); err == nil {
+		for _, pdu := range pdus {
+			if port, ok := lastOIDSubID(pdu.Name); ok {
+				if ifIndex, ok := intFromPDU(pdu); ok {
+					portToIf[port] = ifIndex
+				}
+			}
+		}
+	}
+	if pdus, err := session.BulkWalkAll(oidDot1qPvid); err == nil {
+		for _, pdu := range pdus {
+			port, ok := lastOIDSubID(pdu.Name)
+			if !ok {
+				continue
+			}
+			vlan, ok := intFromPDU(pdu)
+			if !ok || vlan <= 0 {
+				continue
+			}
+			if ifIndex, ok := portToIf[port]; ok {
+				inv.ifVLAN[ifIndex] = vlan
+			}
+		}
+	}
+	if pdus, err := session.BulkWalkAll(oidDot1qVlanStaticName); err == nil {
+		for _, pdu := range pdus {
+			if vlan, ok := lastOIDSubID(pdu.Name); ok {
+				if name := singleLine(octetString(pdu)); name != "" {
+					inv.vlanName[vlan] = name
+				}
+			}
+		}
+	}
 }
 
 // normalizeOID strips a leading dot so OIDs compare regardless of whether the

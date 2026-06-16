@@ -279,6 +279,22 @@ func octet(oid, value string) gosnmp.SnmpPDU {
 	return gosnmp.SnmpPDU{Name: oid, Type: gosnmp.OctetString, Value: []byte(value)}
 }
 
+func operStatusPDU(ifIndex, status int) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidIfOperStatus + "." + itoa(ifIndex), Type: gosnmp.Integer, Value: status}
+}
+
+func basePortIfIndexPDU(port, ifIndex int) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidDot1dBasePortIfIndex + "." + itoa(port), Type: gosnmp.Integer, Value: ifIndex}
+}
+
+func pvidPDU(port, vlan int) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidDot1qPvid + "." + itoa(port), Type: gosnmp.Gauge32, Value: uint(vlan)}
+}
+
+func vlanNamePDU(vlan int, name string) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidDot1qVlanStaticName + "." + itoa(vlan), Type: gosnmp.OctetString, Value: []byte(name)}
+}
+
 func inventoryJob(targets, allowed []string) scanner.ScanJob {
 	job := newJob(targets, allowed)
 	job.Type = scanner.ScanSNMPInventory
@@ -354,6 +370,47 @@ func TestSNMPInventoryDecodesAndJoins(t *testing.T) {
 	}
 	if !hasEvidence(o.Evidence, "Location: Rack 3") {
 		t.Errorf("missing location evidence: %+v", o.Evidence)
+	}
+}
+
+func TestSNMPInventoryMapsVLANAndOper(t *testing.T) {
+	// 192.168.0.1 sits on ifIndex 2; bridge port 7 maps to ifIndex 2 and carries
+	// PVID 20 ("Engineering"); ifIndex 2 is operationally up.
+	session := &fakeSNMPSession{
+		getPDUs: []gosnmp.SnmpPDU{octet(oidSysName, "switch1"), octet(oidSysDescr, "Cisco IOS")},
+		walks: map[string][]gosnmp.SnmpPDU{
+			oidIPAdEntIfIndex:       {ipAddrPDU([4]int{192, 168, 0, 1}, 2)},
+			oidIfPhysAddress:        {ifPhysPDU(2, []byte{0xaa, 0xbb, 0xcc, 0x00, 0x11, 0x22})},
+			oidIfDescr:              {ifDescrPDU(2, "Gi0/1")},
+			oidIfOperStatus:         {operStatusPDU(2, 1), operStatusPDU(3, 2)},
+			oidDot1dBasePortIfIndex: {basePortIfIndexPDU(7, 2)},
+			oidDot1qPvid:            {pvidPDU(7, 20)},
+			oidDot1qVlanStaticName:  {vlanNamePDU(20, "Engineering")},
+		},
+	}
+	d := NewSNMPDiscoverer(SNMPConfig{})
+	d.dial = func(target string, cfg SNMPConfig) (snmpSession, error) { return session, nil }
+
+	obs, scanErrs, err := d.Discover(context.Background(), inventoryJob(
+		[]string{"192.168.0.1"}, []string{"192.168.0.0/24"}))
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(scanErrs) != 0 {
+		t.Fatalf("unexpected scan errors: %+v", scanErrs)
+	}
+	if len(obs) != 1 {
+		t.Fatalf("got %d observations, want 1: %+v", len(obs), obs)
+	}
+	o := obs[0]
+	if o.VLAN != 20 {
+		t.Errorf("VLAN = %d, want 20 (joined through bridge port)", o.VLAN)
+	}
+	if !hasEvidence(o.Evidence, "Interface Gi0/1 (ifIndex 2), up") {
+		t.Errorf("missing interface+oper evidence: %+v", o.Evidence)
+	}
+	if !hasEvidence(o.Evidence, "VLAN 20 (Engineering)") {
+		t.Errorf("missing VLAN evidence: %+v", o.Evidence)
 	}
 }
 

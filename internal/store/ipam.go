@@ -55,8 +55,11 @@ type IPAddress struct {
 	State      string
 	Hostname   string
 	Notes      string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// VLAN is the containing subnet's VLAN, populated only where a query joins it
+	// (the device page's linked-addresses list). Nil when unset or not loaded.
+	VLAN      *int
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type SubnetInput struct {

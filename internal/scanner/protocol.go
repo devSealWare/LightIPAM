@@ -144,12 +144,17 @@ type ScanResult struct {
 }
 
 type Observation struct {
-	IP         string               `json:"ip"`
-	MAC        string               `json:"mac,omitempty"`
-	Vendor     string               `json:"vendor,omitempty"`
-	Hostname   string               `json:"hostname,omitempty"`
-	OSFamily   string               `json:"os_family,omitempty"`
-	OSDetail   string               `json:"os_detail,omitempty"`
+	IP       string `json:"ip"`
+	MAC      string `json:"mac,omitempty"`
+	Vendor   string `json:"vendor,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	OSFamily string `json:"os_family,omitempty"`
+	OSDetail string `json:"os_detail,omitempty"`
+	// VLAN is the 802.1Q access (untagged) VLAN of the interface this address sits
+	// on, learned from an SNMP inventory scan (dot1qPvid). 0 means unknown. It maps
+	// the host's IP to a VLAN, which LightIPAM uses to fill the containing subnet's
+	// VLAN when it has none.
+	VLAN       int                  `json:"vlan,omitempty"`
 	Services   []ServiceObservation `json:"services,omitempty"`
 	Evidence   []Evidence           `json:"evidence,omitempty"`
 	ObservedAt time.Time            `json:"observed_at"`
