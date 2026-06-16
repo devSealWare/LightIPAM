@@ -49,6 +49,14 @@ const (
 	// with no DNS PTR record — common on small-business LANs — and works across
 	// subnets for NetBIOS (the query is unicast), unlike multicast-only mDNS.
 	ScanNameLookup ScanType = "name_lookup"
+	// ScanDHCPLeases ingests active DHCP leases from a lease file the agent can read
+	// (ISC dhcpd's dhcpd.leases or dnsmasq's leases file), recovering the
+	// authoritative IP↔MAC binding and the client-supplied hostname for each lease —
+	// often the most accurate name a host has on a small LAN. Targets scope which IP
+	// ranges to ingest; the agent emits one observation per active lease whose IP
+	// falls in a target range. The lease file path lives on the agent
+	// (AGENT_DHCP_LEASE_FILE); reading a file needs no extra privilege.
+	ScanDHCPLeases ScanType = "dhcp_leases"
 	// ScanDNSLookup resolves host names from the network's authoritative DNS, with
 	// no nmap or SNMP: a reverse (PTR) lookup turns each target IP into a name, and a
 	// forward (A) lookup confirms the name maps back to the same IP. Targets are the
@@ -184,7 +192,7 @@ type ScanError struct {
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {
-	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup, ScanDNSLookup, ScanLLDPCDP:
+	case ScanHostDiscovery, ScanServiceDetect, ScanOSProbe, ScanCombined, ScanARPTable, ScanSNMPInventory, ScanNameLookup, ScanDNSLookup, ScanDHCPLeases, ScanLLDPCDP:
 		return true
 	default:
 		return false

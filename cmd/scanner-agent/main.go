@@ -93,11 +93,16 @@ func main() {
 	// confirms it. The router sends dns_lookup jobs to it.
 	dns := resolveDNS(logger)
 
+	// DHCP is a fifth unprivileged backend: it reads the DHCP server's lease file
+	// (when one is mounted and configured) for authoritative IP↔MAC bindings and
+	// client-supplied hostnames. The router sends dhcp_leases jobs to it.
+	dhcp := resolveDHCP(logger)
+
 	// Combined runs every backend against the targets — deep nmap, plus the two
-	// SNMP passes, the name lookup, and the DNS lookup as best-effort enrichment —
-	// and merges the findings into one picture per host. An unreachable enrichment
-	// pass is ignored, not failed.
-	combined := agent.NewCombinedDiscoverer(nmap, snmp, names, dns)
+	// SNMP passes, the name lookup, the DNS lookup, and the DHCP lease lookup as
+	// best-effort enrichment — and merges the findings into one picture per host. An
+	// unreachable or unconfigured enrichment pass is ignored, not failed.
+	combined := agent.NewCombinedDiscoverer(nmap, snmp, names, dns, dhcp)
 
 	router := agent.NewDiscoveryRouter(nmap).
 		Register(scanner.ScanARPTable, snmp).
@@ -105,6 +110,7 @@ func main() {
 		Register(scanner.ScanLLDPCDP, snmp).
 		Register(scanner.ScanNameLookup, names).
 		Register(scanner.ScanDNSLookup, dns).
+		Register(scanner.ScanDHCPLeases, dhcp).
 		Register(scanner.ScanCombined, combined)
 
 	a := agent.New(agent.Config{
@@ -231,6 +237,28 @@ func resolveDNS(logger *slog.Logger) *agent.DNSDiscoverer {
 		"timeout", cfg.Timeout.String(),
 	)
 	return agent.NewDNSDiscoverer(cfg)
+}
+
+// resolveDHCP builds the DHCP lease-ingestion backend from the agent's
+// environment. AGENT_DHCP_LEASE_FILE points at a DHCP server's lease file the agent
+// can read (mounted read-only); AGENT_DHCP_LEASE_FORMAT selects the parser (isc /
+// dnsmasq / auto). With no file configured a dhcp_leases scan reports a clear notice
+// rather than failing. Reading a file needs no extra privilege.
+func resolveDHCP(logger *slog.Logger) *agent.DHCPDiscoverer {
+	cfg := agent.DHCPConfig{
+		LeaseFile: strings.TrimSpace(os.Getenv("AGENT_DHCP_LEASE_FILE")),
+		Format:    strings.TrimSpace(os.Getenv("AGENT_DHCP_LEASE_FORMAT")),
+	}
+	if cfg.LeaseFile == "" {
+		logger.Info("DHCP lease ingestion idle (set AGENT_DHCP_LEASE_FILE to enable)")
+	} else {
+		format := cfg.Format
+		if format == "" {
+			format = "auto"
+		}
+		logger.Info("DHCP lease ingestion enabled", "lease_file", cfg.LeaseFile, "format", format)
+	}
+	return agent.NewDHCPDiscoverer(cfg)
 }
 
 // atoiDefault parses s as a base-10 int, returning fallback when s is empty or
