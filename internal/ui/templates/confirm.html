@@ -12,6 +12,7 @@
         <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
         {{ if index .Form "subnet_id" }}<input type="hidden" name="subnet_id" value="{{ index .Form "subnet_id" }}">{{ end }}
         {{ if index .Form "device_id" }}<input type="hidden" name="device_id" value="{{ index .Form "device_id" }}">{{ end }}
+        {{ if index .Form "bulk_action" }}<input type="hidden" name="action" value="{{ index .Form "bulk_action" }}"><input type="hidden" name="confirmed" value="1">{{ range split (index .Form "ids") "," }}<input type="hidden" name="ids" value="{{ . }}">{{ end }}{{ end }}
         <a class="button-muted" href="{{ index .Form "cancel" }}">Cancel</a>
         <button class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-300 dark:focus:ring-rose-900" type="submit">{{ index .Form "confirm_text" }}</button>
       </form>
