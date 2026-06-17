@@ -46,7 +46,7 @@
     host_discovery: "Ping/ARP sweep to find live hosts. Mode sets scan depth.",
     service_detection: "Probes open TCP ports for running services. Mode sets port breadth and version depth.",
     os_probe: "Fingerprints the operating system. Mode sets depth.",
-    combined: "Full deep nmap (all ports) + SNMP ARP harvest + SNMP inventory + NetBIOS/mDNS names + DNS names + DHCP leases + LLDP/CDP neighbors, merged into one picture. Unreachable or unconfigured enrichment is skipped, not failed.",
+    combined: "Recommended. Full deep nmap (all ports) of the targets, then enriches each discovered host with SNMP inventory + ARP MAC + LLDP/CDP neighbors + NetBIOS/mDNS names + DNS names, plus DHCP leases over the range — merged into one picture per host. Point it at a CIDR. Devices that don't support a source are skipped, not failed.",
     arp_table: "Asks gateway/L3 devices for their ARP cache over SNMP to recover IP↔MAC bindings across subnets. Targets are the gateway IPs.",
     snmp_inventory: "Asks SNMP devices about themselves — name, OS, their interfaces (MAC, status, 802.1Q VLAN), and the IPs they own. A discovered VLAN fills the containing subnet's VLAN when it has none. Targets are the device IPs.",
     name_lookup: "Asks hosts for their name over NetBIOS (UDP/137) and mDNS (UDP/5353) — recovers names with no DNS record. Targets are the host IPs.",
