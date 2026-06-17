@@ -8,8 +8,8 @@ Light IPAM is a lightweight IP address management system for small business thro
 
 ## Current State
 
-Phase 1 manual IPAM foundation is merged to `main`, as are the scanner phases
-(2–4 in progress) — see "Current State of the Scanner Track" below for discovery.
+Phase 1 manual IPAM foundation is merged to `main`, as are scanner Phases 2, 3, and
+4 (all complete) — see "Current State of the Scanner Track" below for discovery.
 
 Implemented (manual IPAM):
 
@@ -106,19 +106,22 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
 - `internal/scanner/agent`: agent receive/report handler (`GET /healthz`,
   `GET /register`, `POST /jobs`) plus mTLS TLS config builders. Backends:
   `nmap.go` (staged `Discoverer` — host-discovery sweep then service/OS on live
-  hosts), `snmp.go` (`arp_table` + `snmp_inventory` over UDP/161), `neighbors.go`
-  (`lldp_cdp` — LLDP/CDP neighbor harvesting over UDP/161, methods on the same
-  `SNMPDiscoverer`), `names.go` (`name_lookup` — NetBIOS UDP/137 + unicast mDNS
-  UDP/5353, no extra privilege), `combined.go` (deep nmap + both SNMP passes +
-  NetBIOS/mDNS names + LLDP/CDP neighbors, merged per host, a silent enrichment
-  pass ignored), and `router.go` (`DiscoveryRouter` dispatching by scan type).
-  Passive jobs stay no-op.
+  hosts), `snmp.go` (`arp_table` + `snmp_inventory`, the latter including 802.1Q
+  VLAN/interface mapping, over UDP/161), `neighbors.go` (`lldp_cdp` — LLDP/CDP
+  neighbor harvesting over UDP/161, methods on the same `SNMPDiscoverer`),
+  `names.go` (`name_lookup` — NetBIOS UDP/137 + unicast mDNS UDP/5353), `dns.go`
+  (`dns_lookup` — reverse-PTR + forward-confirm over UDP/TCP/53), `dhcp.go`
+  (`dhcp_leases` — reads an ISC dhcpd/dnsmasq lease file mounted read-only on the
+  agent), `combined.go` (deep nmap that **enriches the hosts it discovers** with
+  every passive pass — both SNMP passes, names, DNS, DHCP, LLDP/CDP — merged per
+  host, a silent enrichment pass ignored), and `router.go` (`DiscoveryRouter`
+  dispatching by scan type). Passive jobs stay no-op.
 - `internal/scanner/pki` + `cmd/scanner-certs`: development CA and agent/app
   certificates.
 - `cmd/scanner-agent`: the agent process (mTLS HTTPS). Bundles nmap and runs
-  with `NET_RAW` only; SNMP and NetBIOS/mDNS need no added capability. Wires the
-  nmap + SNMP (arp_table/snmp_inventory/lldp_cdp) + names + combined backends onto
-  the router.
+  with `NET_RAW` only; SNMP, NetBIOS/mDNS, DNS, and DHCP-file reads need no added
+  capability. Wires the nmap + SNMP (arp_table/snmp_inventory/lldp_cdp) + names +
+  DNS + DHCP + combined backends onto the router.
 - `internal/scanner/dispatch`: the app-side mTLS client that POSTs jobs and
   pulls `/register` for enrollment (issues #9/#10).
 - `internal/scanner/orchestrator`: app-side coordinator — validate, enqueue,
@@ -132,44 +135,52 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   `scan_discoveries` (migration 7 adds its reconciliation columns; migration 8
   adds `scan_agents.auto_import`; migration 9 adds discovery-derived inventory
   fields on `devices`; migration 10 carries scanner-reported MAC vendor on
-  `scan_discoveries`).
+  `scan_discoveries`; migration 11 adds `scan_discoveries.vlan` for VLAN mapping).
 - `Dockerfile.scanner` + the `scanner-agent` Compose service (behind the
   `scanner` profile): nmap image, `cap_drop: ALL` + `cap_add: NET_RAW`. The app
   service stays at zero capabilities.
 
 See `docs/SCANNER_AGENT.md`, `docs/SCANNER_PROTOCOL.md`, `docs/SCANNER_DISCOVERY.md`,
-and ADRs 0002–0011.
+and ADRs 0002–0015.
 
 ## Current State of the Scanner Track
 
-The initial backlog (issues #1–#10) and **Roadmap Phase 3** are complete, and
-**Phase 4 (Network Context) is underway**. The agent runs real scans routed by
-type: staged nmap (host discovery → service/OS on live hosts only), SNMP
-`arp_table` harvesting (ADR 0006), SNMP `snmp_inventory` (ADR 0007), NetBIOS/mDNS
-`name_lookup` (ADR 0010), LLDP/CDP `lldp_cdp` neighbor harvesting (ADR 0011), and a
-`combined` scan that runs deep nmap + both SNMP passes + the name lookup + the
-LLDP/CDP harvest merged per host, with a silent enrichment pass ignored not failed
-(ADR 0008). Scan modes are simplified to Light/Standard/Deep, and scan
-timeouts are dynamic per-type with a budget shared by the agent and app (ADR
-0009). Successful observations land in the `/discoveries` review queue
-(import/dismiss), with per-agent auto-import for trusted agents and
-merge-on-rescan onto already-imported devices. Agents enroll by app-pull (auto on
-boot via `SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form). The app
-remains unprivileged (zero capabilities, no nmap).
+The initial backlog (issues #1–#10) and **Roadmap Phases 3 and 4 (Network Context)
+are complete**. The agent runs real scans routed by type: staged nmap (host discovery
+→ service/OS on live hosts only), SNMP `arp_table` harvesting (ADR 0006), SNMP
+`snmp_inventory` with 802.1Q VLAN/interface mapping (ADRs 0007/0013), NetBIOS/mDNS
+`name_lookup` (ADR 0010), DNS `dns_lookup` reverse/forward enrichment (ADR 0012),
+DHCP `dhcp_leases` ingestion (ADR 0014), LLDP/CDP `lldp_cdp` neighbor harvesting
+(ADR 0011), and a `combined` scan that runs deep nmap and **enriches the hosts it
+discovers** with every passive pass merged per host (ADRs 0008/0015), a silent
+enrichment pass ignored not failed. Scan modes are simplified to Light/Standard/Deep,
+and scan timeouts are dynamic per-type with a budget shared by the agent and app
+(ADR 0009). Successful observations land in the `/discoveries` review queue
+(import/dismiss), with per-agent auto-import for trusted agents and merge-on-rescan
+onto already-imported devices. Scans run manually or on a schedule (`/schedules`, the
+in-process scheduler ticker). Agents enroll by app-pull (auto on boot via
+`SCANNER_AGENT_ENDPOINT`, or the `/agents` "Discover" form). The app remains
+unprivileged (zero capabilities, no nmap).
 
 ## Next
 
-No issue is in progress. Remaining candidate work, roughly in priority order:
+No issue is in progress. Phases 1–4 are complete. Remaining candidate work, roughly
+in priority order:
 
-- Phase 4 (Network Context), remaining: DHCP lease ingestion, DNS forward/reverse
-  enrichment, VLAN/interface mapping — each reusing the discovery review-queue +
-  reconciliation pattern and staying in the agent, never the web app. (LLDP/CDP
-  neighbors landed in ADR 0011.)
-- Phase 5 (Production Hardening): managed cert issuance/rotation (replacing the
-  dev CA), OIDC/MFA, encrypted secrets, backup/restore.
+- **Carried forward from earlier phases:** bulk edit + CSV import/export for the
+  manual-IPAM UI (Phase 1 / `docs/MVP.md` / backlog #4 scope, never built). The data
+  model is stable, so it is unblocked. See `docs/ROADMAP.md` "Carried forward."
+- **Phase 5 (Production Hardening):** managed agent cert issuance/rotation (replacing
+  the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin, encrypted secrets
+  at rest, and backup/restore. See `docs/ROADMAP.md` "Phase 5" for the broken-out
+  scope and exit criteria.
+- **Optional Phase 4 polish:** tagged/trunk VLAN membership (only access PVID is
+  mapped today), per-interface speed/alias, and an SNMP/API-based DHCP source for
+  appliances with no lease file.
 
-Known limitations to be aware of (see README "Limitations"): the SNMP and
-NetBIOS/mDNS backends are unverified against real hardware; IPv4 only; the dev CA
-has no rotation; single admin role, no MFA/OIDC; no backup/restore yet.
+Known limitations to be aware of (see README "Limitations"): the SNMP, NetBIOS/mDNS,
+DNS, and DHCP backends are unverified against real hardware; IPv4 only; the dev CA
+has no rotation; single admin role, no MFA/OIDC; no backup/restore yet; no CSV/bulk
+import-export in the UI yet.
 
 Branch from `main` and confirm the next item with the user before starting.

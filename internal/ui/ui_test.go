@@ -2,7 +2,9 @@ package ui
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
@@ -263,5 +265,39 @@ func TestRenderTemplates(t *testing.T) {
 				t.Fatalf("unexpected status %d", recorder.Code)
 			}
 		})
+	}
+}
+
+// TestDashboardWidgetsRenderLiveState guards the dashboard against regressing to
+// the static placeholder widgets it shipped with: the "Review queue" must reflect
+// the real pending-discovery count and the "Scan status" must list recent jobs
+// rather than the stale "planned for Phase 2" copy.
+func TestDashboardWidgetsRenderLiveState(t *testing.T) {
+	data := PageData{
+		Title: "Dashboard",
+		User:  store.User{DisplayName: "Admin"},
+		ScanJobs: []store.ScanJob{{
+			ID:        "job-1",
+			AgentName: "local-scanner-agent",
+			ScanType:  "combined",
+			Status:    "succeeded",
+			CreatedAt: time.Now(),
+		}},
+		PendingDiscovery: 2,
+	}
+
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "dashboard.html", data); err != nil {
+		t.Fatalf("render dashboard: %v", err)
+	}
+	body := recorder.Body.String()
+
+	if strings.Contains(body, "planned for Phase 2") {
+		t.Error("dashboard still shows the stale 'planned for Phase 2' scan-status placeholder")
+	}
+	for _, want := range []string{"awaiting review", "/discoveries", "/scans/job-1", "combined"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard missing live-state marker %q", want)
+		}
 	}
 }
