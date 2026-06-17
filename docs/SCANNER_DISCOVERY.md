@@ -303,35 +303,49 @@ name. See ADR 0011.
 
 ## Combined scan (`combined`)
 
-`combined` runs every backend against the targets in one job and merges their
-findings into the most complete picture per host:
+`combined` runs every backend in one job and merges their findings into the most
+complete picture per host. The crucial move is that the per-host enrichment passes
+are aimed at **the hosts nmap discovers**, not the raw job targets — so a combined
+scan of a CIDR (the common case) recovers MACs and SNMP inventory, because nmap
+expands the range into live hosts and the enrichment passes then query each of
+them. A combined scan does:
 
-- a **deep nmap** scan (every TCP port, `-sV` + `-O`) — the core of the job,
-- an **SNMP ARP harvest** (`arp_table`) of the single-host targets,
-- an **SNMP inventory** (`snmp_inventory`) of the single-host targets,
-- a **NetBIOS/mDNS name lookup** (`name_lookup`) of the single-host targets,
-- a **DNS name lookup** (`dns_lookup`) of the single-host targets,
-- a **DHCP lease lookup** (`dhcp_leases`) for the single-host targets (if a lease
-  file is configured on the agent), and
-- an **LLDP/CDP neighbor harvest** (`lldp_cdp`) of the single-host targets (if a
-  target is a switch/router, its neighbors are harvested too).
+- a **deep nmap** scan (every TCP port, `-sV` + `-O`) of the targets — the core of
+  the job, which also yields the live-host list,
+- against each discovered host (unioned with any bare-IP targets the operator
+  listed, so a silent gateway/switch is still queried): an **SNMP inventory**
+  (`snmp_inventory`), and — only when the host answered SNMP — an **SNMP ARP
+  harvest** (`arp_table`) and an **LLDP/CDP neighbor harvest** (`lldp_cdp`); plus a
+  **NetBIOS/mDNS name lookup** (`name_lookup`) and a **DNS name lookup**
+  (`dns_lookup`), and
+- a **DHCP lease lookup** (`dhcp_leases`) over the whole target range (if a lease
+  file is configured on the agent) — leases can name hosts that are currently
+  offline, which nmap never sees.
+
+The per-host passes run through a bounded worker pool (`enrichWorkers`), so a /24's
+worth of SNMP/name/DNS timeouts overlap instead of serializing. The **SNMP
+short-circuit** — running inventory first and the two other SNMP passes only if the
+host answered — keeps a plain (non-SNMP) host to a single timeout rather than three.
 
 nmap is authoritative: if it fails, the combined job fails. The enrichment passes
-are **best-effort** — a host that does not answer SNMP, a name protocol, or DNS
-(or a CIDR target, which these unicast queries cannot expand) is reported as
-*ignored*, never failed. Ignored notices carry the `scan_ignored` code; the
-orchestrator never promotes them to the job's headline error, and `/scans/{id}`
-renders them in a muted **Skipped** section rather than as red errors.
+are **best-effort** — a host that does not answer SNMP, a name protocol, or DNS (or
+a source that is not configured) is reported as *ignored*, never failed. To keep the
+detail view readable, per-host non-responses are **collapsed** into one notice per
+pass (`"SNMP inventory skipped: N hosts did not respond"`) rather than one per host.
+Ignored notices carry the `scan_ignored` code; the orchestrator never promotes them
+to the job's headline error, and `/scans/{id}` renders them in a muted **Skipped**
+section rather than as red errors.
 
 `internal/scanner/agent/combined.go` (`CombinedDiscoverer`) composes the nmap core
-with an ordered list of best-effort enrichment passes drawn from the SNMP, name,
-DNS, and DHCP discoverers (the `lldp_cdp` pass reuses the SNMP discoverer). It forces
-the nmap sub-job to deep mode, restricts the enrichment sub-jobs to bare-IP
-targets (`hostTargets`), and merges the per-IP observations (`mergeObservations`:
-the leading nmap source wins scalar fields, services union by port, evidence
-concatenates). Because the discovery store already merges by IP
-(`ON CONFLICT (ip)`), the consolidated observations land on one discovery row and,
-once imported, on one device (see Merge-on-rescan). See ADRs 0008, 0010, and 0011.
+with the SNMP, name, DNS, and DHCP discoverers (the `arp_table` and `lldp_cdp`
+passes reuse the SNMP discoverer). It forces the nmap sub-job to deep mode, expands
+enrichment to `unionHosts(observedIPs(nmap), hostTargets(targets))`, fans the
+per-host passes out concurrently, and merges the per-IP observations
+(`mergeObservations`: the leading nmap source wins scalar fields, the SNMP-inventory
+hostname/VLAN fill before the name/DNS passes, services union by port, evidence
+concatenates). Because the discovery store already merges by IP (`ON CONFLICT (ip)`),
+the consolidated observations land on one discovery row and, once imported, on one
+device (see Merge-on-rescan). See ADRs 0008, 0010, 0011, and 0015.
 
 ## Review queue (`/discoveries`)
 

@@ -69,10 +69,15 @@ host (a silent/unconfigured enrichment pass is ignored not failed); scan modes a
 simplified to Light/Standard/Deep, nmap runs **staged** (host discovery → service/OS
 on live hosts only), and scan timeouts are dynamic per-type via the shared
 `scanner.ScanBudget`. The scan form leads with **Combined** (the default,
-`<optgroup>`-grouped over the single-source advanced scans). VLAN findings backfill
-the containing subnet's VLAN when empty (migration 11), so they reach the Subnets and
-Devices pages. Next candidate work is Phase 5 (Production Hardening) or the follow-ups
-under "Next" below.
+`<optgroup>`-grouped over the single-source advanced scans). **Combined enriches the
+hosts nmap discovers** (ADR 0015): it expands a CIDR via the deep nmap stage and runs
+the per-host SNMP/name/DNS passes against those live hosts (unioned with any bare-IP
+targets), concurrently (`enrichWorkers`) with an SNMP short-circuit (ARP/LLDP run only
+when a host answers SNMP) and collapsed skip-notices — fixing the prior bug where a
+combined scan of a CIDR ran nmap-only and recovered no MACs/SNMP inventory. DHCP runs
+over the whole range. VLAN findings backfill the containing subnet's VLAN when empty
+(migration 11), so they reach the Subnets and Devices pages. Next candidate work is
+Phase 5 (Production Hardening) or the follow-ups under "Next" below.
 
 Issue #10 (merged) scope:
 
