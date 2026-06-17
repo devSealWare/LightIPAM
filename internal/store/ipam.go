@@ -38,6 +38,7 @@ type Subnet struct {
 	Name           string
 	VLAN           *int
 	Description    string
+	Tags           []string
 	AddressCount   int
 	ConflictCount  int
 	Capacity       uint64
@@ -55,6 +56,9 @@ type IPAddress struct {
 	State      string
 	Hostname   string
 	Notes      string
+	// Tags are the address's tag names, populated only by ListAddresses (the
+	// subnet detail table). Nil where not loaded.
+	Tags []string
 	// VLAN is the containing subnet's VLAN, populated only where a query joins it
 	// (the device page's linked-addresses list). Nil when unset or not loaded.
 	VLAN      *int
@@ -112,12 +116,15 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 func (s *Store) ListSubnets(ctx context.Context) ([]Subnet, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT s.id, COALESCE(s.site_id, ''), COALESCE(si.name, ''), s.cidr::text, s.name, s.vlan, s.description,
-	count(ip.id)::int,
-	count(ip.id) FILTER (WHERE ip.state = 'conflict')::int,
+	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
+	count(DISTINCT ip.id)::int,
+	count(DISTINCT ip.id) FILTER (WHERE ip.state = 'conflict')::int,
 	s.created_at, s.updated_at
 FROM subnets s
 LEFT JOIN sites si ON si.id = s.site_id
 LEFT JOIN ip_addresses ip ON ip.subnet_id = s.id
+LEFT JOIN taggings tg ON tg.entity_type = 'subnet' AND tg.entity_id = s.id
+LEFT JOIN tags t ON t.id = tg.tag_id
 GROUP BY s.id, si.name
 ORDER BY s.cidr`)
 	if err != nil {
@@ -139,12 +146,15 @@ ORDER BY s.cidr`)
 func (s *Store) GetSubnet(ctx context.Context, id string) (Subnet, error) {
 	var row subnetScanner = s.db.QueryRow(ctx, `
 SELECT s.id, COALESCE(s.site_id, ''), COALESCE(si.name, ''), s.cidr::text, s.name, s.vlan, s.description,
-	count(ip.id)::int,
-	count(ip.id) FILTER (WHERE ip.state = 'conflict')::int,
+	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
+	count(DISTINCT ip.id)::int,
+	count(DISTINCT ip.id) FILTER (WHERE ip.state = 'conflict')::int,
 	s.created_at, s.updated_at
 FROM subnets s
 LEFT JOIN sites si ON si.id = s.site_id
 LEFT JOIN ip_addresses ip ON ip.subnet_id = s.id
+LEFT JOIN taggings tg ON tg.entity_type = 'subnet' AND tg.entity_id = s.id
+LEFT JOIN tags t ON t.id = tg.tag_id
 WHERE s.id = $1
 GROUP BY s.id, si.name`, id)
 	subnet, err := scanSubnet(row)
@@ -203,10 +213,15 @@ func (s *Store) DeleteSubnet(ctx context.Context, id string) error {
 
 func (s *Store) ListAddresses(ctx context.Context, subnetID string) ([]IPAddress, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes, ip.created_at, ip.updated_at
+SELECT ip.id, ip.subnet_id, COALESCE(ip.device_id, ''), COALESCE(d.name, ''), host(ip.address), ip.state::text, ip.hostname, ip.notes,
+	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
+	ip.created_at, ip.updated_at
 FROM ip_addresses ip
 LEFT JOIN devices d ON d.id = ip.device_id
+LEFT JOIN taggings tg ON tg.entity_type = 'ip_address' AND tg.entity_id = ip.id
+LEFT JOIN tags t ON t.id = tg.tag_id
 WHERE ip.subnet_id = $1
+GROUP BY ip.id, d.name
 ORDER BY ip.address`, subnetID)
 	if err != nil {
 		return nil, fmt.Errorf("list addresses: %w", err)
@@ -216,7 +231,7 @@ ORDER BY ip.address`, subnetID)
 	var addresses []IPAddress
 	for rows.Next() {
 		var address IPAddress
-		if err := rows.Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.CreatedAt, &address.UpdatedAt); err != nil {
+		if err := rows.Scan(&address.ID, &address.SubnetID, &address.DeviceID, &address.DeviceName, &address.Address, &address.State, &address.Hostname, &address.Notes, &address.Tags, &address.CreatedAt, &address.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan address: %w", err)
 		}
 		addresses = append(addresses, address)
@@ -324,6 +339,7 @@ func scanSubnet(scanner subnetScanner) (Subnet, error) {
 		&subnet.Name,
 		&subnet.VLAN,
 		&subnet.Description,
+		&subnet.Tags,
 		&subnet.AddressCount,
 		&subnet.ConflictCount,
 		&subnet.CreatedAt,

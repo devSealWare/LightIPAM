@@ -31,7 +31,29 @@
       </div>
     </header>
 
+    {{ if .Error }}
+    <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+    {{ end }}
+
     {{ if .DeviceGroups }}
+    <form method="post" action="/devices/bulk" data-bulk-form>
+    <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+    <section class="glass-panel mt-5 rounded-[28px] px-5 py-3">
+      <div data-bulk-bar class="flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><input type="checkbox" data-bulk-all aria-label="Select all devices" class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"> Select all</label>
+        <span class="text-zinc-300 dark:text-zinc-700">·</span>
+        <span class="text-sm text-zinc-600 dark:text-zinc-300"><span data-bulk-count>0</span> selected</span>
+        <span class="text-zinc-300 dark:text-zinc-700">·</span>
+        <select name="action" data-bulk-action aria-label="Bulk action" class="bulk-control">
+          <option value="">Bulk action…</option>
+          <option value="tag_add">Add tag</option>
+          <option value="tag_remove">Remove tag</option>
+          <option value="delete">Delete</option>
+        </select>
+        <input type="text" name="tag" placeholder="Tag name" data-bulk-field="tag_add tag_remove" aria-label="Tag name" class="bulk-control w-44">
+        <button type="submit" data-bulk-apply class="button-primary h-10">Apply</button>
+      </div>
+    </section>
     {{ range .DeviceGroups }}
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
@@ -41,13 +63,14 @@
         </div>
         <span class="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">{{ len .Devices }} device{{ if ne (len .Devices) 1 }}s{{ end }}</span>
       </div>
-      <div data-cols-grid class="grid grid-cols-[1.2fr_1fr_0.5fr_0.7fr_1fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-        <span data-col="name" data-weight="1.2fr">Name</span><span data-col="ip" data-weight="1fr">IP address</span><span data-col="macs" data-weight="0.5fr">MACs</span><span data-col="private_macs" data-weight="0.7fr">Private MACs</span><span data-col="tags" data-weight="1fr">Tags</span>
+      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_1fr] items-center gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span data-col="select" data-weight="auto"></span><span data-col="name" data-weight="1.2fr">Name</span><span data-col="ip" data-weight="1fr">IP address</span><span data-col="macs" data-weight="0.5fr">MACs</span><span data-col="private_macs" data-weight="0.7fr">Private MACs</span><span data-col="tags" data-weight="1fr">Tags</span>
       </div>
       {{ range .Devices }}
-      <a data-cols-grid class="grid grid-cols-[1.2fr_1fr_0.5fr_0.7fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80" href="/devices/{{ .ID }}">
+      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80">
+        <span data-col="select" class="flex items-center"><input type="checkbox" name="ids" value="{{ .ID }}" data-bulk-checkbox aria-label="Select {{ .Name }}" class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"></span>
         <span data-col="name" class="min-w-0">
-          <span class="block font-semibold text-zinc-950 dark:text-white">{{ .Name }}</span>
+          <a class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .ID }}">{{ .Name }}</a>
           <span class="block truncate text-xs text-zinc-500 dark:text-zinc-400">{{ if .OSDetail }}{{ .OSDetail }}{{ else if .OSFamily }}{{ .OSFamily }}{{ else }}{{ .Description }}{{ end }}</span>
         </span>
         <span data-col="ip" class="text-zinc-600 dark:text-zinc-300">
@@ -55,11 +78,12 @@
         </span>
         <span data-col="macs" class="text-zinc-600 dark:text-zinc-300">{{ .MACCount }}</span>
         <span data-col="private_macs" class="text-zinc-600 dark:text-zinc-300">{{ .PrivateMACCount }}</span>
-        <span data-col="tags" class="truncate text-zinc-500 dark:text-zinc-400">{{ range .Tags }}{{ . }} {{ end }}</span>
-      </a>
+        <span data-col="tags" class="flex flex-wrap gap-1">{{ range .Tags }}<span class="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{{ . }}</span>{{ else }}<span class="text-zinc-400">-</span>{{ end }}</span>
+      </div>
       {{ end }}
     </section>
     {{ end }}
+    </form>
     {{ else }}
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="p-8">
