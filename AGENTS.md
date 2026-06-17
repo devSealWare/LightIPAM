@@ -41,6 +41,10 @@ Implemented (manual IPAM):
 - Database triggers preventing audit log update/delete.
 - Navigation shell/sidebar.
 - Confirmation pages for destructive actions.
+- Multi-select bulk edit (status/VLAN/tag/clear-device/delete) on the Subnets,
+  Addresses, and Devices tables (Phase 4.5, ADR 0016).
+- Basic CSV import/export of subnets, addresses, and devices with a validated
+  dry-run preview and all-or-nothing transactional apply (Phase 4.5, ADR 0016).
 
 ## Repository Structure
 
@@ -57,8 +61,8 @@ Implemented (manual IPAM):
 - `internal/ui/assets/app.css`: Tailwind source.
 - `internal/ui/static/app.css`: generated CSS committed for embedding.
 - `internal/ui/static/*.js`: same-origin progressive-enhancement scripts
-  (`columns.js` selectable table columns, `scan_form.js` dynamic scan form); no
-  inline JS, strict CSP.
+  (`columns.js` selectable table columns, `scan_form.js` dynamic scan form,
+  `bulk.js` multi-select bulk edit); no inline JS, strict CSP.
 - `internal/scanner` + `cmd/scanner-agent` + `cmd/scanner-certs`: the scanner
   protocol, agent, app-side dispatch/orchestrator, and dev PKI (see "Scanner
   Components").
@@ -130,7 +134,10 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   merge-on-rescan onto imported devices, and auto-enroll the bundled agent.
 - App routes: `/scans` (+ `/scans/{id}` structured detail), `/agents`
   (+ `/agents/discover`, `/agents/{id}/approve`), `/schedules`, `/discoveries`
-  (import/dismiss), `/search`, and `/static/scan_form.js` (+ `/static/columns.js`).
+  (import/dismiss), `/search`, the manual-IPAM bulk routes (`POST /subnets/bulk`,
+  `/addresses/bulk`, `/devices/bulk`) and CSV import/export (`/import`,
+  `POST /import/{type}` + `/apply`, `/{subnets,addresses,devices}` `export.csv`),
+  and `/static/scan_form.js` (+ `/static/columns.js`, `/static/bulk.js`).
   Migration 5 adds `scan_agents`/`scan_schedules`/`scan_jobs`; migration 6 adds
   `scan_discoveries` (migration 7 adds its reconciliation columns; migration 8
   adds `scan_agents.auto_import`; migration 9 adds discovery-derived inventory
@@ -164,12 +171,15 @@ unprivileged (zero capabilities, no nmap).
 
 ## Next
 
-No issue is in progress. Phases 1–4 are complete. Remaining candidate work, roughly
-in priority order:
+No issue is in progress. Phases 1–4 are complete, as is Phase 4.5 (the carried-forward
+Phase 1 item). Remaining candidate work, roughly in priority order:
 
-- **Carried forward from earlier phases:** bulk edit + CSV import/export for the
-  manual-IPAM UI (Phase 1 / `docs/MVP.md` / backlog #4 scope, never built). The data
-  model is stable, so it is unblocked. See `docs/ROADMAP.md` "Carried forward."
+- **Carried forward from earlier phases (done, Phase 4.5, ADR 0016):** bulk edit +
+  CSV import/export for the manual-IPAM UI (Phase 1 / `docs/MVP.md` / backlog #4).
+  Multi-select bulk status/VLAN/tag/clear-device/delete on the Subnets/Addresses/
+  Devices tables (JS-off + JS-on, audited, deletes via `confirm.html`); and validated
+  CSV import/export of subnets/addresses/devices with a dry-run preview and
+  all-or-nothing apply. See `docs/ROADMAP.md` "Carried forward."
 - **Phase 5 (Production Hardening):** managed agent cert issuance/rotation (replacing
   the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin, encrypted secrets
   at rest, and backup/restore. See `docs/ROADMAP.md` "Phase 5" for the broken-out
@@ -180,7 +190,7 @@ in priority order:
 
 Known limitations to be aware of (see README "Limitations"): the SNMP, NetBIOS/mDNS,
 DNS, and DHCP backends are unverified against real hardware; IPv4 only; the dev CA
-has no rotation; single admin role, no MFA/OIDC; no backup/restore yet; no CSV/bulk
-import-export in the UI yet.
+has no rotation; single admin role, no MFA/OIDC; no backup/restore yet; CSV
+import/export is the basic format only (NetBox-compatible import/export is Phase 6).
 
 Branch from `main` and confirm the next item with the user before starting.

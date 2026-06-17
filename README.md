@@ -148,8 +148,9 @@ What is intentionally **not** built yet (and roughly where it lands on the
 - **DHCP ingestion reads a lease file** — the file must be mounted on the agent
   (ISC dhcpd or dnsmasq); appliances that expose leases only over an API/SNMP are
   not covered yet.
-- **No CSV/bulk import-export** in the UI yet — scoped to Phase 1 but never built;
-  now tracked as a carried-forward item (see the roadmap).
+- **CSV import/export is the basic format** — subnets, addresses, and devices
+  round-trip through plain CSV with multi-select bulk edit (Phase 4.5, ADR 0016);
+  the richer NetBox-compatible import/export is still a Phase 6 item.
 
 ## Project status
 
@@ -159,7 +160,9 @@ agent-side discovery sources — SNMP ARP-table harvesting, SNMP device inventor
 802.1Q VLAN/interface mapping, NetBIOS/mDNS name resolution, DNS reverse/forward
 enrichment, DHCP lease ingestion, and LLDP/CDP neighbor harvesting — all merged per
 host through one review/import path, plus a combined all-sources scan, staged nmap
-scanning, and dynamic per-type scan timeouts. Next up is Phase 5 (Production
+scanning, and dynamic per-type scan timeouts. **Phase 4.5** then closed the last
+carried-forward Phase 1 item: multi-select bulk edit and basic CSV import/export for
+subnets, addresses, and devices (ADR 0016). Next up is Phase 5 (Production
 Hardening). See the roadmap for details.
 
 - [Architecture](docs/ARCHITECTURE.md)
