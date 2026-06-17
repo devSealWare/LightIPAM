@@ -79,6 +79,12 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		"join": func(values []string, sep string) string {
 			return strings.Join(values, sep)
 		},
+		"split": func(value, sep string) []string {
+			if value == "" {
+				return nil
+			}
+			return strings.Split(value, sep)
+		},
 		"optionLabel": optionLabel,
 		"sub": func(a, b int) int {
 			return a - b
@@ -169,6 +175,13 @@ func StaticJS(w http.ResponseWriter, r *http.Request) {
 // per-type hint. The forms work without it (the server normalizes the mode).
 func ScanFormJS(w http.ResponseWriter, r *http.Request) {
 	serveJS(w, r, "static/scan_form.js")
+}
+
+// BulkJS serves the progressive-enhancement script for the bulk-edit tables:
+// select-all, a live selection count, and showing only the action's contextual
+// field. The tables work without it (checkboxes + an always-visible action bar).
+func BulkJS(w http.ResponseWriter, r *http.Request) {
+	serveJS(w, r, "static/bulk.js")
 }
 
 func serveJS(w http.ResponseWriter, r *http.Request, name string) {

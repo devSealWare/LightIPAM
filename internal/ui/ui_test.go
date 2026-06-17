@@ -34,6 +34,7 @@ func TestRenderTemplates(t *testing.T) {
 			CIDR:           "192.168.10.0/24",
 			Name:           "Office LAN",
 			VLAN:           &vlan,
+			Tags:           []string{"core"},
 			AddressCount:   1,
 			Capacity:       256,
 			UtilizationPct: 0.39,
@@ -58,6 +59,7 @@ func TestRenderTemplates(t *testing.T) {
 			State:      "assigned",
 			Hostname:   "nas-1",
 			Notes:      "Storage",
+			Tags:       []string{"reserved-block"},
 			VLAN:       &vlan,
 		}},
 		AddressStates: []string{"available", "reserved", "assigned", "deprecated", "conflict"},
@@ -300,4 +302,67 @@ func TestDashboardWidgetsRenderLiveState(t *testing.T) {
 			t.Errorf("dashboard missing live-state marker %q", want)
 		}
 	}
+}
+
+// TestBulkEditMarkupRenders guards the bulk-edit affordances: each table must
+// post to its /bulk endpoint, render row checkboxes and an action bar, and the
+// shared confirm page must carry selected ids forward as hidden inputs.
+func TestBulkEditMarkupRenders(t *testing.T) {
+	vlan := 20
+	data := PageData{
+		User: store.User{DisplayName: "Admin"},
+		CSRF: "token",
+		Subnets: []store.Subnet{{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24", VLAN: &vlan, Tags: []string{"core"}}},
+		Subnet:  store.Subnet{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24"},
+		Addresses: []store.IPAddress{{
+			ID: "a1", Address: "192.168.10.20", State: "assigned", Tags: []string{"reserved-block"},
+		}},
+		AddressStates: []string{"available", "reserved", "assigned", "deprecated", "conflict"},
+		DeviceGroups: []store.DeviceGroup{{
+			SubnetID: "s1", SubnetName: "Office LAN", CIDR: "192.168.10.0/24",
+			Devices: []store.Device{{ID: "d1", Name: "NAS", Tags: []string{"Private MAC"}}},
+		}},
+	}
+
+	cases := map[string][]string{
+		"subnets.html":       {`action="/subnets/bulk"`, "data-bulk-form", "data-bulk-checkbox", `value="set_vlan"`, `value="s1"`},
+		"subnet_detail.html": {`action="/addresses/bulk"`, "data-bulk-checkbox", `value="set_state"`, `value="clear_device"`, `value="a1"`},
+		"devices.html":       {`action="/devices/bulk"`, "data-bulk-checkbox", `value="tag_add"`, `value="d1"`},
+	}
+	for name, wants := range cases {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			if err := Render(recorder, name, data); err != nil {
+				t.Fatalf("render %s: %v", name, err)
+			}
+			body := recorder.Body.String()
+			for _, want := range wants {
+				if !strings.Contains(body, want) {
+					t.Errorf("%s missing bulk marker %q", name, want)
+				}
+			}
+		})
+	}
+
+	t.Run("confirm.html carries bulk ids", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		confirm := PageData{
+			User: store.User{DisplayName: "Admin"},
+			CSRF: "token",
+			Form: map[string]string{
+				"heading": "Delete subnets", "message": "x", "subject": "2 subnets",
+				"action": "/subnets/bulk", "cancel": "/subnets", "confirm_text": "Delete subnets",
+				"ids": "s1,s2", "bulk_action": "delete",
+			},
+		}
+		if err := Render(recorder, "confirm.html", confirm); err != nil {
+			t.Fatalf("render confirm: %v", err)
+		}
+		body := recorder.Body.String()
+		for _, want := range []string{`name="ids" value="s1"`, `name="ids" value="s2"`, `name="action" value="delete"`, `name="confirmed" value="1"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("confirm.html missing %q", want)
+			}
+		}
+	})
 }
