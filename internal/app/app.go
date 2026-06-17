@@ -57,6 +57,13 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
 	mux.HandleFunc("POST /logout", app.logout)
+	mux.HandleFunc("GET /import", app.importIndex)
+	mux.HandleFunc("POST /import/{type}", app.importPreview)
+	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
+	mux.HandleFunc("GET /subnets/export.csv", app.exportSubnetsCSV)
+	mux.HandleFunc("GET /addresses/export.csv", app.exportAddressesCSV)
+	mux.HandleFunc("GET /devices/export.csv", app.exportDevicesCSV)
+
 	mux.HandleFunc("GET /subnets", app.subnetsIndex)
 	mux.HandleFunc("GET /subnets/new", app.subnetNew)
 	mux.HandleFunc("POST /subnets", app.subnetCreate)

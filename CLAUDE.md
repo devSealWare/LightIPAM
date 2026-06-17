@@ -34,6 +34,10 @@ The app has:
 - Immutable audit logs and audit UI.
 - Sidebar/navigation shell.
 - Confirmation flows for destructive actions.
+- Multi-select bulk edit (status/VLAN/tag/clear-device/delete) on the Subnets,
+  Addresses, and Devices tables (Phase 4.5, ADR 0016).
+- Basic CSV import/export of subnets, addresses, and devices with a validated
+  dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
 
 ## Current Implementation Style
 
@@ -400,13 +404,19 @@ The initial backlog and Roadmap Phases 3 and 4 are done, plus two Phase 3 follow
 
 Remaining candidate follow-ups, roughly in priority order:
 
-- **Carried forward from earlier phases (open).** A full audit (2026-06-17) found
-  one earlier-phase item never built: **bulk edit + CSV import/export** for the
-  manual-IPAM UI (scoped in Phase 1, `docs/MVP.md`, and backlog #4). The data model
-  is stable, so it is unblocked. Scope: multi-select bulk edits on the Subnets/
-  Addresses/Devices tables, and CSV import/export validated against the same IPv4/
-  overlap/sparse rules as the forms (distinct from the Phase 6 NetBox format — this
-  is the basic CSV on-ramp). See `docs/ROADMAP.md` "Carried forward."
+- **Carried forward from earlier phases (done, Phase 4.5, ADR 0016).** The one
+  earlier-phase item the audit (2026-06-17) found unbuilt — **bulk edit + CSV
+  import/export** for the manual-IPAM UI (scoped in Phase 1, `docs/MVP.md`, backlog
+  #4) — is now shipped. Multi-select bulk status/VLAN/tag/clear-device/delete on the
+  Subnets/Addresses/Devices tables (JS-off + JS-on via `internal/ui/static/bulk.js`,
+  audited, deletes through `confirm.html`); store bulk methods in
+  `internal/store/bulk.go`, handlers + the pure `parseBulkRequest` in
+  `internal/app/bulk.go`. CSV import/export of subnets/addresses/devices
+  (`internal/app/portability.go`, `internal/store/portability.go`): export columns
+  match the forms, import validates every row against the same IPv4/overlap/sparse/
+  state rules, shows a dry-run preview (`/import`), and applies all-or-nothing in one
+  transaction on confirm. The basic CSV on-ramp, distinct from the Phase 6 NetBox
+  format.
   - *(Done in the same audit pass)* the Phase 1 dashboard "review queue" and "scan
     status" widgets, which shipped as static placeholders (the scan panel still read
     "planned for Phase 2"), are now wired to live data — pending-discovery count +

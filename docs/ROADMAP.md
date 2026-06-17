@@ -9,7 +9,7 @@
 - Subnet utilization and address grid.
 - Address editing, navigation shell, dashboard widgets, empty states, and confirmation flows.
 - Dashboard with global search, subnet widgets, review widget, recent changes, and scan status.
-- Bulk edit and import/export foundation. *(Not yet implemented — see "Carried forward from earlier phases" below.)*
+- Bulk edit and import/export foundation. *(Done in Phase 4.5 — see "Carried forward from earlier phases" below.)*
 - Audit log.
 
 ## Phase 2: Scanner Agent Foundation
@@ -99,13 +99,15 @@ A full audit (2026-06-17) found these items scoped to earlier phases that were n
 yet built. They are unblocked (the data model is stable) and tracked here so they
 are not lost between phases:
 
-- **Bulk edit + CSV import/export (open).** Listed under Phase 1 and in `docs/MVP.md`
-  ("Bulk edit and import/export should be available in the UI early") and backlog #4,
-  but the manual-IPAM UI still has neither. Scope: multi-select bulk status/field
-  edits on the Subnets/Addresses/Devices tables, and CSV import/export of subnets,
-  addresses, and devices (validated against the same IPv4/overlap/sparse rules as the
-  forms). Distinct from the Phase 6 NetBox-compatible format — this is the basic CSV
-  on-ramp. See README "Limitations."
+- **Bulk edit + CSV import/export (done, Phase 4.5).** Listed under Phase 1 and in
+  `docs/MVP.md` ("Bulk edit and import/export should be available in the UI early")
+  and backlog #4. Now built: multi-select bulk status/field/tag/delete on the
+  Subnets/Addresses/Devices tables (JS-off + JS-on, audited, destructive actions
+  through `confirm.html`), and CSV import/export of subnets, addresses, and devices —
+  export columns match the forms, import validates **every** row against the same
+  IPv4/overlap/sparse/state rules, shows a dry-run preview with per-row errors, and
+  applies all-or-nothing in one transaction on confirm. The basic CSV on-ramp,
+  distinct from the Phase 6 NetBox-compatible format. See ADR 0016.
 - **Dashboard live widgets (done, 2026-06-17).** The Phase 1 "review widget" and
   "scan status" dashboard panels shipped as static placeholders (the scan panel still
   read "planned for Phase 2"). They are now wired to live data: the review queue shows
