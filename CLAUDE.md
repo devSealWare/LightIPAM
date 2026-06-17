@@ -121,6 +121,12 @@ app exposes `/discoveries` (import/dismiss) plus app-pull agent enrollment
 (`/agents/discover`, `/agents/{id}/approve`, boot-time auto-enroll). See
 `docs/SCANNER_DISCOVERY.md`, ADR 0005.
 
+Scans run manually (`/scans`) or on a **schedule** (`/schedules`, Phase 2 /
+backlog #9): `scan_schedules` (migration 5) holds an interval per enabled
+schedule, and `orchestrator.StartScheduler`/`RunDueSchedules` (an in-process
+ticker, `SCAN_SCHEDULER_TICK_SECONDS`) enqueues a job for each schedule whose
+`next_run_at` has passed.
+
 ## Scanner SNMP ARP Discovery (merged, Phase 4, ADR 0006)
 
 `internal/scanner/agent/snmp.go` adds a second `Discoverer` backend: the
@@ -394,17 +400,31 @@ The initial backlog and Roadmap Phases 3 and 4 are done, plus two Phase 3 follow
 
 Remaining candidate follow-ups, roughly in priority order:
 
+- **Carried forward from earlier phases (open).** A full audit (2026-06-17) found
+  one earlier-phase item never built: **bulk edit + CSV import/export** for the
+  manual-IPAM UI (scoped in Phase 1, `docs/MVP.md`, and backlog #4). The data model
+  is stable, so it is unblocked. Scope: multi-select bulk edits on the Subnets/
+  Addresses/Devices tables, and CSV import/export validated against the same IPv4/
+  overlap/sparse rules as the forms (distinct from the Phase 6 NetBox format — this
+  is the basic CSV on-ramp). See `docs/ROADMAP.md` "Carried forward."
+  - *(Done in the same audit pass)* the Phase 1 dashboard "review queue" and "scan
+    status" widgets, which shipped as static placeholders (the scan panel still read
+    "planned for Phase 2"), are now wired to live data — pending-discovery count +
+    `/discoveries` link, and recent scan jobs with status badges.
 - **Phase 4 (Network Context) — complete.** All sources are done and reuse the
   discovery review-queue + reconciliation, in the agent: SNMP ARP-table harvesting
   (ADR 0006), SNMP device inventory + 802.1Q VLAN/interface mapping (ADRs 0007/0013),
   NetBIOS/mDNS name resolution (`name_lookup`, ADR 0010), DNS forward/reverse
   enrichment (`dns_lookup`, ADR 0012), DHCP lease ingestion (`dhcp_leases`, ADR 0014),
   and LLDP/CDP neighbor harvesting (`lldp_cdp`, ADR 0011). A `combined` scan runs them
-  all. Possible Phase-4 polish if desired: tagged/trunk VLAN membership (only access
-  PVID is mapped today), per-interface speed/alias, and an SNMP/API-based DHCP source
-  for appliances that do not expose a lease file.
-- **Phase 5 (Production Hardening):** managed certificate issuance/rotation
-  (replacing the dev CA), OIDC/MFA, encrypted secrets, backup/restore.
+  all and enriches the hosts nmap discovers (ADR 0015). Possible Phase-4 polish if
+  desired: tagged/trunk VLAN membership (only access PVID is mapped today),
+  per-interface speed/alias, and an SNMP/API-based DHCP source for appliances that do
+  not expose a lease file.
+- **Phase 5 (Production Hardening):** managed agent certificate issuance/rotation
+  (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin,
+  encrypted secrets at rest, session hardening, and backup/restore. See
+  `docs/ROADMAP.md` "Phase 5" for the broken-out scope and exit criteria.
 
 When starting the next issue, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order).

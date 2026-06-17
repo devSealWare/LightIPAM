@@ -156,6 +156,10 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Error("count pending discoveries", "error", err)
 	}
+	recentScans, err := a.store.ListScanJobs(r.Context(), 4)
+	if err != nil {
+		a.logger.Error("list scan jobs", "error", err)
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
 		Title:            "Dashboard",
@@ -166,6 +170,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		Devices:          devices,
 		AuditLogs:        auditLogs,
 		PendingDiscovery: pendingDiscovery,
+		ScanJobs:         recentScans,
 		ActiveNav:        "dashboard",
 	})
 }
