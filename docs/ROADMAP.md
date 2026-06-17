@@ -9,7 +9,7 @@
 - Subnet utilization and address grid.
 - Address editing, navigation shell, dashboard widgets, empty states, and confirmation flows.
 - Dashboard with global search, subnet widgets, review widget, recent changes, and scan status.
-- Bulk edit and import/export foundation.
+- Bulk edit and import/export foundation. *(Not yet implemented — see "Carried forward from earlier phases" below.)*
 - Audit log.
 
 ## Phase 2: Scanner Agent Foundation
@@ -83,18 +83,80 @@ Follow-ups merged on top of Phase 3 (#18):
   line); folded into `combined`; reuses the discovery review-queue + reconciliation,
   in the agent.
 
-**Phase 4 is complete.** The four Network-Context sources (SNMP ARP, SNMP inventory
-+ VLAN/interface, NetBIOS/mDNS names, DNS names, DHCP leases, LLDP/CDP neighbors) all
-merge per host through one review/import path; a single `combined` scan runs them all.
+**Phase 4 is complete.** The six Network-Context sources — SNMP ARP (`arp_table`),
+SNMP inventory + VLAN/interface (`snmp_inventory`), NetBIOS/mDNS names
+(`name_lookup`), DNS names (`dns_lookup`), DHCP leases (`dhcp_leases`), and LLDP/CDP
+neighbors (`lldp_cdp`) — all merge per host through one review/import path, and a
+single `combined` scan runs them all. The combined scan **enriches the hosts nmap
+discovers** (ADR 0015): it expands a CIDR through the deep nmap stage, then runs the
+per-host SNMP/name/DNS passes against the live hosts (concurrently, with an SNMP
+short-circuit and collapsed skip-notices), so a combined scan of a CIDR recovers
+MACs and SNMP inventory instead of degrading to nmap-only.
+
+## Carried forward from earlier phases
+
+A full audit (2026-06-17) found these items scoped to earlier phases that were not
+yet built. They are unblocked (the data model is stable) and tracked here so they
+are not lost between phases:
+
+- **Bulk edit + CSV import/export (open).** Listed under Phase 1 and in `docs/MVP.md`
+  ("Bulk edit and import/export should be available in the UI early") and backlog #4,
+  but the manual-IPAM UI still has neither. Scope: multi-select bulk status/field
+  edits on the Subnets/Addresses/Devices tables, and CSV import/export of subnets,
+  addresses, and devices (validated against the same IPv4/overlap/sparse rules as the
+  forms). Distinct from the Phase 6 NetBox-compatible format — this is the basic CSV
+  on-ramp. See README "Limitations."
+- **Dashboard live widgets (done, 2026-06-17).** The Phase 1 "review widget" and
+  "scan status" dashboard panels shipped as static placeholders (the scan panel still
+  read "planned for Phase 2"). They are now wired to live data: the review queue shows
+  the real pending-discovery count and links to `/discoveries`, and scan status lists
+  recent jobs with their status badges.
 
 ## Phase 5: Production Hardening
 
-- OIDC.
-- MFA.
-- Encrypted secrets.
-- Agent mTLS rotation.
-- Backup and restore.
-- Multi-tenant or organization separation if needed.
+Goal: make Light IPAM safe to run as the system of record in a real small-business or
+enterprise environment — hardening identity, secrets, the certificate lifecycle, and
+data durability. Keep the web app unprivileged; keep all elevated scan capability in
+the agent.
+
+### Identity & access
+
+- **OIDC SSO** (authorization-code + PKCE) as an optional alternative/addition to
+  local login; map the OIDC subject to a Light IPAM user.
+- **MFA (TOTP)** for local accounts, with recovery codes. The auth design already
+  leaves room for this (`docs/MVP.md`).
+- **Roles beyond the single admin** — at minimum admin vs. read-only operator, so a
+  viewer cannot mutate IPAM or scan config.
+- **Session hardening** — configurable idle/absolute timeouts, "log out everywhere,"
+  and login rate-limiting / lockout.
+
+### Secrets & certificates
+
+- **Managed agent certificate issuance + rotation**, replacing the hand-run dev CA
+  (`cmd/scanner-certs`): app-issued short-lived agent certs that auto-renew before
+  expiry, with revocation (short TTLs or a CRL). Today the dev CA never rotates.
+- **Encrypted secrets at rest** — SNMP communities, the OIDC client secret, and DB
+  credentials sealed with a key from env/KMS rather than stored or passed in plaintext.
+- **Rotation for the app's own keys** (session/CSRF signing keys) with a documented
+  runbook.
+
+### Data durability & operations
+
+- **Backup & restore** — a documented `pg_dump`/`pg_restore` flow plus an
+  app/CLI-triggered backup and a tested restore path; capture the schema-migration
+  version with each backup.
+- **Readiness/health depth** — extend `/healthz` (or add `/readyz`) to report DB
+  reachability, applied-migration status, and agent reachability for orchestration.
+- **Disaster-recovery runbook** covering compose, volumes, and certificates.
+
+### Multi-tenancy (only if needed)
+
+- Organization/tenant separation of IPAM data, users, and agents — deferred unless a
+  deployment requires it.
+
+**Exit criteria:** an operator can stand up Light IPAM with SSO + MFA, agents that
+rotate their own certificates, secrets that are never stored in plaintext, and a
+tested backup/restore path.
 
 ## Phase 6: Advanced Automation
 

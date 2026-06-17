@@ -148,7 +148,8 @@ What is intentionally **not** built yet (and roughly where it lands on the
 - **DHCP ingestion reads a lease file** — the file must be mounted on the agent
   (ISC dhcpd or dnsmasq); appliances that expose leases only over an API/SNMP are
   not covered yet.
-- **No CSV/bulk import-export** in the UI yet.
+- **No CSV/bulk import-export** in the UI yet — scoped to Phase 1 but never built;
+  now tracked as a carried-forward item (see the roadmap).
 
 ## Project status
 
