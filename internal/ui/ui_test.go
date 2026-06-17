@@ -209,6 +209,18 @@ func TestRenderTemplates(t *testing.T) {
 		}},
 		PendingDiscovery:  1,
 		ConflictDiscovery: 1,
+		ImportResult: store.ImportResult{
+			Type:    "subnets",
+			Columns: []string{"name", "cidr", "vlan", "site", "description"},
+			Created: 1,
+			Updated: 1,
+			Errors:  1,
+			Rows: []store.ImportRow{
+				{Line: 2, Cells: []string{"Office LAN", "192.168.10.0/24", "20", "Default", ""}, Action: "create"},
+				{Line: 3, Cells: []string{"Bad", "999.0.0.0/24"}, Action: "error", Error: "Enter a valid IPv4 CIDR such as 192.168.10.0/24."},
+			},
+			CSV: "name,cidr\nOffice LAN,192.168.10.0/24\n",
+		},
 		Form: map[string]string{
 			"site_id":      "default",
 			"name":         "Office LAN",
@@ -257,6 +269,8 @@ func TestRenderTemplates(t *testing.T) {
 		"schedule_form.html",
 		"discoveries.html",
 		"search.html",
+		"import.html",
+		"import_preview.html",
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
