@@ -38,6 +38,11 @@ The app has:
   Addresses, and Devices tables (Phase 4.5, ADR 0016).
 - Basic CSV import/export of subnets, addresses, and devices with a validated
   dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
+- Login throttling + account lockout, idle+absolute session timeouts, a
+  per-session origin (IP/User-Agent) record, a tabbed **Settings page** (Security
+  tab) with active-session review + "log out everywhere", all auth/session policy
+  **editable at runtime** (persisted in `app_settings`, env = boot defaults), and a
+  `/readyz` readiness probe (Phase 5, ADR 0017).
 
 ## Current Implementation Style
 
@@ -286,6 +291,54 @@ Phase 3 follow-ups (merged, #18):
   (`app.parseScanResult`) into per-host cards (MAC, OS, services table, evidence);
   raw JSON kept in a collapsed block.
 
+## Auth & Session Hardening (merged, Phase 5, ADR 0017)
+
+The first Phase 5 slice — authentication + session hardening only (MFA, OIDC, and
+roles are separate later slices). The web app stays unprivileged; no client JS added;
+the strict CSP is unchanged.
+
+- **Login throttling + lockout.** Migration 12 adds `login_attempts` (one row per
+  failed login, keyed by username **and** client IP). `evaluateLockout`
+  (`internal/app/lockout.go`) is a **pure, unit-tested** decision: a login locks when
+  either key reaches `LoginMaxAttempts` failures within `LoginWindow` and the latest
+  failure is still within `LoginLockout` (more restrictive key wins; cooldown clears
+  the lock even before failures age out). Store: `RecordLoginFailure`,
+  `RecentLoginFailures` (both keys in one `count(*) FILTER` query), `ClearLoginFailures`
+  on success. A locked attempt returns HTTP 429 with a generic message (no
+  enumeration).
+- **Timing-oracle fix.** On user-not-found, `loginSubmit` now runs
+  `auth.VerifyDecoy(password)` — an Argon2 verify against a fixed decoy hash (computed
+  once at startup, standard params) — so the not-found path costs the same as the
+  wrong-password path.
+- **Session hardening.** Migration 12 adds `sessions.last_seen_at`, `client_ip`,
+  `user_agent`. `CreateSession` captures IP/UA + an absolute expiry; `GetSession(id,
+  idleCutoff)` refreshes `last_seen_at` and enforces both **idle** and **absolute**
+  bounds in one atomic CTE. **Settings → Security tab** (`GET /settings/security`,
+  `GET /settings` redirects to it) lists active sessions (created, last seen, IP, UA,
+  "this device") and offers **"log out everywhere"**
+  (`POST /settings/security/logout-all`), CSRF-protected and audited. "Settings"
+  sidebar link under System (replaces the standalone security page).
+- **Runtime-editable policy.** Migration 13 adds a key/value `app_settings` table
+  (`store.GetAppSettings`/`SetAppSettings`). The Security tab edits lockout (max
+  attempts / window / lockout), session timeouts (idle / absolute), and the **"log out
+  everywhere" behavior** (keep-this-device vs sign-out-all). `internal/app/settings.go`
+  holds `SecuritySettings` (env defaults overlaid with stored values, cached behind an
+  `RWMutex`, refreshed on save) and the pure, unit-tested `parseSecuritySettingsForm`;
+  `lockoutPolicy`/`idleCutoff`/`establishSession` read the cache, so edits apply
+  immediately. Keep-current uses `store.DeleteOtherUserSessions`. Update is audited
+  (`settings.security.updated`).
+- **Readiness.** `GET /healthz` stays liveness; **`GET /readyz`** pings the DB
+  (`store.Ping`) and reports the applied migration version (`store.MigrationVersion`),
+  503 when the DB is down. The app compose service health-checks `/readyz`.
+- **Audit + config.** New events `auth.login.failed`, `auth.login.locked`,
+  `session.revoked_all`, `settings.security.updated` (via an `auditMeta` JSON-metadata
+  helper). Boot defaults in `internal/config`: `LOGIN_MAX_ATTEMPTS` (5),
+  `LOGIN_ATTEMPT_WINDOW` (15m), `LOGIN_LOCKOUT` (15m), `SESSION_ABSOLUTE_TIMEOUT`
+  (12h), `SESSION_IDLE_TIMEOUT` (30m), `LOGOUT_EVERYWHERE_KEEPS_CURRENT` (false) —
+  each overridable at runtime from the Settings page. The IP key is the real
+  `RemoteAddr` (not spoofable `X-Forwarded-For`); behind a proxy, terminate it so
+  `RemoteAddr` is the client. See ADR 0017.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -431,10 +484,21 @@ Remaining candidate follow-ups, roughly in priority order:
   desired: tagged/trunk VLAN membership (only access PVID is mapped today),
   per-interface speed/alias, and an SNMP/API-based DHCP source for appliances that do
   not expose a lease file.
-- **Phase 5 (Production Hardening):** managed agent certificate issuance/rotation
-  (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin,
-  encrypted secrets at rest, session hardening, and backup/restore. See
-  `docs/ROADMAP.md` "Phase 5" for the broken-out scope and exit criteria.
+- **Phase 5 (Production Hardening) — in progress.** First slice **done**: auth +
+  session hardening, plus a tabbed **Settings** page whose **Security** tab makes the
+  auth/session policy runtime-editable (login throttling/lockout, idle+absolute session
+  timeouts, configurable "log out everywhere", `/readyz`, timing-oracle fix; ADR 0017,
+  see the section above). Remaining slices, each its own PR: managed agent certificate
+  issuance/rotation (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the
+  single admin, encrypted secrets at rest, and backup/restore. See `docs/ROADMAP.md`
+  "Phase 5" for the broken-out scope and exit criteria.
+- **Settings panel build-out.** The Settings page is meant to grow into the product's
+  configuration surface; `docs/SETTINGS.md` is the canonical plan (tabs: General,
+  Users & Roles, Authentication, Scanning/nmap, Discovery, Agents, Backup, Notifications,
+  Data & Audit) with the pattern for adding a tab and the **agent-secret boundary**
+  (SNMP communities, nmap egress pinning, DHCP lease paths, agent allowlist stay on the
+  agent — never the app DB or the panel). Most tabs unlock alongside the Phase 5/6 items
+  above; the Scanning, Discovery, and General tabs can land independently.
 
 When starting the next issue, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order).

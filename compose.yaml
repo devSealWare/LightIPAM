@@ -23,6 +23,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Liveness is /healthz; readiness is /readyz, which also pings the database
+    # and reports the applied migration version, so orchestration only sends
+    # traffic once the app can actually serve it.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     volumes:
       - ./deploy/scanner-certs:/certs:ro
     read_only: true

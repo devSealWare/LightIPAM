@@ -15,6 +15,10 @@ The app owns:
 - Scan policies, schedules, and result review.
 - Audit logs and configuration history.
 - Reporting and export.
+- Runtime configuration — a tabbed **Settings** panel backed by the `app_settings`
+  store (env values seed boot defaults). See `docs/SETTINGS.md`. Agent-local secrets
+  and raw-socket configuration are deliberately **not** part of this panel; they stay
+  on the scanner agent.
 
 The app should run as an unprivileged container with no Linux capabilities.
 
@@ -59,5 +63,7 @@ The UI should combine a beautiful dashboard with dense operational views:
 - Device detail page with addresses, services, scan history, and evidence.
 - Scan policy editor with explicit scope, rate limits, and probe types.
 - Review queue for newly detected hosts, conflicts, and stale records.
+- A tabbed Settings panel for configuring the app (security, scanning defaults,
+  discovery, agents, and more — see `docs/SETTINGS.md`).
 
 Visual direction: Apple-inspired restraint, strong spacing, polished dark mode, and database-style information density where operators need to compare many records.

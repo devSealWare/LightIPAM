@@ -55,8 +55,11 @@ type PageData struct {
 	ConflictDiscovery int
 	SearchQuery       string
 	SearchResults     store.SearchResults
+	Sessions          []store.Session
+	CurrentSessionID  string
 	Form              map[string]string
 	ActiveNav         string
+	ActiveTab         string
 	SuccessMessage    string
 	ImportResult      store.ImportResult
 }
