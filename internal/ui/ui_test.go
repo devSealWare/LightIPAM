@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devSealWare/LightIPAM/internal/backup"
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
@@ -376,6 +377,32 @@ func TestSettingsUsersTabRenders(t *testing.T) {
 	// The acting admin must not get a self-delete link.
 	if strings.Contains(body, `href="/settings/users/user-1/delete"`) {
 		t.Error("users tab should not offer a self-delete link")
+	}
+}
+
+// TestSettingsBackupTabRenders guards the Backup & Restore settings tab.
+func TestSettingsBackupTabRenders(t *testing.T) {
+	data := PageData{
+		User:           store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:           "token",
+		ActiveTab:      "backup",
+		BackupEnabled:  true,
+		BackupWritable: true,
+		BackupDir:      "/var/lib/lightipam/backups",
+		Backups: []backup.Backup{
+			{Name: "lightipam-20260619-143005-mig16.dump", Size: 2048, Migration: 16, CreatedAt: time.Now()},
+		},
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		`action="/settings/backup/create"`,
+		"lightipam-20260619-143005-mig16.dump",
+		`/settings/backup/lightipam-20260619-143005-mig16.dump/download`,
+		"2.0 KiB",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("backup tab missing %q", want)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devSealWare/LightIPAM/internal/backup"
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
@@ -68,6 +69,12 @@ type PageData struct {
 
 	// OIDCEnabled shows the "Sign in with SSO" control on the login page.
 	OIDCEnabled bool
+
+	// Backup (settings tab)
+	Backups        []backup.Backup
+	BackupDir      string
+	BackupEnabled  bool
+	BackupWritable bool
 	Form              map[string]string
 	ActiveNav         string
 	ActiveTab         string
@@ -129,6 +136,18 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 				return "-"
 			}
 			return t.Format("2006-01-02 15:04")
+		},
+		"filesize": func(size int64) string {
+			const unit = 1024
+			if size < unit {
+				return fmt.Sprintf("%d B", size)
+			}
+			div, exp := int64(unit), 0
+			for n := size / unit; n >= unit; n /= unit {
+				div *= unit
+				exp++
+			}
+			return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 		},
 	}).ParseFS(assets, "templates/base.html", "templates/shell.html", "templates/"+name)
 	if err != nil {

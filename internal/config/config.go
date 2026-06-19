@@ -56,6 +56,11 @@ type Config struct {
 	// (as a pending agent) on boot by pulling its /register endpoint over mTLS.
 	ScannerAgentEndpoint string
 
+	// BackupDir is where pg_dump backups are written. Empty disables the backup
+	// feature. In the compose stack it is a writable named volume; pg_dump is an
+	// ordinary DB client, so the app needs no extra privilege.
+	BackupDir string
+
 	// OIDC SSO boot defaults. These seed the runtime-editable Authentication
 	// settings; an admin can change them from the Settings page. The client
 	// secret is sealed before it is persisted (never stored in plaintext).
@@ -103,6 +108,7 @@ func Load() Config {
 		OIDCBaseURL:                  os.Getenv("OIDC_BASE_URL"),
 		OIDCUsernameClaim:            getenv("OIDC_USERNAME_CLAIM", "preferred_username"),
 		OIDCAutoProvision:            getenv("OIDC_AUTO_PROVISION", "false") == "true",
+		BackupDir:                    getenv("BACKUP_DIR", "/var/lib/lightipam/backups"),
 	}
 }
 

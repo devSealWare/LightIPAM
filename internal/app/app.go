@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
+	"github.com/devSealWare/LightIPAM/internal/backup"
 	"github.com/devSealWare/LightIPAM/internal/config"
 	"github.com/devSealWare/LightIPAM/internal/ipam"
 	"github.com/devSealWare/LightIPAM/internal/scanner/orchestrator"
@@ -36,11 +37,12 @@ type Options struct {
 }
 
 type App struct {
-	cfg    config.Config
-	store  *store.Store
-	logger *slog.Logger
-	scans  *orchestrator.Service
-	sealer *secret.Sealer
+	cfg     config.Config
+	store   *store.Store
+	logger  *slog.Logger
+	scans   *orchestrator.Service
+	sealer  *secret.Sealer
+	backups *backup.Manager
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
@@ -65,6 +67,7 @@ func New(options Options) http.Handler {
 		options.Logger.Error("init secret sealer", "error", err)
 	}
 	app.sealer = sealer
+	app.backups = backup.New(options.Config.BackupDir, options.Config.DatabaseURL)
 	app.loadSettings(context.Background())
 
 	mux := http.NewServeMux()
@@ -99,6 +102,10 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
 	mux.HandleFunc("GET /settings/authentication", app.settingsAuthentication)
 	mux.HandleFunc("POST /settings/authentication", app.settingsAuthenticationUpdate)
+	mux.HandleFunc("GET /settings/backup", app.settingsBackup)
+	mux.HandleFunc("POST /settings/backup/create", app.backupCreate)
+	mux.HandleFunc("GET /settings/backup/{name}/download", app.backupDownload)
+	mux.HandleFunc("POST /settings/backup/{name}/delete", app.backupDelete)
 	mux.HandleFunc("GET /settings/users", app.settingsUsers)
 	mux.HandleFunc("POST /settings/users", app.userCreate)
 	mux.HandleFunc("POST /settings/users/{id}/role", app.userSetRole)
