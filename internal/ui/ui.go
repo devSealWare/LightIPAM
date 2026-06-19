@@ -58,6 +58,13 @@ type PageData struct {
 	Sessions          []store.Session
 	CurrentSessionID  string
 	Users             []store.User
+
+	// MFA / account
+	MFAEnabled          bool
+	TOTPSecretFormatted string
+	TOTPURI             string
+	RecoveryCodes       []string
+	RecoveryRemaining   int
 	Form              map[string]string
 	ActiveNav         string
 	ActiveTab         string

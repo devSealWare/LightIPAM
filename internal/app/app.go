@@ -17,6 +17,7 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/config"
 	"github.com/devSealWare/LightIPAM/internal/ipam"
 	"github.com/devSealWare/LightIPAM/internal/scanner/orchestrator"
+	"github.com/devSealWare/LightIPAM/internal/secret"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,6 +40,7 @@ type App struct {
 	store  *store.Store
 	logger *slog.Logger
 	scans  *orchestrator.Service
+	sealer *secret.Sealer
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
@@ -53,6 +55,12 @@ func New(options Options) http.Handler {
 		logger: options.Logger,
 		scans:  options.Scans,
 	}
+	sealer, err := secret.NewSealer(options.Config.EncryptionKey)
+	if err != nil {
+		// EncryptionKey is always 32 bytes from config; this is defensive.
+		options.Logger.Error("init secret sealer", "error", err)
+	}
+	app.sealer = sealer
 	app.loadSettings(context.Background())
 
 	mux := http.NewServeMux()
@@ -68,7 +76,17 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /bootstrap", app.bootstrapSubmit)
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
+	mux.HandleFunc("GET /login/mfa", app.mfaChallengeForm)
+	mux.HandleFunc("POST /login/mfa", app.mfaChallengeSubmit)
 	mux.HandleFunc("POST /logout", app.logout)
+
+	mux.HandleFunc("GET /account", app.accountIndex)
+	mux.HandleFunc("POST /account/password", app.accountChangePassword)
+	mux.HandleFunc("POST /account/logout-all", app.accountLogoutAll)
+	mux.HandleFunc("GET /account/mfa", app.mfaSettings)
+	mux.HandleFunc("GET /account/mfa/qr.png", app.mfaQR)
+	mux.HandleFunc("POST /account/mfa/enable", app.mfaEnable)
+	mux.HandleFunc("POST /account/mfa/disable", app.mfaDisable)
 	mux.HandleFunc("GET /settings", app.settingsIndex)
 	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
 	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
@@ -920,6 +938,22 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.ClearLoginFailures(r.Context(), username); err != nil {
 		a.logger.Error("clear login failures", "error", err)
 	}
+
+	// If the account has a confirmed second factor, the password is only the
+	// first step: stash a short-lived, signed pending-MFA cookie and ask for a
+	// code. No session is established until the code verifies.
+	if enabled, err := a.store.TOTPEnabled(r.Context(), user.ID); err != nil {
+		a.logger.Error("totp enabled check", "error", err)
+	} else if enabled {
+		if a.startMFAChallenge(w, r, user.ID) {
+			http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
+			return
+		}
+		// Sealing failed (no sealer); fail safe rather than skip MFA.
+		a.renderLoginError(w, r, "Unable to start two-factor verification. Please try again.")
+		return
+	}
+
 	if err := a.store.CreateAuditLog(r.Context(), &user.ID, "auth.login", "user", user.ID, "{}"); err != nil {
 		a.logger.Error("create audit log", "error", err)
 	}

@@ -383,6 +383,32 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin';
 UPDATE users SET role = CASE WHEN is_admin THEN 'admin' ELSE 'viewer' END;
 `,
 	},
+	{
+		version: 15,
+		sql: `
+-- Phase 5 MFA (TOTP). user_totp holds a user's shared secret (sealed at rest
+-- with the app's encryption key, never plaintext) and whether the second factor
+-- is confirmed/enabled. A row with enabled=false is a pending enrollment.
+CREATE TABLE IF NOT EXISTS user_totp (
+	user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	secret text NOT NULL,
+	enabled boolean NOT NULL DEFAULT false,
+	confirmed_at timestamptz,
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Single-use recovery codes (hashed) for when an authenticator is unavailable.
+CREATE TABLE IF NOT EXISTS user_recovery_codes (
+	id bigserial PRIMARY KEY,
+	user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	code_hash text NOT NULL,
+	used_at timestamptz,
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_user ON user_recovery_codes (user_id);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

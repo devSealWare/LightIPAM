@@ -282,6 +282,9 @@ func TestRenderTemplates(t *testing.T) {
 		"audit.html",
 		"settings.html",
 		"forbidden.html",
+		"account.html",
+		"mfa_challenge.html",
+		"mfa_settings.html",
 		"address_form.html",
 		"confirm.html",
 		"scans.html",
@@ -374,6 +377,55 @@ func TestSettingsUsersTabRenders(t *testing.T) {
 	if strings.Contains(body, `href="/settings/users/user-1/delete"`) {
 		t.Error("users tab should not offer a self-delete link")
 	}
+}
+
+// TestMFASettingsRenders exercises the three MFA states: enroll (QR + key),
+// freshly-enabled (recovery codes shown once), and enabled management.
+func TestMFASettingsRenders(t *testing.T) {
+	base := PageData{User: store.User{ID: "u1", Username: "admin"}, CSRF: "token", ActiveNav: "account"}
+
+	t.Run("enroll", func(t *testing.T) {
+		d := base
+		d.TOTPSecretFormatted = "ABCD EFGH IJKL"
+		d.TOTPURI = "otpauth://totp/x"
+		body := renderToString(t, "mfa_settings.html", d)
+		for _, want := range []string{`/account/mfa/qr.png`, "ABCD EFGH IJKL", `action="/account/mfa/enable"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("enroll view missing %q", want)
+			}
+		}
+	})
+
+	t.Run("recovery codes", func(t *testing.T) {
+		d := base
+		d.MFAEnabled = true
+		d.RecoveryCodes = []string{"ABCDE-FGHIJ", "KLMNP-QRSTU"}
+		body := renderToString(t, "mfa_settings.html", d)
+		for _, want := range []string{"ABCDE-FGHIJ", "KLMNP-QRSTU", "recovery codes"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("recovery view missing %q", want)
+			}
+		}
+	})
+
+	t.Run("enabled management", func(t *testing.T) {
+		d := base
+		d.MFAEnabled = true
+		d.RecoveryRemaining = 9
+		body := renderToString(t, "mfa_settings.html", d)
+		if !strings.Contains(body, `action="/account/mfa/disable"`) {
+			t.Error("enabled view should offer disable form")
+		}
+	})
+}
+
+func renderToString(t *testing.T, name string, data PageData) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	if err := Render(rec, name, data); err != nil {
+		t.Fatalf("render %s: %v", name, err)
+	}
+	return rec.Body.String()
 }
 
 // TestBulkEditMarkupRenders guards the bulk-edit affordances: each table must
