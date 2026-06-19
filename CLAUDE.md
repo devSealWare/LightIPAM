@@ -38,6 +38,9 @@ The app has:
   Addresses, and Devices tables (Phase 4.5, ADR 0016).
 - Basic CSV import/export of subnets, addresses, and devices with a validated
   dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
+- Login throttling + account lockout, idle+absolute session timeouts, a
+  per-session origin (IP/User-Agent) record with an account security page and
+  "log out everywhere", and a `/readyz` readiness probe (Phase 5, ADR 0017).
 
 ## Current Implementation Style
 
@@ -286,6 +289,43 @@ Phase 3 follow-ups (merged, #18):
   (`app.parseScanResult`) into per-host cards (MAC, OS, services table, evidence);
   raw JSON kept in a collapsed block.
 
+## Auth & Session Hardening (merged, Phase 5, ADR 0017)
+
+The first Phase 5 slice — authentication + session hardening only (MFA, OIDC, and
+roles are separate later slices). The web app stays unprivileged; no client JS added;
+the strict CSP is unchanged.
+
+- **Login throttling + lockout.** Migration 12 adds `login_attempts` (one row per
+  failed login, keyed by username **and** client IP). `evaluateLockout`
+  (`internal/app/lockout.go`) is a **pure, unit-tested** decision: a login locks when
+  either key reaches `LoginMaxAttempts` failures within `LoginWindow` and the latest
+  failure is still within `LoginLockout` (more restrictive key wins; cooldown clears
+  the lock even before failures age out). Store: `RecordLoginFailure`,
+  `RecentLoginFailures` (both keys in one `count(*) FILTER` query), `ClearLoginFailures`
+  on success. A locked attempt returns HTTP 429 with a generic message (no
+  enumeration).
+- **Timing-oracle fix.** On user-not-found, `loginSubmit` now runs
+  `auth.VerifyDecoy(password)` — an Argon2 verify against a fixed decoy hash (computed
+  once at startup, standard params) — so the not-found path costs the same as the
+  wrong-password path.
+- **Session hardening.** Migration 12 adds `sessions.last_seen_at`, `client_ip`,
+  `user_agent`. `CreateSession` captures IP/UA + an absolute expiry from
+  `SESSION_ABSOLUTE_TIMEOUT` (12h default); `GetSession(id, idleCutoff)` refreshes
+  `last_seen_at` and enforces both **idle** (`SESSION_IDLE_TIMEOUT`, 30m) and absolute
+  bounds in one atomic CTE. Account security page (`GET /account/security`) lists
+  active sessions (created, last seen, IP, UA, "this device"); **"log out everywhere"**
+  (`POST /account/security/logout-all`, `DeleteUserSessions`) revokes all sessions for
+  the user, CSRF-protected and audited. "Security" sidebar link.
+- **Readiness.** `GET /healthz` stays liveness; **`GET /readyz`** pings the DB
+  (`store.Ping`) and reports the applied migration version (`store.MigrationVersion`),
+  503 when the DB is down. The app compose service health-checks `/readyz`.
+- **Audit + config.** New events `auth.login.failed`, `auth.login.locked`,
+  `session.revoked_all` (via an `auditMeta` JSON-metadata helper). Tunables in
+  `internal/config`: `LOGIN_MAX_ATTEMPTS` (5), `LOGIN_ATTEMPT_WINDOW` (15m),
+  `LOGIN_LOCKOUT` (15m), `SESSION_ABSOLUTE_TIMEOUT` (12h), `SESSION_IDLE_TIMEOUT`
+  (30m). The IP key is the real `RemoteAddr` (not spoofable `X-Forwarded-For`); behind
+  a proxy, terminate it so `RemoteAddr` is the client. See ADR 0017.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -431,9 +471,12 @@ Remaining candidate follow-ups, roughly in priority order:
   desired: tagged/trunk VLAN membership (only access PVID is mapped today),
   per-interface speed/alias, and an SNMP/API-based DHCP source for appliances that do
   not expose a lease file.
-- **Phase 5 (Production Hardening):** managed agent certificate issuance/rotation
-  (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin,
-  encrypted secrets at rest, session hardening, and backup/restore. See
+- **Phase 5 (Production Hardening) — in progress.** First slice **done**: auth +
+  session hardening (login throttling/lockout, idle+absolute session timeouts,
+  account security page + "log out everywhere", `/readyz`, timing-oracle fix; ADR
+  0017, see the section above). Remaining slices, each its own PR: managed agent
+  certificate issuance/rotation (replacing the dev CA), OIDC SSO, MFA (TOTP), roles
+  beyond the single admin, encrypted secrets at rest, and backup/restore. See
   `docs/ROADMAP.md` "Phase 5" for the broken-out scope and exit criteria.
 
 When starting the next issue, branch from `main`, and confirm with the user

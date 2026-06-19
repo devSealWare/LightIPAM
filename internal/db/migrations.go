@@ -332,6 +332,32 @@ ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS vendor text NOT NULL DEFAU
 ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS vlan integer NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		version: 12,
+		sql: `
+-- Phase 5 auth + session hardening.
+--
+-- login_attempts records each failed local login, keyed by both the attempted
+-- username and the client IP, so the login handler can throttle and lock out
+-- brute-force attempts. Rows are pruned by time window at read; a successful
+-- login clears the matching username's rows.
+CREATE TABLE IF NOT EXISTS login_attempts (
+	id bigserial PRIMARY KEY,
+	username text NOT NULL DEFAULT '',
+	ip text NOT NULL DEFAULT '',
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_username ON login_attempts (username, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts (ip, created_at DESC);
+
+-- Session hardening: track activity for an idle timeout and capture the client
+-- origin so an operator can review and revoke active sessions.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS client_ip text NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent text NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

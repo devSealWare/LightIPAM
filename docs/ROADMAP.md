@@ -129,8 +129,14 @@ the agent.
   leaves room for this (`docs/MVP.md`).
 - **Roles beyond the single admin** — at minimum admin vs. read-only operator, so a
   viewer cannot mutate IPAM or scan config.
-- **Session hardening** — configurable idle/absolute timeouts, "log out everywhere,"
-  and login rate-limiting / lockout.
+- **Session hardening (done, ADR 0017).** Configurable idle **and** absolute session
+  timeouts (`SESSION_IDLE_TIMEOUT` 30m, `SESSION_ABSOLUTE_TIMEOUT` 12h), per-session
+  client IP + User-Agent capture, an account security page listing active sessions
+  with a "log out everywhere" control, and login throttling / account lockout
+  (`login_attempts`, migration 12) keyed by username and client IP with a pure,
+  unit-tested lock decision. The username-enumeration timing oracle in the login
+  handler is closed with a decoy Argon2 verify. New auth audit events
+  (`auth.login.failed`, `auth.login.locked`, `session.revoked_all`).
 
 ### Secrets & certificates
 
@@ -147,8 +153,10 @@ the agent.
 - **Backup & restore** — a documented `pg_dump`/`pg_restore` flow plus an
   app/CLI-triggered backup and a tested restore path; capture the schema-migration
   version with each backup.
-- **Readiness/health depth** — extend `/healthz` (or add `/readyz`) to report DB
-  reachability, applied-migration status, and agent reachability for orchestration.
+- **Readiness/health depth (done, ADR 0017).** `/healthz` stays the liveness probe;
+  `/readyz` is added to ping the DB and report the applied-migration version (503 when
+  the DB is unreachable), and the app compose service health-checks it. Agent
+  reachability in the probe remains a future enhancement.
 - **Disaster-recovery runbook** covering compose, volumes, and certificates.
 
 ### Multi-tenancy (only if needed)
