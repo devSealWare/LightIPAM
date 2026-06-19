@@ -73,6 +73,12 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
 	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
 	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
+	mux.HandleFunc("GET /settings/users", app.settingsUsers)
+	mux.HandleFunc("POST /settings/users", app.userCreate)
+	mux.HandleFunc("POST /settings/users/{id}/role", app.userSetRole)
+	mux.HandleFunc("POST /settings/users/{id}/password", app.userResetPassword)
+	mux.HandleFunc("GET /settings/users/{id}/delete", app.userDeleteConfirm)
+	mux.HandleFunc("POST /settings/users/{id}/delete", app.userDelete)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
@@ -137,7 +143,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /schedules/{id}/delete", app.scheduleDeleteConfirm)
 	mux.HandleFunc("POST /schedules/{id}/delete", app.scheduleDelete)
 
-	return securityHeaders(mux)
+	return securityHeaders(app.authorize(mux))
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
@@ -953,14 +959,14 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) settingsIndex(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireSession(w, r); !ok {
+	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 
 func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
-	session, ok := a.requireSession(w, r)
+	session, ok := a.requireAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -968,7 +974,7 @@ func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) settingsSecurityUpdate(w http.ResponseWriter, r *http.Request) {
-	session, ok := a.requireSession(w, r)
+	session, ok := a.requireAdmin(w, r)
 	if !ok {
 		return
 	}

@@ -372,6 +372,17 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 `,
 	},
+	{
+		version: 14,
+		sql: `
+-- Phase 5 roles. A user is now either an 'admin' (full read/write, manages
+-- users and instance settings) or a 'viewer' (read-only operator). is_admin is
+-- kept in sync with role so existing queries keep working; role is the
+-- authoritative authorization field. Existing users default to admin.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin';
+UPDATE users SET role = CASE WHEN is_admin THEN 'admin' ELSE 'viewer' END;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

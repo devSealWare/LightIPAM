@@ -57,6 +57,7 @@ type PageData struct {
 	SearchResults     store.SearchResults
 	Sessions          []store.Session
 	CurrentSessionID  string
+	Users             []store.User
 	Form              map[string]string
 	ActiveNav         string
 	ActiveTab         string

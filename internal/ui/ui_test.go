@@ -19,6 +19,7 @@ func TestRenderTemplates(t *testing.T) {
 			ID:          "user-1",
 			Username:    "admin",
 			DisplayName: "Admin",
+			Role:        store.RoleAdmin,
 			IsAdmin:     true,
 		},
 		Stats: store.DashboardStats{
@@ -252,8 +253,12 @@ func TestRenderTemplates(t *testing.T) {
 			LastSeenAt: time.Now(),
 		}},
 		CurrentSessionID: "session-1",
-		ActiveTab:        "security",
-		SearchQuery:      "192.168",
+		Users: []store.User{
+			{ID: "user-1", Username: "admin", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true, CreatedAt: time.Now()},
+			{ID: "user-2", Username: "viewer", DisplayName: "Viewer", Role: store.RoleViewer, CreatedAt: time.Now()},
+		},
+		ActiveTab:   "security",
+		SearchQuery: "192.168",
 		SearchResults: store.SearchResults{
 			Query:     "192.168",
 			Subnets:   []store.SearchResult{{Label: "Office LAN", Detail: "192.168.10.0/24", URL: "/subnets/subnet-1"}},
@@ -276,6 +281,7 @@ func TestRenderTemplates(t *testing.T) {
 		"device_detail.html",
 		"audit.html",
 		"settings.html",
+		"forbidden.html",
 		"address_form.html",
 		"confirm.html",
 		"scans.html",
@@ -336,14 +342,48 @@ func TestDashboardWidgetsRenderLiveState(t *testing.T) {
 	}
 }
 
+// TestSettingsUsersTabRenders guards the Users & Roles settings tab: it must
+// render the add-user form and list managed accounts with role controls.
+func TestSettingsUsersTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "users",
+		Form:      map[string]string{"role": store.RoleViewer},
+		Users: []store.User{
+			{ID: "user-1", Username: "admin", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+			{ID: "user-2", Username: "viewer", DisplayName: "Viewer", Role: store.RoleViewer},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "settings.html", data); err != nil {
+		t.Fatalf("render settings users: %v", err)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`action="/settings/users"`,
+		`action="/settings/users/user-2/role"`,
+		`action="/settings/users/user-2/password"`,
+		`href="/settings/users/user-2/delete"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("users tab missing %q", want)
+		}
+	}
+	// The acting admin must not get a self-delete link.
+	if strings.Contains(body, `href="/settings/users/user-1/delete"`) {
+		t.Error("users tab should not offer a self-delete link")
+	}
+}
+
 // TestBulkEditMarkupRenders guards the bulk-edit affordances: each table must
 // post to its /bulk endpoint, render row checkboxes and an action bar, and the
 // shared confirm page must carry selected ids forward as hidden inputs.
 func TestBulkEditMarkupRenders(t *testing.T) {
 	vlan := 20
 	data := PageData{
-		User: store.User{DisplayName: "Admin"},
-		CSRF: "token",
+		User:    store.User{DisplayName: "Admin"},
+		CSRF:    "token",
 		Subnets: []store.Subnet{{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24", VLAN: &vlan, Tags: []string{"core"}}},
 		Subnet:  store.Subnet{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24"},
 		Addresses: []store.IPAddress{{

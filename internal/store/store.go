@@ -14,12 +14,27 @@ type Store struct {
 	db *pgxpool.Pool
 }
 
+// Roles. A user is either an admin (full read/write, manages users and
+// settings) or a viewer (read-only operator). Role is the authoritative
+// authorization field; IsAdmin is kept in sync for legacy queries.
+const (
+	RoleAdmin  = "admin"
+	RoleViewer = "viewer"
+)
+
+// ValidRole reports whether role is one of the known roles.
+func ValidRole(role string) bool {
+	return role == RoleAdmin || role == RoleViewer
+}
+
 type User struct {
 	ID           string
 	Username     string
 	DisplayName  string
 	PasswordHash string
+	Role         string
 	IsAdmin      bool
+	CreatedAt    time.Time
 }
 
 type Session struct {
@@ -50,27 +65,113 @@ func (s *Store) CreateAdmin(ctx context.Context, username, displayName, password
 	if err != nil {
 		return User{}, err
 	}
-	user := User{ID: id, Username: username, DisplayName: displayName, PasswordHash: passwordHash, IsAdmin: true}
+	user := User{ID: id, Username: username, DisplayName: displayName, PasswordHash: passwordHash, Role: RoleAdmin, IsAdmin: true}
 	if err := s.db.QueryRow(ctx, `
-INSERT INTO users (id, username, display_name, password_hash, is_admin)
-VALUES ($1, $2, $3, $4, true)
-RETURNING id, username, display_name, password_hash, is_admin`,
+INSERT INTO users (id, username, display_name, password_hash, role, is_admin)
+VALUES ($1, $2, $3, $4, 'admin', true)
+RETURNING id, username, display_name, password_hash, role, is_admin`,
 		user.ID,
 		user.Username,
 		user.DisplayName,
 		user.PasswordHash,
-	).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.IsAdmin); err != nil {
+	).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsAdmin); err != nil {
 		return User{}, fmt.Errorf("create admin: %w", err)
 	}
 	return user, nil
 }
 
+// CreateUser adds a local user with the given role. An admin role sets is_admin
+// for legacy queries; any other role is a read-only viewer.
+func (s *Store) CreateUser(ctx context.Context, username, displayName, passwordHash, role string) (User, error) {
+	id, err := auth.RandomToken(18)
+	if err != nil {
+		return User{}, err
+	}
+	if !ValidRole(role) {
+		role = RoleViewer
+	}
+	user := User{ID: id, Username: username, DisplayName: displayName, PasswordHash: passwordHash, Role: role, IsAdmin: role == RoleAdmin}
+	if err := s.db.QueryRow(ctx, `
+INSERT INTO users (id, username, display_name, password_hash, role, is_admin)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, username, display_name, password_hash, role, is_admin`,
+		user.ID, user.Username, user.DisplayName, user.PasswordHash, user.Role, user.IsAdmin,
+	).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsAdmin); err != nil {
+		return User{}, fmt.Errorf("create user: %w", err)
+	}
+	return user, nil
+}
+
+// ListUsers returns all accounts ordered by username for the Users settings tab.
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.Query(ctx, `
+SELECT id, username, display_name, role, is_admin, created_at
+FROM users
+ORDER BY username`)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.IsAdmin, &u.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// GetUser loads a single account by id.
+func (s *Store) GetUser(ctx context.Context, id string) (User, error) {
+	var u User
+	if err := s.db.QueryRow(ctx, `
+SELECT id, username, display_name, password_hash, role, is_admin, created_at
+FROM users WHERE id = $1`, id).Scan(
+		&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &u.IsAdmin, &u.CreatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return User{}, ErrNotFound
+		}
+		return User{}, fmt.Errorf("get user: %w", err)
+	}
+	return u, nil
+}
+
+// SetUserRole changes a user's role, keeping is_admin in sync.
+func (s *Store) SetUserRole(ctx context.Context, id, role string) error {
+	if !ValidRole(role) {
+		return fmt.Errorf("invalid role %q", role)
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE users SET role = $2, is_admin = $3, updated_at = now() WHERE id = $1`,
+		id, role, role == RoleAdmin); err != nil {
+		return fmt.Errorf("set user role: %w", err)
+	}
+	return nil
+}
+
+// SetUserPassword updates a user's password hash (admin reset or self-service).
+func (s *Store) SetUserPassword(ctx context.Context, id, passwordHash string) error {
+	if _, err := s.db.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, id, passwordHash); err != nil {
+		return fmt.Errorf("set user password: %w", err)
+	}
+	return nil
+}
+
+// DeleteUser removes a user account. Sessions cascade.
+func (s *Store) DeleteUser(ctx context.Context, id string) error {
+	if _, err := s.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) FindUserByUsername(ctx context.Context, username string) (User, error) {
 	var user User
 	if err := s.db.QueryRow(ctx, `
-SELECT id, username, display_name, password_hash, is_admin
+SELECT id, username, display_name, password_hash, role, is_admin
 FROM users
-WHERE username = $1`, username).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.IsAdmin); err != nil {
+WHERE username = $1`, username).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsAdmin); err != nil {
 		if err == pgx.ErrNoRows {
 			return User{}, ErrNotFound
 		}
@@ -122,7 +223,7 @@ WITH touched AS (
 	RETURNING id, user_id, csrf_token, expires_at, created_at, last_seen_at, client_ip, user_agent
 )
 SELECT t.id, t.csrf_token, t.expires_at, t.created_at, t.last_seen_at, t.client_ip, t.user_agent,
-       u.id, u.username, u.display_name, u.password_hash, u.is_admin
+       u.id, u.username, u.display_name, u.password_hash, u.role, u.is_admin
 FROM touched t
 JOIN users u ON u.id = t.user_id`, sessionID, idleCutoff).Scan(
 		&session.ID,
@@ -136,6 +237,7 @@ JOIN users u ON u.id = t.user_id`, sessionID, idleCutoff).Scan(
 		&session.User.Username,
 		&session.User.DisplayName,
 		&session.User.PasswordHash,
+		&session.User.Role,
 		&session.User.IsAdmin,
 	); err != nil {
 		if err == pgx.ErrNoRows {

@@ -4,10 +4,10 @@
     <header class="glass-panel rounded-[28px] px-5 py-4">
       <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
       <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Settings</h1>
-      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Tune security policy and review the sessions signed in to your account.</p>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Configure how Light IPAM behaves — security policy, user accounts, and more.</p>
       <nav class="mt-4 flex flex-wrap gap-2">
-        {{/* One tab today; the structure supports adding more (e.g. Account, Notifications). */}}
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "security" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/security">Security</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "users" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/users">Users &amp; Roles</a>
       </nav>
     </header>
 
@@ -109,6 +109,75 @@
       <div class="p-8">
         <h3 class="text-lg font-semibold text-zinc-950 dark:text-white">No active sessions</h3>
         <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Active sessions appear here once you sign in.</p>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
+
+    {{ if eq .ActiveTab "users" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Add a user</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Admins have full read/write access and manage users and settings. Viewers are read-only operators.</p>
+      <form method="post" action="/settings/users" class="mt-5 grid gap-4 sm:grid-cols-2">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Username</span>
+          <input class="form-input" type="text" name="username" autocomplete="off" required value="{{ index .Form "username" }}">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Display name</span>
+          <input class="form-input" type="text" name="display_name" autocomplete="off" value="{{ index .Form "display_name" }}">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Temporary password</span>
+          <input class="form-input" type="password" name="password" autocomplete="new-password" minlength="12" required>
+          <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">At least 12 characters.</span>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Role</span>
+          <select class="form-input" name="role">
+            <option value="viewer" {{ if eq (index .Form "role") "viewer" }}selected{{ end }}>Viewer — read-only</option>
+            <option value="admin" {{ if eq (index .Form "role") "admin" }}selected{{ end }}>Admin — full access</option>
+          </select>
+        </label>
+        <div class="sm:col-span-2">
+          <button class="button-primary" type="submit">Create user</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Users</h2>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Change a role, reset a password, or remove an account.</p>
+      </div>
+      {{ range .Users }}
+      <div class="flex flex-col gap-3 border-b border-zinc-100 px-5 py-4 last:border-b-0 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+          <span class="block font-medium text-zinc-900 dark:text-white">{{ .DisplayName }}</span>
+          <span class="block text-sm text-zinc-500 dark:text-zinc-400">{{ .Username }}
+            {{ if .IsAdmin }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-900 px-2 py-0.5 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900">admin</span>{{ else }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">viewer</span>{{ end }}
+            {{ if eq .ID $.User.ID }}<span class="ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">you</span>{{ end }}
+          </span>
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <form method="post" action="/settings/users/{{ .ID }}/role" class="flex items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <select class="form-input h-10 py-0" name="role" aria-label="Role for {{ .Username }}">
+              <option value="viewer" {{ if not .IsAdmin }}selected{{ end }}>Viewer</option>
+              <option value="admin" {{ if .IsAdmin }}selected{{ end }}>Admin</option>
+            </select>
+            <button class="button-muted" type="submit">Set role</button>
+          </form>
+          <form method="post" action="/settings/users/{{ .ID }}/password" class="flex items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <input class="form-input h-10 py-0" type="password" name="password" placeholder="New password" autocomplete="new-password" minlength="12" required aria-label="New password for {{ .Username }}">
+            <button class="button-muted" type="submit">Reset</button>
+          </form>
+          {{ if ne .ID $.User.ID }}
+          <a class="inline-flex h-10 items-center justify-center rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" href="/settings/users/{{ .ID }}/delete">Delete</a>
+          {{ end }}
+        </div>
       </div>
       {{ end }}
     </section>
