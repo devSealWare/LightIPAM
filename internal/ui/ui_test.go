@@ -379,6 +379,37 @@ func TestSettingsUsersTabRenders(t *testing.T) {
 	}
 }
 
+// TestSettingsAuthTabRenders guards the Authentication (SSO) settings tab.
+func TestSettingsAuthTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "authentication",
+		Form: map[string]string{
+			"oidc_enabled":      "on",
+			"oidc_issuer":       "https://idp.example.com",
+			"oidc_base_url":     "https://ipam.example.com",
+			"oidc_redirect_url": "https://ipam.example.com/auth/oidc/callback",
+			"oidc_secret_set":   "1",
+		},
+	}
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "settings.html", data); err != nil {
+		t.Fatalf("render settings auth: %v", err)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`action="/settings/authentication"`,
+		`name="oidc_issuer"`,
+		`name="oidc_client_secret"`,
+		"https://ipam.example.com/auth/oidc/callback",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("auth tab missing %q", want)
+		}
+	}
+}
+
 // TestMFASettingsRenders exercises the three MFA states: enroll (QR + key),
 // freshly-enabled (recovery codes shown once), and enabled management.
 func TestMFASettingsRenders(t *testing.T) {

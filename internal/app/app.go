@@ -44,8 +44,12 @@ type App struct {
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
-	settingsMu sync.RWMutex
-	settings   SecuritySettings
+	// oidc holds the cached SSO settings; oidcProvider caches the built provider
+	// (invalidated when oidc settings change). All guarded by settingsMu.
+	settingsMu   sync.RWMutex
+	settings     SecuritySettings
+	oidc         OIDCSettings
+	oidcProvider *oidcProvider
 }
 
 func New(options Options) http.Handler {
@@ -78,6 +82,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /login", app.loginSubmit)
 	mux.HandleFunc("GET /login/mfa", app.mfaChallengeForm)
 	mux.HandleFunc("POST /login/mfa", app.mfaChallengeSubmit)
+	mux.HandleFunc("GET /auth/oidc/start", app.oidcStart)
+	mux.HandleFunc("GET /auth/oidc/callback", app.oidcCallback)
 	mux.HandleFunc("POST /logout", app.logout)
 
 	mux.HandleFunc("GET /account", app.accountIndex)
@@ -91,6 +97,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
 	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
 	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
+	mux.HandleFunc("GET /settings/authentication", app.settingsAuthentication)
+	mux.HandleFunc("POST /settings/authentication", app.settingsAuthenticationUpdate)
 	mux.HandleFunc("GET /settings/users", app.settingsUsers)
 	mux.HandleFunc("POST /settings/users", app.userCreate)
 	mux.HandleFunc("POST /settings/users/{id}/role", app.userSetRole)
@@ -879,8 +887,9 @@ func (a *App) loginForm(w http.ResponseWriter, r *http.Request) {
 	}
 	a.setCSRFCookie(w, csrf)
 	_ = ui.Render(w, "login.html", ui.PageData{
-		Title: "Sign In",
-		CSRF:  csrf,
+		Title:       "Sign In",
+		CSRF:        csrf,
+		OIDCEnabled: a.oidcSettings().configured(),
 	})
 }
 
@@ -963,10 +972,15 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) renderLoginError(w http.ResponseWriter, r *http.Request, message string) {
+	a.renderLoginErrorWithToken(w, message, r.FormValue("csrf_token"))
+}
+
+func (a *App) renderLoginErrorWithToken(w http.ResponseWriter, message, csrf string) {
 	_ = ui.Render(w, "login.html", ui.PageData{
-		Title: "Sign In",
-		Error: message,
-		CSRF:  r.FormValue("csrf_token"),
+		Title:       "Sign In",
+		Error:       message,
+		CSRF:        csrf,
+		OIDCEnabled: a.oidcSettings().configured(),
 	})
 }
 

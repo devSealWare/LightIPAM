@@ -65,6 +65,9 @@ type PageData struct {
 	TOTPURI             string
 	RecoveryCodes       []string
 	RecoveryRemaining   int
+
+	// OIDCEnabled shows the "Sign in with SSO" control on the login page.
+	OIDCEnabled bool
 	Form              map[string]string
 	ActiveNav         string
 	ActiveTab         string

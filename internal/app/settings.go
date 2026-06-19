@@ -52,6 +52,7 @@ func (a *App) loadSettings(ctx context.Context) {
 		stored = nil
 	}
 	a.setSettings(a.mergeSettings(stored))
+	a.loadOIDCSettings(ctx, stored)
 }
 
 func (a *App) mergeSettings(stored map[string]string) SecuritySettings {

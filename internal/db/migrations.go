@@ -409,6 +409,16 @@ CREATE TABLE IF NOT EXISTS user_recovery_codes (
 CREATE INDEX IF NOT EXISTS idx_recovery_codes_user ON user_recovery_codes (user_id);
 `,
 	},
+	{
+		version: 16,
+		sql: `
+-- Phase 5 OIDC SSO. oidc_subject binds an external IdP identity (the 'sub'
+-- claim) to a local user so subsequent SSO logins resolve to the same account.
+-- Nullable; unique when set.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_subject ON users (oidc_subject) WHERE oidc_subject IS NOT NULL;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

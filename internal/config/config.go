@@ -55,6 +55,17 @@ type Config struct {
 	// ScannerAgentEndpoint, when set, is the bundled agent the app auto-enrolls
 	// (as a pending agent) on boot by pulling its /register endpoint over mTLS.
 	ScannerAgentEndpoint string
+
+	// OIDC SSO boot defaults. These seed the runtime-editable Authentication
+	// settings; an admin can change them from the Settings page. The client
+	// secret is sealed before it is persisted (never stored in plaintext).
+	OIDCEnabled       bool
+	OIDCIssuer        string
+	OIDCClientID      string
+	OIDCClientSecret  string
+	OIDCBaseURL       string
+	OIDCUsernameClaim string
+	OIDCAutoProvision bool
 }
 
 func Load() Config {
@@ -85,6 +96,13 @@ func Load() Config {
 		ScannerCACert:                getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
 		ScanSchedulerTick:            schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
 		ScannerAgentEndpoint:         os.Getenv("SCANNER_AGENT_ENDPOINT"),
+		OIDCEnabled:                  getenv("OIDC_ENABLED", "false") == "true",
+		OIDCIssuer:                   os.Getenv("OIDC_ISSUER"),
+		OIDCClientID:                 os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:             os.Getenv("OIDC_CLIENT_SECRET"),
+		OIDCBaseURL:                  os.Getenv("OIDC_BASE_URL"),
+		OIDCUsernameClaim:            getenv("OIDC_USERNAME_CLAIM", "preferred_username"),
+		OIDCAutoProvision:            getenv("OIDC_AUTO_PROVISION", "false") == "true",
 	}
 }
 

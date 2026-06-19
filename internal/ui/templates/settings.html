@@ -8,6 +8,7 @@
       <nav class="mt-4 flex flex-wrap gap-2">
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "security" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/security">Security</a>
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "users" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/users">Users &amp; Roles</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "authentication" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/authentication">Authentication</a>
       </nav>
     </header>
 
@@ -180,6 +181,60 @@
         </div>
       </div>
       {{ end }}
+    </section>
+    {{ end }}
+
+    {{ if eq .ActiveTab "authentication" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Single sign-on (OIDC)</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Let users sign in through an OpenID Connect provider (Okta, Entra ID, Google, Keycloak, Authentik…). The client secret is encrypted at rest and never shown again.</p>
+      <form method="post" action="/settings/authentication" class="mt-5 space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+
+        <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="oidc_enabled" {{ if index .Form "oidc_enabled" }}checked{{ end }}>
+          <span>
+            <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Enable single sign-on</span>
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Adds a “Sign in with SSO” button to the login page.</span>
+          </span>
+        </label>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Issuer URL</span>
+            <input class="form-input" type="url" name="oidc_issuer" placeholder="https://idp.example.com/realms/main" value="{{ index .Form "oidc_issuer" }}">
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">The OIDC discovery base (must serve /.well-known/openid-configuration).</span>
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Client ID</span>
+            <input class="form-input" type="text" name="oidc_client_id" value="{{ index .Form "oidc_client_id" }}">
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Client secret</span>
+            <input class="form-input" type="password" name="oidc_client_secret" autocomplete="off" placeholder="{{ if index .Form "oidc_secret_set" }}•••••••• (leave blank to keep){{ else }}Required{{ end }}">
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Base URL</span>
+            <input class="form-input" type="url" name="oidc_base_url" placeholder="https://ipam.example.com" value="{{ index .Form "oidc_base_url" }}">
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">External URL of this app. Register the redirect URI{{ if index .Form "oidc_redirect_url" }} <span class="font-mono text-zinc-700 dark:text-zinc-300">{{ index .Form "oidc_redirect_url" }}</span>{{ else }} <span class="font-mono">&lt;base&gt;/auth/oidc/callback</span>{{ end }} with your IdP.</span>
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Username claim</span>
+            <input class="form-input" type="text" name="oidc_username_claim" placeholder="preferred_username" value="{{ index .Form "oidc_username_claim" }}">
+          </label>
+          <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+            <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="oidc_auto_provision" {{ if index .Form "oidc_auto_provision" }}checked{{ end }}>
+            <span>
+              <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Auto-provision new users</span>
+              <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Create a read-only viewer on first SSO login when no local account matches.</span>
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <button class="button-primary" type="submit">Save authentication settings</button>
+        </div>
+      </form>
     </section>
     {{ end }}
   </div>
