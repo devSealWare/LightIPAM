@@ -133,6 +133,11 @@ in `internal/store`, handlers in `internal/app`, and every mutation is audited.
   the UI without redeploying; env still seeds the boot defaults. The cache is
   per-instance (fine for the single-instance compose deployment; a save in one
   instance would not refresh another instance's cache until restart — documented).
+- The Security tab is the **seed of a broader Settings panel** — the `app_settings`
+  store, the cached-typed-settings pattern, and the pure form validator are meant to be
+  reused by future tabs (General, Users & Roles, Authentication, Scanning, Discovery,
+  Agents, Backup, Notifications). The full plan and the agent-secret boundary it must
+  respect are in `docs/SETTINGS.md` and `docs/ROADMAP.md`.
 - Orchestration gets a true readiness signal that distinguishes "process up" from
   "can serve requests," including the schema version it is serving.
 - No new heavyweight dependency, no client JavaScript, the CSP is unchanged, and the

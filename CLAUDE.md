@@ -485,12 +485,20 @@ Remaining candidate follow-ups, roughly in priority order:
   per-interface speed/alias, and an SNMP/API-based DHCP source for appliances that do
   not expose a lease file.
 - **Phase 5 (Production Hardening) — in progress.** First slice **done**: auth +
-  session hardening (login throttling/lockout, idle+absolute session timeouts,
-  account security page + "log out everywhere", `/readyz`, timing-oracle fix; ADR
-  0017, see the section above). Remaining slices, each its own PR: managed agent
-  certificate issuance/rotation (replacing the dev CA), OIDC SSO, MFA (TOTP), roles
-  beyond the single admin, encrypted secrets at rest, and backup/restore. See
-  `docs/ROADMAP.md` "Phase 5" for the broken-out scope and exit criteria.
+  session hardening, plus a tabbed **Settings** page whose **Security** tab makes the
+  auth/session policy runtime-editable (login throttling/lockout, idle+absolute session
+  timeouts, configurable "log out everywhere", `/readyz`, timing-oracle fix; ADR 0017,
+  see the section above). Remaining slices, each its own PR: managed agent certificate
+  issuance/rotation (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the
+  single admin, encrypted secrets at rest, and backup/restore. See `docs/ROADMAP.md`
+  "Phase 5" for the broken-out scope and exit criteria.
+- **Settings panel build-out.** The Settings page is meant to grow into the product's
+  configuration surface; `docs/SETTINGS.md` is the canonical plan (tabs: General,
+  Users & Roles, Authentication, Scanning/nmap, Discovery, Agents, Backup, Notifications,
+  Data & Audit) with the pattern for adding a tab and the **agent-secret boundary**
+  (SNMP communities, nmap egress pinning, DHCP lease paths, agent allowlist stay on the
+  agent — never the app DB or the panel). Most tabs unlock alongside the Phase 5/6 items
+  above; the Scanning, Discovery, and General tabs can land independently.
 
 When starting the next issue, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order).

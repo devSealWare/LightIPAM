@@ -141,6 +141,43 @@ the agent.
   Argon2 verify. New auth audit events (`auth.login.failed`, `auth.login.locked`,
   `session.revoked_all`, `settings.security.updated`).
 
+### Configurability & the settings panel
+
+Light IPAM should be **highly configurable from the UI**, not just from environment
+variables. The tabbed **Settings** page introduced with session hardening (ADR 0017)
+is the home for that, backed by the runtime `app_settings` store (env values seed the
+boot defaults). The **Security** tab is done; the rest below are planned. Each
+runtime-tunable tab follows the same pattern — a pure, unit-tested form validator,
+values cached and refreshed on save, and an audited `settings.<tab>.updated` event.
+The full design, the per-tab field list, and the **agent-secret boundary** (SNMP
+communities, nmap egress pinning, DHCP lease paths, and the agent allowlist stay on
+the agent, never in the app DB or this panel) live in **`docs/SETTINGS.md`**.
+
+Planned tabs (sequenced with the phases that unlock them):
+
+- **Security** — login lockout, session timeouts, "log out everywhere" behavior,
+  active-session review. **Done** (ADR 0017). Future fields: password policy,
+  secure-cookie enforcement, MFA/OIDC toggles.
+- **General** — instance name, default site, table page size, date/time format,
+  default theme.
+- **Users & Roles** — manage accounts and admin vs. read-only operator (this phase's
+  "roles beyond the single admin" item).
+- **Authentication** — OIDC SSO and MFA (TOTP) configuration (this phase's SSO/MFA
+  items); the OIDC client secret is sealed (encrypted at rest).
+- **Scanning (nmap)** — app-side scan **dispatch defaults**: default scan type/mode,
+  per-type timeouts, optional nmap rate/timing cap, default targets/allowlist, and the
+  scheduler tick. Agent-local nmap/SNMP/DHCP credentials and raw-socket config stay on
+  the agent.
+- **Discovery** — auto-import policy, reconciliation/conflict handling, and
+  review-queue + last-seen retention.
+- **Agents** — enrollment defaults and managed certificate issuance/rotation (this
+  phase's cert-lifecycle item); the `/agents` page exists today.
+- **Backup & Restore** — trigger/schedule `pg_dump`, run a tested restore, capture the
+  migration version (this phase's backup/restore item).
+- **Notifications** — change webhooks and alert thresholds (Phase 6).
+- **Data & Audit** — audit-log retention/export and the CSV / NetBox import-export
+  entry points (CSV import/export already exists).
+
 ### Secrets & certificates
 
 - **Managed agent certificate issuance + rotation**, replacing the hand-run dev CA
