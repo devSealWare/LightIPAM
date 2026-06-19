@@ -129,14 +129,17 @@ the agent.
   leaves room for this (`docs/MVP.md`).
 - **Roles beyond the single admin** — at minimum admin vs. read-only operator, so a
   viewer cannot mutate IPAM or scan config.
-- **Session hardening (done, ADR 0017).** Configurable idle **and** absolute session
-  timeouts (`SESSION_IDLE_TIMEOUT` 30m, `SESSION_ABSOLUTE_TIMEOUT` 12h), per-session
-  client IP + User-Agent capture, an account security page listing active sessions
-  with a "log out everywhere" control, and login throttling / account lockout
-  (`login_attempts`, migration 12) keyed by username and client IP with a pure,
-  unit-tested lock decision. The username-enumeration timing oracle in the login
-  handler is closed with a decoy Argon2 verify. New auth audit events
-  (`auth.login.failed`, `auth.login.locked`, `session.revoked_all`).
+- **Session hardening (done, ADR 0017).** Idle **and** absolute session timeouts,
+  per-session client IP + User-Agent capture, a tabbed **Settings page** (Security
+  tab) listing active sessions with a "log out everywhere" control, and login
+  throttling / account lockout (`login_attempts`, migration 12) keyed by username and
+  client IP with a pure, unit-tested lock decision. All of this policy — lockout
+  thresholds, session timeouts, and whether "log out everywhere" keeps the current
+  device — is **editable at runtime** from the Settings page (persisted in
+  `app_settings`, migration 13; env provides the boot defaults). The
+  username-enumeration timing oracle in the login handler is closed with a decoy
+  Argon2 verify. New auth audit events (`auth.login.failed`, `auth.login.locked`,
+  `session.revoked_all`, `settings.security.updated`).
 
 ### Secrets & certificates
 

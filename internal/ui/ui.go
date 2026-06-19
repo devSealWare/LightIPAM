@@ -59,6 +59,7 @@ type PageData struct {
 	CurrentSessionID  string
 	Form              map[string]string
 	ActiveNav         string
+	ActiveTab         string
 	SuccessMessage    string
 	ImportResult      store.ImportResult
 }

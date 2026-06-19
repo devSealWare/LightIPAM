@@ -80,12 +80,30 @@ in `internal/store`, handlers in `internal/app`, and every mutation is audited.
   client header would let an attacker rotate it to evade the IP lock. A deployment
   behind a trusted reverse proxy should terminate it so `RemoteAddr` reflects the
   client.
-- **Account security page** (`GET /account/security`) lists the user's active
+- **Settings page → Security tab** (`GET /settings/security`, a "Settings" sidebar
+  link under System; `GET /settings` redirects to it) lists the user's active
   sessions — signed-in time, last seen, IP, User-Agent, and a "This device" marker —
-  and offers **"Log out everywhere"** (`POST /account/security/logout-all`), which
-  revokes every session for the user (including the current one, so the operator
-  re-authenticates). It is CSRF-protected (session token) and audited. A "Security"
-  link is added to the sidebar.
+  and offers **"Log out everywhere"** (`POST /settings/security/logout-all`),
+  CSRF-protected (session token) and audited. The page is built as a **tab layout**
+  (one tab today, room for more) so future settings live alongside it.
+
+### Runtime-editable policy
+
+- The auth/session knobs above are **no longer env-only**. The Security tab exposes a
+  form to edit max attempts, attempt window, lockout duration, idle timeout, absolute
+  timeout, **and** the "log out everywhere" behavior. Values persist in a key/value
+  `app_settings` table (migration 13) and are validated by a pure, unit-tested
+  `parseSecuritySettingsForm`; an update is audited (`settings.security.updated`).
+- **Env values become boot defaults, not the ceiling.** On startup the app overlays
+  any stored settings onto the config defaults and caches the result
+  (`SecuritySettings`, guarded by an `RWMutex`); the login throttle, idle cutoff, and
+  session-creation timeout read the cached value, and a save refreshes it so changes
+  apply immediately. A missing/invalid stored key falls back to its default, so the
+  table can never produce an unsafe policy.
+- **"Log out everywhere" is configurable** (`LogoutEverywhereKeepsCurrent`, default
+  off): off revokes every session including the current one and redirects to login;
+  on revokes only the user's *other* sessions (`DeleteOtherUserSessions`) and keeps
+  the current device signed in.
 
 ### Deeper readiness
 
@@ -110,7 +128,11 @@ in `internal/store`, handlers in `internal/app`, and every mutation is audited.
   username or by source IP) is locked out, and the response no longer leaks which
   usernames exist.
 - A leaked or forgotten session is recoverable — it now expires on idle, and an
-  operator can see and revoke all sessions from the security page.
+  operator can see and revoke sessions from the Settings → Security tab.
+- An admin can tune lockout/timeout policy and the "log out everywhere" behavior from
+  the UI without redeploying; env still seeds the boot defaults. The cache is
+  per-instance (fine for the single-instance compose deployment; a save in one
+  instance would not refresh another instance's cache until restart — documented).
 - Orchestration gets a true readiness signal that distinguishes "process up" from
   "can serve requests," including the schema version it is serving.
 - No new heavyweight dependency, no client JavaScript, the CSP is unchanged, and the

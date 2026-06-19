@@ -39,8 +39,10 @@ The app has:
 - Basic CSV import/export of subnets, addresses, and devices with a validated
   dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
 - Login throttling + account lockout, idle+absolute session timeouts, a
-  per-session origin (IP/User-Agent) record with an account security page and
-  "log out everywhere", and a `/readyz` readiness probe (Phase 5, ADR 0017).
+  per-session origin (IP/User-Agent) record, a tabbed **Settings page** (Security
+  tab) with active-session review + "log out everywhere", all auth/session policy
+  **editable at runtime** (persisted in `app_settings`, env = boot defaults), and a
+  `/readyz` readiness probe (Phase 5, ADR 0017).
 
 ## Current Implementation Style
 
@@ -309,22 +311,33 @@ the strict CSP is unchanged.
   once at startup, standard params) — so the not-found path costs the same as the
   wrong-password path.
 - **Session hardening.** Migration 12 adds `sessions.last_seen_at`, `client_ip`,
-  `user_agent`. `CreateSession` captures IP/UA + an absolute expiry from
-  `SESSION_ABSOLUTE_TIMEOUT` (12h default); `GetSession(id, idleCutoff)` refreshes
-  `last_seen_at` and enforces both **idle** (`SESSION_IDLE_TIMEOUT`, 30m) and absolute
-  bounds in one atomic CTE. Account security page (`GET /account/security`) lists
-  active sessions (created, last seen, IP, UA, "this device"); **"log out everywhere"**
-  (`POST /account/security/logout-all`, `DeleteUserSessions`) revokes all sessions for
-  the user, CSRF-protected and audited. "Security" sidebar link.
+  `user_agent`. `CreateSession` captures IP/UA + an absolute expiry; `GetSession(id,
+  idleCutoff)` refreshes `last_seen_at` and enforces both **idle** and **absolute**
+  bounds in one atomic CTE. **Settings → Security tab** (`GET /settings/security`,
+  `GET /settings` redirects to it) lists active sessions (created, last seen, IP, UA,
+  "this device") and offers **"log out everywhere"**
+  (`POST /settings/security/logout-all`), CSRF-protected and audited. "Settings"
+  sidebar link under System (replaces the standalone security page).
+- **Runtime-editable policy.** Migration 13 adds a key/value `app_settings` table
+  (`store.GetAppSettings`/`SetAppSettings`). The Security tab edits lockout (max
+  attempts / window / lockout), session timeouts (idle / absolute), and the **"log out
+  everywhere" behavior** (keep-this-device vs sign-out-all). `internal/app/settings.go`
+  holds `SecuritySettings` (env defaults overlaid with stored values, cached behind an
+  `RWMutex`, refreshed on save) and the pure, unit-tested `parseSecuritySettingsForm`;
+  `lockoutPolicy`/`idleCutoff`/`establishSession` read the cache, so edits apply
+  immediately. Keep-current uses `store.DeleteOtherUserSessions`. Update is audited
+  (`settings.security.updated`).
 - **Readiness.** `GET /healthz` stays liveness; **`GET /readyz`** pings the DB
   (`store.Ping`) and reports the applied migration version (`store.MigrationVersion`),
   503 when the DB is down. The app compose service health-checks `/readyz`.
 - **Audit + config.** New events `auth.login.failed`, `auth.login.locked`,
-  `session.revoked_all` (via an `auditMeta` JSON-metadata helper). Tunables in
-  `internal/config`: `LOGIN_MAX_ATTEMPTS` (5), `LOGIN_ATTEMPT_WINDOW` (15m),
-  `LOGIN_LOCKOUT` (15m), `SESSION_ABSOLUTE_TIMEOUT` (12h), `SESSION_IDLE_TIMEOUT`
-  (30m). The IP key is the real `RemoteAddr` (not spoofable `X-Forwarded-For`); behind
-  a proxy, terminate it so `RemoteAddr` is the client. See ADR 0017.
+  `session.revoked_all`, `settings.security.updated` (via an `auditMeta` JSON-metadata
+  helper). Boot defaults in `internal/config`: `LOGIN_MAX_ATTEMPTS` (5),
+  `LOGIN_ATTEMPT_WINDOW` (15m), `LOGIN_LOCKOUT` (15m), `SESSION_ABSOLUTE_TIMEOUT`
+  (12h), `SESSION_IDLE_TIMEOUT` (30m), `LOGOUT_EVERYWHERE_KEEPS_CURRENT` (false) —
+  each overridable at runtime from the Settings page. The IP key is the real
+  `RemoteAddr` (not spoofable `X-Forwarded-For`); behind a proxy, terminate it so
+  `RemoteAddr` is the client. See ADR 0017.
 
 ## Recent UI / IPAM work (merged to `main`)
 

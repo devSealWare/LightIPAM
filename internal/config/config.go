@@ -29,6 +29,13 @@ type Config struct {
 	LoginWindow      time.Duration
 	LoginLockout     time.Duration
 
+	// LogoutEverywhereKeepsCurrent controls whether the "log out everywhere"
+	// control keeps the acting session signed in (revoking only the user's other
+	// sessions) or signs out every session including the current one. Like the
+	// throttle/timeout knobs above, this is the boot-time default; an operator can
+	// override it at runtime from the Settings page (persisted in app_settings).
+	LogoutEverywhereKeepsCurrent bool
+
 	// Scanner dispatch (app acts as the mTLS client to scanner agents). When
 	// the client certificate files are absent, dispatch is disabled and scan
 	// jobs fail cleanly instead of contacting an agent.
@@ -54,20 +61,21 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:                   getenv("PORT", "8080"),
-		DatabaseURL:            getenv("DATABASE_URL", "postgres://lightipam:lightipam@localhost:5432/lightipam?sslmode=disable"),
-		AppSecret:              []byte(secret),
-		CookieSecure:           getenv("COOKIE_SECURE", "false") == "true",
-		SessionAbsoluteTimeout: durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
-		SessionIdleTimeout:     durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
-		LoginMaxAttempts:       positiveInt(getenv("LOGIN_MAX_ATTEMPTS", "5"), 5),
-		LoginWindow:            durationEnv("LOGIN_ATTEMPT_WINDOW", 15*time.Minute),
-		LoginLockout:           durationEnv("LOGIN_LOCKOUT", 15*time.Minute),
-		ScannerClientCert:      getenv("SCANNER_CLIENT_CERT", "/certs/app.crt"),
-		ScannerClientKey:       getenv("SCANNER_CLIENT_KEY", "/certs/app.key"),
-		ScannerCACert:          getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
-		ScanSchedulerTick:      schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
-		ScannerAgentEndpoint:   os.Getenv("SCANNER_AGENT_ENDPOINT"),
+		Port:                         getenv("PORT", "8080"),
+		DatabaseURL:                  getenv("DATABASE_URL", "postgres://lightipam:lightipam@localhost:5432/lightipam?sslmode=disable"),
+		AppSecret:                    []byte(secret),
+		CookieSecure:                 getenv("COOKIE_SECURE", "false") == "true",
+		SessionAbsoluteTimeout:       durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
+		SessionIdleTimeout:           durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
+		LoginMaxAttempts:             positiveInt(getenv("LOGIN_MAX_ATTEMPTS", "5"), 5),
+		LoginWindow:                  durationEnv("LOGIN_ATTEMPT_WINDOW", 15*time.Minute),
+		LoginLockout:                 durationEnv("LOGIN_LOCKOUT", 15*time.Minute),
+		LogoutEverywhereKeepsCurrent: getenv("LOGOUT_EVERYWHERE_KEEPS_CURRENT", "false") == "true",
+		ScannerClientCert:            getenv("SCANNER_CLIENT_CERT", "/certs/app.crt"),
+		ScannerClientKey:             getenv("SCANNER_CLIENT_KEY", "/certs/app.key"),
+		ScannerCACert:                getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
+		ScanSchedulerTick:            schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
+		ScannerAgentEndpoint:         os.Getenv("SCANNER_AGENT_ENDPOINT"),
 	}
 }
 

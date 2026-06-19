@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -37,6 +39,11 @@ type App struct {
 	store  *store.Store
 	logger *slog.Logger
 	scans  *orchestrator.Service
+
+	// settings is the active auth/session policy (env defaults overlaid with any
+	// admin overrides from app_settings), cached and refreshed on update.
+	settingsMu sync.RWMutex
+	settings   SecuritySettings
 }
 
 func New(options Options) http.Handler {
@@ -46,6 +53,7 @@ func New(options Options) http.Handler {
 		logger: options.Logger,
 		scans:  options.Scans,
 	}
+	app.loadSettings(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
@@ -61,8 +69,10 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
 	mux.HandleFunc("POST /logout", app.logout)
-	mux.HandleFunc("GET /account/security", app.securityIndex)
-	mux.HandleFunc("POST /account/security/logout-all", app.logoutEverywhere)
+	mux.HandleFunc("GET /settings", app.settingsIndex)
+	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
+	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
+	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
@@ -942,30 +952,88 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (a *App) securityIndex(w http.ResponseWriter, r *http.Request) {
+func (a *App) settingsIndex(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireSession(w, r); !ok {
+		return
+	}
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.requireSession(w, r)
 	if !ok {
 		return
 	}
+	a.renderSecurityTab(w, r, session, a.securitySettings().formValues(), "", securityNotice(r))
+}
+
+func (a *App) settingsSecurityUpdate(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	settings, err := parseSecuritySettingsForm(r.PostForm)
+	if err != nil {
+		a.renderSecurityTab(w, r, session, submittedSecurityForm(r.PostForm), err.Error(), "")
+		return
+	}
+	if err := a.store.SetAppSettings(r.Context(), settings.toMap()); err != nil {
+		a.logger.Error("save app settings", "error", err)
+		a.renderSecurityTab(w, r, session, submittedSecurityForm(r.PostForm), "Unable to save settings. Please try again.", "")
+		return
+	}
+	a.setSettings(settings)
+	a.auditMeta(r, &session.User.ID, "settings.security.updated", "settings", "security", settings.toMap())
+	http.Redirect(w, r, "/settings/security?notice=saved", http.StatusSeeOther)
+}
+
+// renderSecurityTab renders the Settings page on its Security tab: the policy
+// form (pre-filled from form) plus the user's active sessions.
+func (a *App) renderSecurityTab(w http.ResponseWriter, r *http.Request, session store.Session, form map[string]string, errMsg, notice string) {
 	sessions, err := a.store.ListUserSessions(r.Context(), session.User.ID, a.idleCutoff())
 	if err != nil {
 		a.logger.Error("list user sessions", "error", err)
 		http.Error(w, "Unable to load sessions", http.StatusInternalServerError)
 		return
 	}
-	_ = ui.Render(w, "security.html", ui.PageData{
-		Title:            "Account Security",
+	_ = ui.Render(w, "settings.html", ui.PageData{
+		Title:            "Settings",
 		User:             session.User,
 		CSRF:             session.CSRFToken,
+		Error:            errMsg,
+		SuccessMessage:   notice,
 		Sessions:         sessions,
 		CurrentSessionID: session.ID,
-		ActiveNav:        "security",
+		Form:             form,
+		ActiveNav:        "settings",
+		ActiveTab:        "security",
 	})
 }
 
-// logoutEverywhere revokes every session for the current user, including this
-// one, then redirects to the login page. It is the "log out everywhere" control
-// on the account security page.
+// securityNotice maps the post-redirect ?notice marker to a banner message.
+func securityNotice(r *http.Request) string {
+	switch r.URL.Query().Get("notice") {
+	case "saved":
+		return "Security settings saved."
+	case "revoked":
+		return "Signed out your other sessions."
+	default:
+		return ""
+	}
+}
+
+// logoutEverywhere is the "log out everywhere" control on the Security tab. When
+// the policy keeps the current device signed in it revokes only the user's other
+// sessions and returns to the tab; otherwise it revokes every session including
+// this one and redirects to the login page. CSRF-protected and audited.
 func (a *App) logoutEverywhere(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.requireSession(w, r)
 	if !ok {
@@ -975,15 +1043,31 @@ func (a *App) logoutEverywhere(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid form token", http.StatusForbidden)
 		return
 	}
-	revoked, err := a.store.DeleteUserSessions(r.Context(), session.User.ID)
+	keepCurrent := a.securitySettings().LogoutEverywhereKeepsCurrent
+	var revoked int64
+	var err error
+	if keepCurrent {
+		revoked, err = a.store.DeleteOtherUserSessions(r.Context(), session.User.ID, session.ID)
+	} else {
+		revoked, err = a.store.DeleteUserSessions(r.Context(), session.User.ID)
+	}
 	if err != nil {
-		a.logger.Error("delete user sessions", "error", err)
+		a.logger.Error("revoke sessions", "error", err)
 		http.Error(w, "Unable to revoke sessions", http.StatusInternalServerError)
 		return
 	}
+	scope := "all"
+	if keepCurrent {
+		scope = "others"
+	}
 	a.auditMeta(r, &session.User.ID, "session.revoked_all", "user", session.User.ID, map[string]string{
 		"revoked": strconv.FormatInt(revoked, 10),
+		"scope":   scope,
 	})
+	if keepCurrent {
+		http.Redirect(w, r, "/settings/security?notice=revoked", http.StatusSeeOther)
+		return
+	}
 	a.clearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -1022,7 +1106,7 @@ func (a *App) currentSession(r *http.Request) (store.Session, bool) {
 }
 
 func (a *App) establishSession(w http.ResponseWriter, r *http.Request, userID string) {
-	expiresAt := time.Now().Add(a.cfg.SessionAbsoluteTimeout)
+	expiresAt := time.Now().Add(a.securitySettings().SessionAbsoluteTimeout)
 	session, err := a.store.CreateSession(r.Context(), userID, expiresAt, clientIP(r), userAgent(r))
 	if err != nil {
 		a.logger.Error("create session", "error", err)
@@ -1042,17 +1126,19 @@ func (a *App) establishSession(w http.ResponseWriter, r *http.Request, userID st
 // idleCutoff is the oldest last_seen_at a session may have and still be live. A
 // non-positive idle timeout disables the idle check by returning the zero time.
 func (a *App) idleCutoff() time.Time {
-	if a.cfg.SessionIdleTimeout <= 0 {
+	idle := a.securitySettings().SessionIdleTimeout
+	if idle <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-a.cfg.SessionIdleTimeout)
+	return time.Now().Add(-idle)
 }
 
 func (a *App) lockoutPolicy() lockoutPolicy {
+	s := a.securitySettings()
 	return lockoutPolicy{
-		MaxAttempts: a.cfg.LoginMaxAttempts,
-		Window:      a.cfg.LoginWindow,
-		Cooldown:    a.cfg.LoginLockout,
+		MaxAttempts: s.LoginMaxAttempts,
+		Window:      s.LoginWindow,
+		Cooldown:    s.LoginLockout,
 	}
 }
 

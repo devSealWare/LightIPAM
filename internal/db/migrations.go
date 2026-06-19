@@ -358,6 +358,20 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS client_ip text NOT NULL DEFAULT ''
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent text NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 13,
+		sql: `
+-- Runtime-editable application settings (key/value). Phase 5 stores the auth +
+-- session knobs here so an admin can tune lockout/timeout policy and the "log out
+-- everywhere" behavior from the Settings page; an unset key falls back to the
+-- env-provided boot default in config.
+CREATE TABLE IF NOT EXISTS app_settings (
+	key text PRIMARY KEY,
+	value text NOT NULL,
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

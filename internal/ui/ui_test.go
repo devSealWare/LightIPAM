@@ -235,6 +235,13 @@ func TestRenderTemplates(t *testing.T) {
 			"subject":      "Office LAN",
 			"cancel":       "/",
 			"confirm_text": "Confirm",
+			// Security tab (settings.html) pre-fill.
+			"login_max_attempts":     "5",
+			"login_window_minutes":   "15",
+			"login_lockout_minutes":  "15",
+			"session_idle_minutes":   "30",
+			"session_absolute_hours": "12",
+			"logout_keeps_current":   "on",
 		},
 		Sessions: []store.Session{{
 			ID:         "session-1",
@@ -245,6 +252,7 @@ func TestRenderTemplates(t *testing.T) {
 			LastSeenAt: time.Now(),
 		}},
 		CurrentSessionID: "session-1",
+		ActiveTab:        "security",
 		SearchQuery:      "192.168",
 		SearchResults: store.SearchResults{
 			Query:     "192.168",
@@ -267,7 +275,7 @@ func TestRenderTemplates(t *testing.T) {
 		"device_form.html",
 		"device_detail.html",
 		"audit.html",
-		"security.html",
+		"settings.html",
 		"address_form.html",
 		"confirm.html",
 		"scans.html",

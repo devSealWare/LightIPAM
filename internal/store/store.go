@@ -196,6 +196,17 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID string) (int64, e
 	return tag.RowsAffected(), nil
 }
 
+// DeleteOtherUserSessions removes a user's sessions except the one given ("log
+// out everywhere" while keeping the current device signed in), returning how
+// many were revoked.
+func (s *Store) DeleteOtherUserSessions(ctx context.Context, userID, exceptID string) (int64, error) {
+	tag, err := s.db.Exec(ctx, "DELETE FROM sessions WHERE user_id = $1 AND id <> $2", userID, exceptID)
+	if err != nil {
+		return 0, fmt.Errorf("delete other user sessions: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Ping verifies the database connection for the readiness probe.
 func (s *Store) Ping(ctx context.Context) error {
 	if err := s.db.Ping(ctx); err != nil {
