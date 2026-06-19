@@ -23,10 +23,14 @@ type User struct {
 }
 
 type Session struct {
-	ID        string
-	User      User
-	CSRFToken string
-	ExpiresAt time.Time
+	ID         string
+	User       User
+	CSRFToken  string
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ClientIP   string
+	UserAgent  string
 }
 
 func New(db *pgxpool.Pool) *Store {
@@ -75,7 +79,7 @@ WHERE username = $1`, username).Scan(&user.ID, &user.Username, &user.DisplayName
 	return user, nil
 }
 
-func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time.Time) (Session, error) {
+func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time.Time, clientIP, userAgent string) (Session, error) {
 	id, err := auth.RandomToken(32)
 	if err != nil {
 		return Session{}, err
@@ -84,24 +88,50 @@ func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time
 	if err != nil {
 		return Session{}, err
 	}
-	if _, err := s.db.Exec(ctx, `
-INSERT INTO sessions (id, user_id, csrf_token, expires_at)
-VALUES ($1, $2, $3, $4)`, id, userID, csrf, expiresAt); err != nil {
-		return Session{}, fmt.Errorf("create session: %w", err)
-	}
-	return Session{ID: id, CSRFToken: csrf, ExpiresAt: expiresAt}, nil
-}
-
-func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, error) {
 	var session Session
 	if err := s.db.QueryRow(ctx, `
-SELECT s.id, s.csrf_token, s.expires_at, u.id, u.username, u.display_name, u.password_hash, u.is_admin
-FROM sessions s
-JOIN users u ON u.id = s.user_id
-WHERE s.id = $1 AND s.expires_at > now()`, sessionID).Scan(
+INSERT INTO sessions (id, user_id, csrf_token, expires_at, client_ip, user_agent)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, csrf_token, expires_at, created_at, last_seen_at, client_ip, user_agent`,
+		id, userID, csrf, expiresAt, clientIP, userAgent).Scan(
 		&session.ID,
 		&session.CSRFToken,
 		&session.ExpiresAt,
+		&session.CreatedAt,
+		&session.LastSeenAt,
+		&session.ClientIP,
+		&session.UserAgent,
+	); err != nil {
+		return Session{}, fmt.Errorf("create session: %w", err)
+	}
+	return session, nil
+}
+
+// GetSession loads a live session and refreshes its last_seen_at in one atomic
+// statement. A session is live only when it has not passed its absolute expiry
+// (expires_at) and has been touched since idleCutoff; both checks see the
+// pre-update row, so the refresh slides the idle window forward on each request.
+// A zero idleCutoff disables the idle check.
+func (s *Store) GetSession(ctx context.Context, sessionID string, idleCutoff time.Time) (Session, error) {
+	var session Session
+	if err := s.db.QueryRow(ctx, `
+WITH touched AS (
+	UPDATE sessions
+	SET last_seen_at = now()
+	WHERE id = $1 AND expires_at > now() AND last_seen_at > $2
+	RETURNING id, user_id, csrf_token, expires_at, created_at, last_seen_at, client_ip, user_agent
+)
+SELECT t.id, t.csrf_token, t.expires_at, t.created_at, t.last_seen_at, t.client_ip, t.user_agent,
+       u.id, u.username, u.display_name, u.password_hash, u.is_admin
+FROM touched t
+JOIN users u ON u.id = t.user_id`, sessionID, idleCutoff).Scan(
+		&session.ID,
+		&session.CSRFToken,
+		&session.ExpiresAt,
+		&session.CreatedAt,
+		&session.LastSeenAt,
+		&session.ClientIP,
+		&session.UserAgent,
 		&session.User.ID,
 		&session.User.Username,
 		&session.User.DisplayName,
@@ -121,6 +151,78 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	return nil
+}
+
+// ListUserSessions returns a user's live sessions (not expired, touched since
+// idleCutoff) most-recently-active first, for the account security page. A zero
+// idleCutoff lists all unexpired sessions.
+func (s *Store) ListUserSessions(ctx context.Context, userID string, idleCutoff time.Time) ([]Session, error) {
+	rows, err := s.db.Query(ctx, `
+SELECT id, csrf_token, expires_at, created_at, last_seen_at, client_ip, user_agent
+FROM sessions
+WHERE user_id = $1 AND expires_at > now() AND last_seen_at > $2
+ORDER BY last_seen_at DESC`, userID, idleCutoff)
+	if err != nil {
+		return nil, fmt.Errorf("list user sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []Session
+	for rows.Next() {
+		var session Session
+		if err := rows.Scan(
+			&session.ID,
+			&session.CSRFToken,
+			&session.ExpiresAt,
+			&session.CreatedAt,
+			&session.LastSeenAt,
+			&session.ClientIP,
+			&session.UserAgent,
+		); err != nil {
+			return nil, fmt.Errorf("scan user session: %w", err)
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, rows.Err()
+}
+
+// DeleteUserSessions removes every session for a user ("log out everywhere"),
+// returning how many were revoked.
+func (s *Store) DeleteUserSessions(ctx context.Context, userID string) (int64, error) {
+	tag, err := s.db.Exec(ctx, "DELETE FROM sessions WHERE user_id = $1", userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete user sessions: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// DeleteOtherUserSessions removes a user's sessions except the one given ("log
+// out everywhere" while keeping the current device signed in), returning how
+// many were revoked.
+func (s *Store) DeleteOtherUserSessions(ctx context.Context, userID, exceptID string) (int64, error) {
+	tag, err := s.db.Exec(ctx, "DELETE FROM sessions WHERE user_id = $1 AND id <> $2", userID, exceptID)
+	if err != nil {
+		return 0, fmt.Errorf("delete other user sessions: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// Ping verifies the database connection for the readiness probe.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.db.Ping(ctx); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+	return nil
+}
+
+// MigrationVersion reports the highest applied schema migration, 0 when none
+// have run, for the readiness probe.
+func (s *Store) MigrationVersion(ctx context.Context) (int, error) {
+	var version int
+	if err := s.db.QueryRow(ctx, "SELECT COALESCE(max(version), 0) FROM schema_migrations").Scan(&version); err != nil {
+		return 0, fmt.Errorf("migration version: %w", err)
+	}
+	return version, nil
 }
 
 func (s *Store) CreateAuditLog(ctx context.Context, actorUserID *string, action, subjectType, subjectID, metadata string) error {

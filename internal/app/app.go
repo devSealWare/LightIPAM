@@ -1,11 +1,16 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -34,6 +39,11 @@ type App struct {
 	store  *store.Store
 	logger *slog.Logger
 	scans  *orchestrator.Service
+
+	// settings is the active auth/session policy (env defaults overlaid with any
+	// admin overrides from app_settings), cached and refreshed on update.
+	settingsMu sync.RWMutex
+	settings   SecuritySettings
 }
 
 func New(options Options) http.Handler {
@@ -43,9 +53,11 @@ func New(options Options) http.Handler {
 		logger: options.Logger,
 		scans:  options.Scans,
 	}
+	app.loadSettings(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
+	mux.HandleFunc("GET /readyz", app.ready)
 	mux.HandleFunc("GET /static/app.css", ui.StaticCSS)
 	mux.HandleFunc("GET /static/columns.js", ui.StaticJS)
 	mux.HandleFunc("GET /static/scan_form.js", ui.ScanFormJS)
@@ -57,6 +69,10 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
 	mux.HandleFunc("POST /logout", app.logout)
+	mux.HandleFunc("GET /settings", app.settingsIndex)
+	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
+	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
+	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
@@ -127,6 +143,28 @@ func New(options Options) http.Handler {
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok","service":"light-ipam"}`))
+}
+
+// ready is the readiness probe: unlike /healthz (liveness), it confirms the
+// database is reachable and reports the applied schema-migration version, so an
+// orchestrator only routes traffic once the app can actually serve it. It
+// returns 503 when the database cannot be reached.
+func (a *App) ready(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := a.store.Ping(r.Context()); err != nil {
+		a.logger.Error("readiness: database unreachable", "error", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"unavailable","database":"down"}`))
+		return
+	}
+	version, err := a.store.MigrationVersion(r.Context())
+	if err != nil {
+		a.logger.Error("readiness: migration version", "error", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"unavailable","database":"up"}`))
+		return
+	}
+	_, _ = fmt.Fprintf(w, `{"status":"ready","database":"up","migration":%d}`, version)
 }
 
 func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -834,22 +872,70 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
-	user, err := a.store.FindUserByUsername(r.Context(), username)
-	if err != nil || !auth.VerifyPassword(user.PasswordHash, password) {
-		_ = ui.Render(w, "login.html", ui.PageData{
-			Title: "Sign In",
-			Error: "The username or password is incorrect.",
-			CSRF:  r.FormValue("csrf_token"),
+	ip := clientIP(r)
+	now := time.Now()
+
+	// Throttle first: if this username or IP is already locked out, reject
+	// without touching the password path so a locked attacker cannot keep the
+	// Argon2 cost or the audit trail busy.
+	policy := a.lockoutPolicy()
+	stats, err := a.store.RecentLoginFailures(r.Context(), username, ip, now.Add(-policy.Window))
+	if err != nil {
+		a.logger.Error("recent login failures", "error", err)
+	}
+	if decision := evaluateLockout(policy, stats, now); decision.Locked {
+		a.auditMeta(r, nil, "auth.login.locked", "user", username, map[string]string{
+			"ip":          ip,
+			"retry_after": decision.RetryAfter.Round(time.Second).String(),
 		})
+		a.renderLoginThrottled(w, r)
 		return
 	}
 
+	user, findErr := a.store.FindUserByUsername(r.Context(), username)
+	if findErr != nil {
+		// Equalize timing with the wrong-password path so the response does not
+		// reveal whether the username exists.
+		auth.VerifyDecoy(password)
+	}
+	if findErr != nil || !auth.VerifyPassword(user.PasswordHash, password) {
+		if recErr := a.store.RecordLoginFailure(r.Context(), username, ip); recErr != nil {
+			a.logger.Error("record login failure", "error", recErr)
+		}
+		var actor *string
+		if findErr == nil {
+			actor = &user.ID
+		}
+		a.auditMeta(r, actor, "auth.login.failed", "user", username, map[string]string{"ip": ip})
+		a.renderLoginError(w, r, "The username or password is incorrect.")
+		return
+	}
+
+	if err := a.store.ClearLoginFailures(r.Context(), username); err != nil {
+		a.logger.Error("clear login failures", "error", err)
+	}
 	if err := a.store.CreateAuditLog(r.Context(), &user.ID, "auth.login", "user", user.ID, "{}"); err != nil {
 		a.logger.Error("create audit log", "error", err)
 	}
 
 	a.establishSession(w, r, user.ID)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (a *App) renderLoginError(w http.ResponseWriter, r *http.Request, message string) {
+	_ = ui.Render(w, "login.html", ui.PageData{
+		Title: "Sign In",
+		Error: message,
+		CSRF:  r.FormValue("csrf_token"),
+	})
+}
+
+func (a *App) renderLoginThrottled(w http.ResponseWriter, r *http.Request) {
+	// Set the content type before the status so the body still renders as HTML
+	// under the nosniff response header; Render's own header set is then a no-op.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusTooManyRequests)
+	a.renderLoginError(w, r, "Too many failed attempts. Please try again later.")
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {
@@ -861,6 +947,126 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 		if err := a.store.CreateAuditLog(r.Context(), &session.User.ID, "auth.logout", "user", session.User.ID, "{}"); err != nil {
 			a.logger.Error("create audit log", "error", err)
 		}
+	}
+	a.clearSessionCookie(w)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (a *App) settingsIndex(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireSession(w, r); !ok {
+		return
+	}
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	a.renderSecurityTab(w, r, session, a.securitySettings().formValues(), "", securityNotice(r))
+}
+
+func (a *App) settingsSecurityUpdate(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	settings, err := parseSecuritySettingsForm(r.PostForm)
+	if err != nil {
+		a.renderSecurityTab(w, r, session, submittedSecurityForm(r.PostForm), err.Error(), "")
+		return
+	}
+	if err := a.store.SetAppSettings(r.Context(), settings.toMap()); err != nil {
+		a.logger.Error("save app settings", "error", err)
+		a.renderSecurityTab(w, r, session, submittedSecurityForm(r.PostForm), "Unable to save settings. Please try again.", "")
+		return
+	}
+	a.setSettings(settings)
+	a.auditMeta(r, &session.User.ID, "settings.security.updated", "settings", "security", settings.toMap())
+	http.Redirect(w, r, "/settings/security?notice=saved", http.StatusSeeOther)
+}
+
+// renderSecurityTab renders the Settings page on its Security tab: the policy
+// form (pre-filled from form) plus the user's active sessions.
+func (a *App) renderSecurityTab(w http.ResponseWriter, r *http.Request, session store.Session, form map[string]string, errMsg, notice string) {
+	sessions, err := a.store.ListUserSessions(r.Context(), session.User.ID, a.idleCutoff())
+	if err != nil {
+		a.logger.Error("list user sessions", "error", err)
+		http.Error(w, "Unable to load sessions", http.StatusInternalServerError)
+		return
+	}
+	_ = ui.Render(w, "settings.html", ui.PageData{
+		Title:            "Settings",
+		User:             session.User,
+		CSRF:             session.CSRFToken,
+		Error:            errMsg,
+		SuccessMessage:   notice,
+		Sessions:         sessions,
+		CurrentSessionID: session.ID,
+		Form:             form,
+		ActiveNav:        "settings",
+		ActiveTab:        "security",
+	})
+}
+
+// securityNotice maps the post-redirect ?notice marker to a banner message.
+func securityNotice(r *http.Request) string {
+	switch r.URL.Query().Get("notice") {
+	case "saved":
+		return "Security settings saved."
+	case "revoked":
+		return "Signed out your other sessions."
+	default:
+		return ""
+	}
+}
+
+// logoutEverywhere is the "log out everywhere" control on the Security tab. When
+// the policy keeps the current device signed in it revokes only the user's other
+// sessions and returns to the tab; otherwise it revokes every session including
+// this one and redirects to the login page. CSRF-protected and audited.
+func (a *App) logoutEverywhere(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	keepCurrent := a.securitySettings().LogoutEverywhereKeepsCurrent
+	var revoked int64
+	var err error
+	if keepCurrent {
+		revoked, err = a.store.DeleteOtherUserSessions(r.Context(), session.User.ID, session.ID)
+	} else {
+		revoked, err = a.store.DeleteUserSessions(r.Context(), session.User.ID)
+	}
+	if err != nil {
+		a.logger.Error("revoke sessions", "error", err)
+		http.Error(w, "Unable to revoke sessions", http.StatusInternalServerError)
+		return
+	}
+	scope := "all"
+	if keepCurrent {
+		scope = "others"
+	}
+	a.auditMeta(r, &session.User.ID, "session.revoked_all", "user", session.User.ID, map[string]string{
+		"revoked": strconv.FormatInt(revoked, 10),
+		"scope":   scope,
+	})
+	if keepCurrent {
+		http.Redirect(w, r, "/settings/security?notice=revoked", http.StatusSeeOther)
+		return
 	}
 	a.clearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -889,7 +1095,7 @@ func (a *App) currentSession(r *http.Request) (store.Session, bool) {
 	if err != nil || cookie.Value == "" {
 		return store.Session{}, false
 	}
-	session, err := a.store.GetSession(r.Context(), cookie.Value)
+	session, err := a.store.GetSession(r.Context(), cookie.Value, a.idleCutoff())
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			a.logger.Error("get session", "error", err)
@@ -900,8 +1106,8 @@ func (a *App) currentSession(r *http.Request) (store.Session, bool) {
 }
 
 func (a *App) establishSession(w http.ResponseWriter, r *http.Request, userID string) {
-	expiresAt := time.Now().Add(12 * time.Hour)
-	session, err := a.store.CreateSession(r.Context(), userID, expiresAt)
+	expiresAt := time.Now().Add(a.securitySettings().SessionAbsoluteTimeout)
+	session, err := a.store.CreateSession(r.Context(), userID, expiresAt, clientIP(r), userAgent(r))
 	if err != nil {
 		a.logger.Error("create session", "error", err)
 		return
@@ -915,6 +1121,25 @@ func (a *App) establishSession(w http.ResponseWriter, r *http.Request, userID st
 		Secure:   a.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// idleCutoff is the oldest last_seen_at a session may have and still be live. A
+// non-positive idle timeout disables the idle check by returning the zero time.
+func (a *App) idleCutoff() time.Time {
+	idle := a.securitySettings().SessionIdleTimeout
+	if idle <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(-idle)
+}
+
+func (a *App) lockoutPolicy() lockoutPolicy {
+	s := a.securitySettings()
+	return lockoutPolicy{
+		MaxAttempts: s.LoginMaxAttempts,
+		Window:      s.LoginWindow,
+		Cooldown:    s.LoginLockout,
+	}
 }
 
 func (a *App) setCSRFCookie(w http.ResponseWriter, token string) {
@@ -1139,6 +1364,40 @@ func (a *App) audit(r *http.Request, actorUserID *string, action, subjectType, s
 	if err := a.store.CreateAuditLog(r.Context(), actorUserID, action, subjectType, subjectID, "{}"); err != nil {
 		a.logger.Error("create audit log", "error", err, "action", action)
 	}
+}
+
+// auditMeta writes an audit entry with structured metadata (e.g. the client IP
+// of a failed login). Marshaling a string map cannot fail, but a malformed
+// result falls back to an empty object so an audit is never dropped.
+func (a *App) auditMeta(r *http.Request, actorUserID *string, action, subjectType, subjectID string, meta map[string]string) {
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		encoded = []byte("{}")
+	}
+	if err := a.store.CreateAuditLog(r.Context(), actorUserID, action, subjectType, subjectID, string(encoded)); err != nil {
+		a.logger.Error("create audit log", "error", err, "action", action)
+	}
+}
+
+// clientIP is the TCP peer address (host without port). It is deliberately the
+// real connection source, not a spoofable X-Forwarded-For header, so the
+// IP-keyed login throttle cannot be bypassed by forging that header. Behind a
+// trusted reverse proxy, terminate it so RemoteAddr reflects the real client.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return host
+}
+
+// userAgent returns a bounded User-Agent string for session display.
+func userAgent(r *http.Request) string {
+	ua := strings.TrimSpace(r.UserAgent())
+	if len(ua) > 255 {
+		ua = ua[:255]
+	}
+	return ua
 }
 
 func subnetInputFromRequest(r *http.Request) (store.SubnetInput, map[string]string, error) {

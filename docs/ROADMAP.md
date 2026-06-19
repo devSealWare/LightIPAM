@@ -129,8 +129,54 @@ the agent.
   leaves room for this (`docs/MVP.md`).
 - **Roles beyond the single admin** — at minimum admin vs. read-only operator, so a
   viewer cannot mutate IPAM or scan config.
-- **Session hardening** — configurable idle/absolute timeouts, "log out everywhere,"
-  and login rate-limiting / lockout.
+- **Session hardening (done, ADR 0017).** Idle **and** absolute session timeouts,
+  per-session client IP + User-Agent capture, a tabbed **Settings page** (Security
+  tab) listing active sessions with a "log out everywhere" control, and login
+  throttling / account lockout (`login_attempts`, migration 12) keyed by username and
+  client IP with a pure, unit-tested lock decision. All of this policy — lockout
+  thresholds, session timeouts, and whether "log out everywhere" keeps the current
+  device — is **editable at runtime** from the Settings page (persisted in
+  `app_settings`, migration 13; env provides the boot defaults). The
+  username-enumeration timing oracle in the login handler is closed with a decoy
+  Argon2 verify. New auth audit events (`auth.login.failed`, `auth.login.locked`,
+  `session.revoked_all`, `settings.security.updated`).
+
+### Configurability & the settings panel
+
+Light IPAM should be **highly configurable from the UI**, not just from environment
+variables. The tabbed **Settings** page introduced with session hardening (ADR 0017)
+is the home for that, backed by the runtime `app_settings` store (env values seed the
+boot defaults). The **Security** tab is done; the rest below are planned. Each
+runtime-tunable tab follows the same pattern — a pure, unit-tested form validator,
+values cached and refreshed on save, and an audited `settings.<tab>.updated` event.
+The full design, the per-tab field list, and the **agent-secret boundary** (SNMP
+communities, nmap egress pinning, DHCP lease paths, and the agent allowlist stay on
+the agent, never in the app DB or this panel) live in **`docs/SETTINGS.md`**.
+
+Planned tabs (sequenced with the phases that unlock them):
+
+- **Security** — login lockout, session timeouts, "log out everywhere" behavior,
+  active-session review. **Done** (ADR 0017). Future fields: password policy,
+  secure-cookie enforcement, MFA/OIDC toggles.
+- **General** — instance name, default site, table page size, date/time format,
+  default theme.
+- **Users & Roles** — manage accounts and admin vs. read-only operator (this phase's
+  "roles beyond the single admin" item).
+- **Authentication** — OIDC SSO and MFA (TOTP) configuration (this phase's SSO/MFA
+  items); the OIDC client secret is sealed (encrypted at rest).
+- **Scanning (nmap)** — app-side scan **dispatch defaults**: default scan type/mode,
+  per-type timeouts, optional nmap rate/timing cap, default targets/allowlist, and the
+  scheduler tick. Agent-local nmap/SNMP/DHCP credentials and raw-socket config stay on
+  the agent.
+- **Discovery** — auto-import policy, reconciliation/conflict handling, and
+  review-queue + last-seen retention.
+- **Agents** — enrollment defaults and managed certificate issuance/rotation (this
+  phase's cert-lifecycle item); the `/agents` page exists today.
+- **Backup & Restore** — trigger/schedule `pg_dump`, run a tested restore, capture the
+  migration version (this phase's backup/restore item).
+- **Notifications** — change webhooks and alert thresholds (Phase 6).
+- **Data & Audit** — audit-log retention/export and the CSV / NetBox import-export
+  entry points (CSV import/export already exists).
 
 ### Secrets & certificates
 
@@ -147,8 +193,10 @@ the agent.
 - **Backup & restore** — a documented `pg_dump`/`pg_restore` flow plus an
   app/CLI-triggered backup and a tested restore path; capture the schema-migration
   version with each backup.
-- **Readiness/health depth** — extend `/healthz` (or add `/readyz`) to report DB
-  reachability, applied-migration status, and agent reachability for orchestration.
+- **Readiness/health depth (done, ADR 0017).** `/healthz` stays the liveness probe;
+  `/readyz` is added to ping the DB and report the applied-migration version (503 when
+  the DB is unreachable), and the app compose service health-checks it. Agent
+  reachability in the probe remains a future enhancement.
 - **Disaster-recovery runbook** covering compose, volumes, and certificates.
 
 ### Multi-tenancy (only if needed)

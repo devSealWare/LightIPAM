@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -71,6 +72,30 @@ func VerifyPassword(encoded, password string) bool {
 
 	actual := argon2.IDKey([]byte(password), salt, uint32(iterations), uint32(memory), uint8(parallelism), uint32(len(expected)))
 	return subtle.ConstantTimeCompare(actual, expected) == 1
+}
+
+// decoyHash is a real argon2id hash, computed once with the standard
+// parameters, used to equalize login timing. It is derived from a random
+// password so it never matches a user's input.
+var decoyHash = sync.OnceValue(func() string {
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	hash, err := HashPassword(base64.RawStdEncoding.EncodeToString(secret))
+	if err != nil {
+		// HashPassword only fails if the system CSPRNG is unavailable, which is
+		// already fatal for session/token issuance; fall back to a constant so a
+		// decoy verify still performs the Argon2 work.
+		return "argon2id$v=19$m=65536,t=3,p=4$YWJjZGVmZ2hpamtsbW5vcA$ZGVjb3lkZWNveWRlY295ZGVjb3lkZWNveWRlY295ZGU"
+	}
+	return hash
+})
+
+// VerifyDecoy performs a password verification against a fixed decoy hash and
+// discards the result. Call it on the user-not-found path so that path does the
+// same Argon2 work as a wrong-password check, removing the timing oracle that
+// would otherwise reveal whether a username exists.
+func VerifyDecoy(password string) {
+	_ = VerifyPassword(decoyHash(), password)
 }
 
 func parseParam(value, key string) (int, error) {
