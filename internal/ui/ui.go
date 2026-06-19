@@ -75,6 +75,12 @@ type PageData struct {
 	BackupDir      string
 	BackupEnabled  bool
 	BackupWritable bool
+
+	// Certificates (settings tab)
+	CAReady         bool
+	CAFingerprint   string
+	CAExpiry        time.Time
+	LeafDefaultDays int
 	Form              map[string]string
 	ActiveNav         string
 	ActiveTab         string

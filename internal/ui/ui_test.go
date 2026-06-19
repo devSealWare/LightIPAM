@@ -380,6 +380,31 @@ func TestSettingsUsersTabRenders(t *testing.T) {
 	}
 }
 
+// TestSettingsCertsTabRenders guards the Agent certificates settings tab.
+func TestSettingsCertsTabRenders(t *testing.T) {
+	data := PageData{
+		User:            store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:            "token",
+		ActiveTab:       "certificates",
+		CAReady:         true,
+		CAFingerprint:   "AA:BB:CC",
+		CAExpiry:        time.Now().Add(24 * time.Hour),
+		LeafDefaultDays: 30,
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		"AA:BB:CC",
+		`action="/settings/certificates/agent"`,
+		`action="/settings/certificates/app"`,
+		`action="/settings/certificates/rotate-ca"`,
+		`href="/settings/certificates/ca.crt"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("certificates tab missing %q", want)
+		}
+	}
+}
+
 // TestSettingsBackupTabRenders guards the Backup & Restore settings tab.
 func TestSettingsBackupTabRenders(t *testing.T) {
 	data := PageData{

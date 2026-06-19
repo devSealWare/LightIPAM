@@ -18,6 +18,7 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/config"
 	"github.com/devSealWare/LightIPAM/internal/ipam"
 	"github.com/devSealWare/LightIPAM/internal/scanner/orchestrator"
+	"github.com/devSealWare/LightIPAM/internal/scanner/pki"
 	"github.com/devSealWare/LightIPAM/internal/secret"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
@@ -52,6 +53,11 @@ type App struct {
 	settings     SecuritySettings
 	oidc         OIDCSettings
 	oidcProvider *oidcProvider
+
+	// ca is the app-managed certificate authority for agent/app mTLS leaves,
+	// loaded (or generated) on boot.
+	caMu sync.RWMutex
+	ca   *pki.CA
 }
 
 func New(options Options) http.Handler {
@@ -69,6 +75,7 @@ func New(options Options) http.Handler {
 	app.sealer = sealer
 	app.backups = backup.New(options.Config.BackupDir, options.Config.DatabaseURL)
 	app.loadSettings(context.Background())
+	app.ensureCA(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
@@ -102,6 +109,11 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
 	mux.HandleFunc("GET /settings/authentication", app.settingsAuthentication)
 	mux.HandleFunc("POST /settings/authentication", app.settingsAuthenticationUpdate)
+	mux.HandleFunc("GET /settings/certificates", app.settingsCertificates)
+	mux.HandleFunc("POST /settings/certificates/agent", app.certIssueAgent)
+	mux.HandleFunc("POST /settings/certificates/app", app.certIssueApp)
+	mux.HandleFunc("POST /settings/certificates/rotate-ca", app.certRotateCA)
+	mux.HandleFunc("GET /settings/certificates/ca.crt", app.certDownloadCA)
 	mux.HandleFunc("GET /settings/backup", app.settingsBackup)
 	mux.HandleFunc("POST /settings/backup/create", app.backupCreate)
 	mux.HandleFunc("GET /settings/backup/{name}/download", app.backupDownload)

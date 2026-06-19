@@ -419,6 +419,22 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject text;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_subject ON users (oidc_subject) WHERE oidc_subject IS NOT NULL;
 `,
 	},
+	{
+		version: 17,
+		sql: `
+-- Phase 5 managed agent-certificate CA. A single app-owned CA (private key
+-- sealed at rest with the app encryption key) signs short-lived agent/app mTLS
+-- leaf certificates, replacing the hand-run dev CA. Rotating leaves keeps this
+-- CA stable so existing trust holds.
+CREATE TABLE IF NOT EXISTS app_ca (
+	id integer PRIMARY KEY DEFAULT 1,
+	cert_pem text NOT NULL,
+	key_sealed text NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	CONSTRAINT app_ca_singleton CHECK (id = 1)
+);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
