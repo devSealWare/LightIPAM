@@ -11,6 +11,7 @@
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "authentication" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/authentication">Authentication</a>
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "certificates" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/certificates">Agent certificates</a>
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "backup" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/backup">Backup &amp; Restore</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "customfields" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/custom-fields">Custom fields</a>
       </nav>
     </header>
 
@@ -365,6 +366,57 @@
       {{ end }}
     </section>
     {{ end }}
+    {{ end }}
+
+    {{ if eq .ActiveTab "customfields" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Add a custom field</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Define extra text attributes to record on subnets, addresses, and devices. They appear on each record's form and detail page.</p>
+      <form method="post" action="/settings/custom-fields" class="mt-5 grid gap-4 sm:grid-cols-[200px_1fr_auto]">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Applies to</span>
+          <select class="form-input" name="entity_type">
+            <option value="device" {{ if eq (index .Form "entity_type") "device" }}selected{{ end }}>Device</option>
+            <option value="subnet" {{ if eq (index .Form "entity_type") "subnet" }}selected{{ end }}>Subnet</option>
+            <option value="ip_address" {{ if eq (index .Form "entity_type") "ip_address" }}selected{{ end }}>Address</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Field name</span>
+          <input class="form-input" type="text" name="name" autocomplete="off" placeholder="e.g. Owner, Asset tag, Location" value="{{ index .Form "name" }}" required>
+        </label>
+        <div class="flex items-end">
+          <button class="button-primary" type="submit">Add field</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Defined fields</h2>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Deleting a field also removes every value stored for it.</p>
+      </div>
+      {{ if .CustomFieldDefs }}
+      <div class="grid grid-cols-[1fr_1fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Field</span><span>Applies to</span><span class="text-right">Actions</span>
+      </div>
+      {{ range .CustomFieldDefs }}
+      <div class="grid grid-cols-[1fr_1fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="font-medium text-zinc-900 dark:text-white">{{ .Name }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ entityTypeLabel .EntityType }}</span>
+        <span class="flex items-center justify-end">
+          <a class="inline-flex h-10 items-center justify-center rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" href="/settings/custom-fields/{{ .ID }}/delete">Delete</a>
+        </span>
+      </div>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h3 class="text-lg font-semibold text-zinc-950 dark:text-white">No custom fields yet</h3>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Add one above to start recording extra attributes on your records.</p>
+      </div>
+      {{ end }}
+    </section>
     {{ end }}
   </div>
 {{ end }}

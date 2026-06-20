@@ -82,6 +82,12 @@ type PageData struct {
 	CAExpiry        time.Time
 	LeafDefaultDays int
 
+	// Custom fields. CustomFields carries an entity's fields + values for the
+	// entity forms and detail pages; CustomFieldDefs lists every definition for
+	// the Settings management tab.
+	CustomFields    []store.CustomFieldValue
+	CustomFieldDefs []store.CustomFieldDef
+
 	Form           map[string]string
 	ActiveNav      string
 	ActiveTab      string
@@ -114,7 +120,8 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 			}
 			return strings.Split(value, sep)
 		},
-		"optionLabel": optionLabel,
+		"optionLabel":     optionLabel,
+		"entityTypeLabel": entityTypeLabel,
 		"sub": func(a, b int) int {
 			return a - b
 		},
@@ -199,6 +206,21 @@ func optionLabel(value string) string {
 		return "LLDP/CDP neighbors (SNMP)"
 	default:
 		return value
+	}
+}
+
+// entityTypeLabel renders a custom-field entity type as a friendly singular
+// noun for the management UI. Unknown values fall back to the raw string.
+func entityTypeLabel(entityType string) string {
+	switch entityType {
+	case store.CustomFieldSubnet:
+		return "Subnet"
+	case store.CustomFieldAddress:
+		return "Address"
+	case store.CustomFieldDevice:
+		return "Device"
+	default:
+		return entityType
 	}
 }
 

@@ -3,8 +3,9 @@
 Light IPAM aims to be highly configurable from the UI, not just from environment
 variables. The **Settings** page (sidebar → System → **Settings**) is the home for
 that configuration: a tabbed panel where an operator tunes how the product behaves.
-Today it ships the **Security** tab; the remaining tabs below are planned and tracked
-here and in `docs/ROADMAP.md`.
+Today it ships the **Security**, **Users & Roles**, **Authentication**, **Agent
+certificates**, **Backup & Restore**, and **Custom fields** tabs; the remaining tabs
+below are planned and tracked here and in `docs/ROADMAP.md`.
 
 ## How settings work
 
@@ -58,6 +59,7 @@ elevated scanner agent:
 | **Authentication** | OIDC SSO (issuer, client id; **client secret sealed at rest**), auto-provision policy, username claim. MFA (TOTP) enrollment + recovery codes live on the per-user **Account** page. | App (secrets encrypted at rest) | **Done** (ADR 0018) |
 | **Agent certificates** | Managed CA status (fingerprint/expiry), issue downloadable agent/app mTLS bundles (CN/SANs/TTL), download the CA, and rotate the CA. Replaces the dev CA; agents hot-reload rotated certs. | App (mTLS/cert lifecycle) | **Done** (ADR 0018) |
 | **Backup & Restore** | On-demand `pg_dump` (custom format) capturing the schema-migration version; list/download/delete; documented + scripted restore. | App | **Done** (ADR 0018) |
+| **Custom fields** | Define operator-managed text attributes per entity type (subnet/address/device); values are edited on each record's form and shown on its detail page. Unique per type; delete cascades to stored values. | App | **Done** (ADR 0019) |
 | **General** | Instance/display name, default site, table page size, date/time format, default theme (light/dark). | App | Planned |
 | **Scanning (nmap)** | App-side scan **dispatch defaults**: default scan type (Combined) and nmap depth mode (Light/Standard/Deep), per-type timeout defaults, optional rate/timing cap passed to nmap, default targets/allowlist hints, and the scheduler tick. **Agent-local** nmap/SNMP/DHCP credentials and raw-socket config stay on the agent. | App (dispatch defaults only) | Planned |
 | **Discovery** | Auto-import policy for trusted agents, reconciliation/conflict handling, and review-queue + last-seen retention/aging (when to mark a record stale). | App | Planned |
