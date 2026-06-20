@@ -57,6 +57,17 @@ The app has:
   hot-reloads them). Settings grew Users & Roles, Authentication, Agent certificates,
   and Backup & Restore tabs; a per-user `/account` page handles MFA + password +
   session review (Phase 5, ADR 0018). **Phase 5 exit criteria met — ready for Phase 6.**
+- **Policy / Health checks** (Phase 6 slice (a), ADR 0020) — a read-only `/policy`
+  view (sidebar under System, visible to viewers) that runs hygiene checks on demand:
+  overlapping subnets (an invariant verifier — create/import already block overlaps),
+  stale managed addresses/devices not seen within a configurable threshold (device
+  staleness derived from linked addresses' `last_seen_at`, so **no migration**), and
+  unmanaged/conflicting discovered services (reusing the `scan_discoveries` reconcile
+  classification). Findings are grouped by severity and link to the offending record; a
+  dashboard count widget links to `/policy`; a runtime-editable **Policy** Settings tab
+  (admin-only) enables/disables each check + sets the stale threshold + include-never-
+  seen, via the `app_settings` pattern (`settings.policy.updated` audit). App-side only,
+  no new privilege, no client JS. See the "Policy / Health checks" section below.
 
 ## Current Implementation Style
 
@@ -73,7 +84,14 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-None in progress. A full Phase 1–5 audit (2026-06-19) confirmed the repo is ready
+None in progress. **Phase 6 (Advanced Automation) has started**: slice (a) **Policy /
+Health checks** is built (ADR 0020) — see the Current State bullet and the "Policy /
+Health checks" section below. The recommended remaining Phase 6 order is (b) scheduled
+scan windows → (c) change webhooks → (d) NetBox import/export → (e) Terraform
+provider/CLI (last; it depends on a stable authenticated API + roles — confirm before
+starting).
+
+A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
 ordered, all 10 scan types wired end-to-end, and the Phase 5 security code (secret
 sealing, TOTP, OIDC PKCE, managed CA, backups, lockout, roles + last-admin guards)
@@ -361,6 +379,36 @@ the strict CSP is unchanged.
   `RemoteAddr` (not spoofable `X-Forwarded-For`); behind a proxy, terminate it so
   `RemoteAddr` is the client. See ADR 0017.
 
+## Policy / Health checks (merged, Phase 6, ADR 0020)
+
+The first Phase 6 slice and the recommended starting point: a read-only **Policy /
+Health** view that flags data-hygiene problems on demand. Fully app-side — no new
+privilege, no scanner surface, **no client JS**, **no migration** (it reuses
+`subnets`, `ip_addresses`, `scan_discoveries`, and the `app_settings` store).
+
+- **Three checks**, in `internal/app/policy.go` as **pure, unit-tested** functions over
+  plain store snapshots (mirroring `evaluateLockout` / `parseBulkRequest`):
+  `evaluateOverlaps` (pairwise CIDR overlap/containment — critical; an invariant
+  verifier since create/CSV-import already block overlaps via `cidr && $1`),
+  `evaluateStaleRecords` (assigned/reserved addresses + devices whose `last_seen_at` is
+  older than the threshold → warning; never-seen → info, opt-in), and
+  `evaluateUnmanagedServices` (pending `scan_discoveries`: `conflict` → critical reusing
+  the stored conflict note, `new` with services → warning — reusing the ADR 0007
+  reconcile classification). Plus `summarizeFindings` and `parsePolicySettingsForm`.
+- **Store layer** `internal/store/policy.go`: thin snapshot queries (`PolicySubnets`,
+  `PolicyAddressRecords`, `PolicyDeviceRecords` — device staleness derived from the max
+  `last_seen_at` of linked addresses, `PolicyDiscoveryRecords`) **and** the shared result
+  types (`PolicyFinding`, `PolicyFindingGroup`, `PolicySummary`), placed in `store` so
+  `ui` renders them without an `app→ui→app` cycle (the `ImportResult` precedent).
+- **`/policy` page** (`app.policyIndex`, `requireSession` — any role incl. viewer),
+  sidebar link under System, findings grouped by check + severity, each linking to the
+  offending subnet/address/device/discovery. `app.computePolicy` runs only enabled checks
+  and is shared with the **dashboard widget** (severity-colored count → `/policy`).
+- **Policy Settings tab** (admin-only, `GET/POST /settings/policy`): enable/disable each
+  check, stale threshold (days), include-never-seen — `app_settings`-persisted, cached
+  behind `settingsMu` (`PolicySettings`, refreshed on save), audited
+  `settings.policy.updated`. Boot default `POLICY_STALE_AFTER` (720h). See ADR 0020.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -517,14 +565,25 @@ Remaining candidate follow-ups, roughly in priority order:
   cert over a bootstrap channel) — today the managed CA issues and the agent hot-reloads
   operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
   `docs/KEY_ROTATION.md`.
+- **Phase 6 (Advanced Automation) — in progress.** Slice (a) **Policy / Health checks**
+  is done (ADR 0020; see the section above). Remaining slices, recommended order:
+  (b) **scheduled scan windows** (extend the existing `scan_schedules` ticker with
+  time-of-day/day-of-week windows; a pure window-check function; a migration for the new
+  columns — next is **migration 18**), (c) **change webhooks** (outbound HMAC-signed
+  notifications + a Notifications Settings tab; the signing secret seals via the existing
+  `internal/secret`), (d) **NetBox-compatible import/export** (extend
+  `internal/app/portability.go` with a NetBox format; same dry-run + all-or-nothing
+  discipline), (e) **Terraform provider or CLI** (last — needs a stable authenticated
+  read/write API + roles; confirm with the user and propose CLI-vs-provider first).
 - **Settings panel build-out.** The Settings page is the product's configuration
   surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
-  Roles, Authentication, Agent certificates, Backup & Restore. **Still planned**:
-  General, Scanning/nmap, Discovery, Notifications (Phase 6), and richer Data & Audit —
-  each can land independently. The **agent-secret boundary** holds (SNMP communities,
-  nmap egress pinning, DHCP lease paths, agent allowlist stay on the agent — never the
-  app DB or the panel).
+  Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**.
+  **Still planned**: General, Scanning/nmap, Discovery, Notifications (Phase 6 / slice
+  (c)), and richer Data & Audit — each can land independently. The **agent-secret
+  boundary** holds (SNMP communities, nmap egress pinning, DHCP lease paths, agent
+  allowlist stay on the agent — never the app DB or the panel).
 
-When starting the next issue, branch from `main`, and confirm with the user
+When starting the next slice, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order). Phase 5 is
-done; the next phase is **Phase 6 (Advanced Automation)** — see `docs/ROADMAP.md`.
+done; **Phase 6 (Advanced Automation) is underway** (slice (a) merged) — see
+`docs/ROADMAP.md`.

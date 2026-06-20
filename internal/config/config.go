@@ -61,6 +61,12 @@ type Config struct {
 	// ordinary DB client, so the app needs no extra privilege.
 	BackupDir string
 
+	// PolicyStaleAfter is the boot-time default age past which a managed address
+	// or device is flagged as stale by the policy/health checks. An admin can
+	// override it at runtime from the Settings → Policy tab (persisted in
+	// app_settings); env seeds only the default.
+	PolicyStaleAfter time.Duration
+
 	// OIDC SSO boot defaults. These seed the runtime-editable Authentication
 	// settings; an admin can change them from the Settings page. The client
 	// secret is sealed before it is persisted (never stored in plaintext).
@@ -109,6 +115,7 @@ func Load() Config {
 		OIDCUsernameClaim:            getenv("OIDC_USERNAME_CLAIM", "preferred_username"),
 		OIDCAutoProvision:            getenv("OIDC_AUTO_PROVISION", "false") == "true",
 		BackupDir:                    getenv("BACKUP_DIR", "/var/lib/lightipam/backups"),
+		PolicyStaleAfter:             durationEnv("POLICY_STALE_AFTER", 30*24*time.Hour),
 	}
 }
 

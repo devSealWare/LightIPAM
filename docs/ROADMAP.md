@@ -241,8 +241,17 @@ is complete enough to begin **Phase 6**.
 
 ## Phase 6: Advanced Automation
 
+- **Policy checks (done, ADR 0020).** A read-only **Policy / Health** view (`/policy`)
+  that runs hygiene checks on demand: overlapping subnets (an invariant verifier — the
+  create/import paths already block overlaps), stale managed addresses/devices not seen
+  within a configurable threshold (device staleness derived from linked addresses'
+  `last_seen_at`, so no schema change), and unmanaged/conflicting discovered services
+  (reusing the `scan_discoveries` reconcile classification). Pure, unit-tested check
+  functions over store snapshots; findings grouped by severity and linked to the
+  offending record; a dashboard count widget; and a runtime-editable **Policy** Settings
+  tab (enable/disable each check, stale threshold, include-never-seen) following the
+  `app_settings` pattern. App-side only, no new privilege, no client JS, no migration.
 - Scheduled scan windows.
 - Change webhooks.
 - NetBox-compatible import/export.
 - Terraform provider or CLI.
-- Policy checks for overlapping subnets, stale records, and unmanaged services.
