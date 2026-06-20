@@ -38,6 +38,11 @@ The app has:
   Addresses, and Devices tables (Phase 4.5, ADR 0016).
 - Basic CSV import/export of subnets, addresses, and devices with a validated
   dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
+- **Operator-defined custom fields** (text) per entity type — an admin **Custom
+  fields** Settings tab defines them; each subnet/address/device form edits the
+  values and the detail page shows them (sparse storage, audited, zero-impact until
+  a field is defined). Closed the last unbuilt Phase 1 item in the Phase 5 audit
+  (2026-06-19); schema tables predated it (migration 1). See ADR 0019.
 - Login throttling + account lockout, idle+absolute session timeouts, a
   per-session origin (IP/User-Agent) record, a tabbed **Settings page** (Security
   tab) with active-session review + "log out everywhere", all auth/session policy
@@ -68,7 +73,15 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-None in progress. The initial backlog (issues #1–#10) is fully merged to `main`,
+None in progress. A full Phase 1–5 audit (2026-06-19) confirmed the repo is ready
+for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
+ordered, all 10 scan types wired end-to-end, and the Phase 5 security code (secret
+sealing, TOTP, OIDC PKCE, managed CA, backups, lockout, roles + last-admin guards)
+verified correct. The audit's one finding — **custom fields**, listed in Phase 1 /
+backlog #2 & #5 but only ever present as schema — was built and merged as part of the
+audit (ADR 0019).
+
+The initial backlog (issues #1–#10) is fully merged to `main`,
 and **Roadmap Phase 3 is complete** — #10 (Nmap Discovery MVP) plus conflict-aware
 reconciliation (migration 7) finished the "last-seen tracking and conflict
 detection" item. Two Phase 3 follow-ups also merged (#18): per-agent auto-import

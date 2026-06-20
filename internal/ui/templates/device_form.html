@@ -19,6 +19,7 @@
         <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Description</span>
         <textarea class="form-input min-h-28 py-3" name="description">{{ index .Form "description" }}</textarea>
       </label>
+      {{ template "custom_fields_form" .CustomFields }}
       <div class="mt-7 flex items-center justify-between gap-3">
         <a class="button-muted" href="{{ if .Device.ID }}/devices/{{ .Device.ID }}{{ else }}/devices{{ end }}">Cancel</a>
         <button class="button-primary" type="submit">Save device</button>
