@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/devSealWare/LightIPAM/internal/secret"
 )
 
 type Config struct {
@@ -14,6 +16,12 @@ type Config struct {
 	DatabaseURL  string
 	AppSecret    []byte
 	CookieSecure bool
+
+	// EncryptionKey seals secrets at rest (TOTP secrets, a future OIDC client
+	// secret). It is a dedicated 32-byte key from APP_ENCRYPTION_KEY (base64) when
+	// set, otherwise derived from AppSecret so single-secret deployments still
+	// store secrets encrypted.
+	EncryptionKey []byte
 
 	// Session lifetime. SessionAbsoluteTimeout caps how long a session can live
 	// from creation regardless of activity; SessionIdleTimeout expires a session
@@ -47,6 +55,22 @@ type Config struct {
 	// ScannerAgentEndpoint, when set, is the bundled agent the app auto-enrolls
 	// (as a pending agent) on boot by pulling its /register endpoint over mTLS.
 	ScannerAgentEndpoint string
+
+	// BackupDir is where pg_dump backups are written. Empty disables the backup
+	// feature. In the compose stack it is a writable named volume; pg_dump is an
+	// ordinary DB client, so the app needs no extra privilege.
+	BackupDir string
+
+	// OIDC SSO boot defaults. These seed the runtime-editable Authentication
+	// settings; an admin can change them from the Settings page. The client
+	// secret is sealed before it is persisted (never stored in plaintext).
+	OIDCEnabled       bool
+	OIDCIssuer        string
+	OIDCClientID      string
+	OIDCClientSecret  string
+	OIDCBaseURL       string
+	OIDCUsernameClaim string
+	OIDCAutoProvision bool
 }
 
 func Load() Config {
@@ -65,6 +89,7 @@ func Load() Config {
 		DatabaseURL:                  getenv("DATABASE_URL", "postgres://lightipam:lightipam@localhost:5432/lightipam?sslmode=disable"),
 		AppSecret:                    []byte(secret),
 		CookieSecure:                 getenv("COOKIE_SECURE", "false") == "true",
+		EncryptionKey:                encryptionKey([]byte(secret)),
 		SessionAbsoluteTimeout:       durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
 		SessionIdleTimeout:           durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		LoginMaxAttempts:             positiveInt(getenv("LOGIN_MAX_ATTEMPTS", "5"), 5),
@@ -76,7 +101,31 @@ func Load() Config {
 		ScannerCACert:                getenv("SCANNER_CLIENT_CA", "/certs/ca.crt"),
 		ScanSchedulerTick:            schedulerTick(getenv("SCAN_SCHEDULER_TICK_SECONDS", "30")),
 		ScannerAgentEndpoint:         os.Getenv("SCANNER_AGENT_ENDPOINT"),
+		OIDCEnabled:                  getenv("OIDC_ENABLED", "false") == "true",
+		OIDCIssuer:                   os.Getenv("OIDC_ISSUER"),
+		OIDCClientID:                 os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:             os.Getenv("OIDC_CLIENT_SECRET"),
+		OIDCBaseURL:                  os.Getenv("OIDC_BASE_URL"),
+		OIDCUsernameClaim:            getenv("OIDC_USERNAME_CLAIM", "preferred_username"),
+		OIDCAutoProvision:            getenv("OIDC_AUTO_PROVISION", "false") == "true",
+		BackupDir:                    getenv("BACKUP_DIR", "/var/lib/lightipam/backups"),
 	}
+}
+
+// encryptionKey returns the 32-byte key used to seal secrets at rest. An
+// explicit APP_ENCRYPTION_KEY (base64, 32 bytes) is preferred; otherwise the key
+// is derived from the app master secret so a single-secret deployment still
+// stores secrets encrypted (just rotated together with APP_SECRET).
+func encryptionKey(appSecret []byte) []byte {
+	if raw := os.Getenv("APP_ENCRYPTION_KEY"); raw != "" {
+		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+			if decoded, err := enc.DecodeString(raw); err == nil && len(decoded) == 32 {
+				return decoded
+			}
+		}
+		slog.Warn("APP_ENCRYPTION_KEY is set but not a base64-encoded 32-byte key; deriving from APP_SECRET instead")
+	}
+	return secret.DeriveKey(appSecret)
 }
 
 func schedulerTick(value string) time.Duration {

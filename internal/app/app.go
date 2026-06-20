@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
+	"github.com/devSealWare/LightIPAM/internal/backup"
 	"github.com/devSealWare/LightIPAM/internal/config"
 	"github.com/devSealWare/LightIPAM/internal/ipam"
 	"github.com/devSealWare/LightIPAM/internal/scanner/orchestrator"
+	"github.com/devSealWare/LightIPAM/internal/scanner/pki"
+	"github.com/devSealWare/LightIPAM/internal/secret"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,15 +38,26 @@ type Options struct {
 }
 
 type App struct {
-	cfg    config.Config
-	store  *store.Store
-	logger *slog.Logger
-	scans  *orchestrator.Service
+	cfg     config.Config
+	store   *store.Store
+	logger  *slog.Logger
+	scans   *orchestrator.Service
+	sealer  *secret.Sealer
+	backups *backup.Manager
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
-	settingsMu sync.RWMutex
-	settings   SecuritySettings
+	// oidc holds the cached SSO settings; oidcProvider caches the built provider
+	// (invalidated when oidc settings change). All guarded by settingsMu.
+	settingsMu   sync.RWMutex
+	settings     SecuritySettings
+	oidc         OIDCSettings
+	oidcProvider *oidcProvider
+
+	// ca is the app-managed certificate authority for agent/app mTLS leaves,
+	// loaded (or generated) on boot.
+	caMu sync.RWMutex
+	ca   *pki.CA
 }
 
 func New(options Options) http.Handler {
@@ -53,7 +67,15 @@ func New(options Options) http.Handler {
 		logger: options.Logger,
 		scans:  options.Scans,
 	}
+	sealer, err := secret.NewSealer(options.Config.EncryptionKey)
+	if err != nil {
+		// EncryptionKey is always 32 bytes from config; this is defensive.
+		options.Logger.Error("init secret sealer", "error", err)
+	}
+	app.sealer = sealer
+	app.backups = backup.New(options.Config.BackupDir, options.Config.DatabaseURL)
 	app.loadSettings(context.Background())
+	app.ensureCA(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
@@ -68,11 +90,40 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /bootstrap", app.bootstrapSubmit)
 	mux.HandleFunc("GET /login", app.loginForm)
 	mux.HandleFunc("POST /login", app.loginSubmit)
+	mux.HandleFunc("GET /login/mfa", app.mfaChallengeForm)
+	mux.HandleFunc("POST /login/mfa", app.mfaChallengeSubmit)
+	mux.HandleFunc("GET /auth/oidc/start", app.oidcStart)
+	mux.HandleFunc("GET /auth/oidc/callback", app.oidcCallback)
 	mux.HandleFunc("POST /logout", app.logout)
+
+	mux.HandleFunc("GET /account", app.accountIndex)
+	mux.HandleFunc("POST /account/password", app.accountChangePassword)
+	mux.HandleFunc("POST /account/logout-all", app.accountLogoutAll)
+	mux.HandleFunc("GET /account/mfa", app.mfaSettings)
+	mux.HandleFunc("GET /account/mfa/qr.png", app.mfaQR)
+	mux.HandleFunc("POST /account/mfa/enable", app.mfaEnable)
+	mux.HandleFunc("POST /account/mfa/disable", app.mfaDisable)
 	mux.HandleFunc("GET /settings", app.settingsIndex)
 	mux.HandleFunc("GET /settings/security", app.settingsSecurity)
 	mux.HandleFunc("POST /settings/security", app.settingsSecurityUpdate)
 	mux.HandleFunc("POST /settings/security/logout-all", app.logoutEverywhere)
+	mux.HandleFunc("GET /settings/authentication", app.settingsAuthentication)
+	mux.HandleFunc("POST /settings/authentication", app.settingsAuthenticationUpdate)
+	mux.HandleFunc("GET /settings/certificates", app.settingsCertificates)
+	mux.HandleFunc("POST /settings/certificates/agent", app.certIssueAgent)
+	mux.HandleFunc("POST /settings/certificates/app", app.certIssueApp)
+	mux.HandleFunc("POST /settings/certificates/rotate-ca", app.certRotateCA)
+	mux.HandleFunc("GET /settings/certificates/ca.crt", app.certDownloadCA)
+	mux.HandleFunc("GET /settings/backup", app.settingsBackup)
+	mux.HandleFunc("POST /settings/backup/create", app.backupCreate)
+	mux.HandleFunc("GET /settings/backup/{name}/download", app.backupDownload)
+	mux.HandleFunc("POST /settings/backup/{name}/delete", app.backupDelete)
+	mux.HandleFunc("GET /settings/users", app.settingsUsers)
+	mux.HandleFunc("POST /settings/users", app.userCreate)
+	mux.HandleFunc("POST /settings/users/{id}/role", app.userSetRole)
+	mux.HandleFunc("POST /settings/users/{id}/password", app.userResetPassword)
+	mux.HandleFunc("GET /settings/users/{id}/delete", app.userDeleteConfirm)
+	mux.HandleFunc("POST /settings/users/{id}/delete", app.userDelete)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
@@ -137,7 +188,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /schedules/{id}/delete", app.scheduleDeleteConfirm)
 	mux.HandleFunc("POST /schedules/{id}/delete", app.scheduleDelete)
 
-	return securityHeaders(mux)
+	return securityHeaders(app.authorize(mux))
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
@@ -855,8 +906,9 @@ func (a *App) loginForm(w http.ResponseWriter, r *http.Request) {
 	}
 	a.setCSRFCookie(w, csrf)
 	_ = ui.Render(w, "login.html", ui.PageData{
-		Title: "Sign In",
-		CSRF:  csrf,
+		Title:       "Sign In",
+		CSRF:        csrf,
+		OIDCEnabled: a.oidcSettings().configured(),
 	})
 }
 
@@ -914,6 +966,22 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.ClearLoginFailures(r.Context(), username); err != nil {
 		a.logger.Error("clear login failures", "error", err)
 	}
+
+	// If the account has a confirmed second factor, the password is only the
+	// first step: stash a short-lived, signed pending-MFA cookie and ask for a
+	// code. No session is established until the code verifies.
+	if enabled, err := a.store.TOTPEnabled(r.Context(), user.ID); err != nil {
+		a.logger.Error("totp enabled check", "error", err)
+	} else if enabled {
+		if a.startMFAChallenge(w, r, user.ID) {
+			http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
+			return
+		}
+		// Sealing failed (no sealer); fail safe rather than skip MFA.
+		a.renderLoginError(w, r, "Unable to start two-factor verification. Please try again.")
+		return
+	}
+
 	if err := a.store.CreateAuditLog(r.Context(), &user.ID, "auth.login", "user", user.ID, "{}"); err != nil {
 		a.logger.Error("create audit log", "error", err)
 	}
@@ -923,10 +991,15 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) renderLoginError(w http.ResponseWriter, r *http.Request, message string) {
+	a.renderLoginErrorWithToken(w, message, r.FormValue("csrf_token"))
+}
+
+func (a *App) renderLoginErrorWithToken(w http.ResponseWriter, message, csrf string) {
 	_ = ui.Render(w, "login.html", ui.PageData{
-		Title: "Sign In",
-		Error: message,
-		CSRF:  r.FormValue("csrf_token"),
+		Title:       "Sign In",
+		Error:       message,
+		CSRF:        csrf,
+		OIDCEnabled: a.oidcSettings().configured(),
 	})
 }
 
@@ -953,14 +1026,14 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) settingsIndex(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireSession(w, r); !ok {
+	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 
 func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
-	session, ok := a.requireSession(w, r)
+	session, ok := a.requireAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -968,7 +1041,7 @@ func (a *App) settingsSecurity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) settingsSecurityUpdate(w http.ResponseWriter, r *http.Request) {
-	session, ok := a.requireSession(w, r)
+	session, ok := a.requireAdmin(w, r)
 	if !ok {
 		return
 	}

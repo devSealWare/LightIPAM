@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devSealWare/LightIPAM/internal/backup"
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
@@ -19,6 +20,7 @@ func TestRenderTemplates(t *testing.T) {
 			ID:          "user-1",
 			Username:    "admin",
 			DisplayName: "Admin",
+			Role:        store.RoleAdmin,
 			IsAdmin:     true,
 		},
 		Stats: store.DashboardStats{
@@ -252,8 +254,12 @@ func TestRenderTemplates(t *testing.T) {
 			LastSeenAt: time.Now(),
 		}},
 		CurrentSessionID: "session-1",
-		ActiveTab:        "security",
-		SearchQuery:      "192.168",
+		Users: []store.User{
+			{ID: "user-1", Username: "admin", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true, CreatedAt: time.Now()},
+			{ID: "user-2", Username: "viewer", DisplayName: "Viewer", Role: store.RoleViewer, CreatedAt: time.Now()},
+		},
+		ActiveTab:   "security",
+		SearchQuery: "192.168",
 		SearchResults: store.SearchResults{
 			Query:     "192.168",
 			Subnets:   []store.SearchResult{{Label: "Office LAN", Detail: "192.168.10.0/24", URL: "/subnets/subnet-1"}},
@@ -276,6 +282,10 @@ func TestRenderTemplates(t *testing.T) {
 		"device_detail.html",
 		"audit.html",
 		"settings.html",
+		"forbidden.html",
+		"account.html",
+		"mfa_challenge.html",
+		"mfa_settings.html",
 		"address_form.html",
 		"confirm.html",
 		"scans.html",
@@ -336,14 +346,179 @@ func TestDashboardWidgetsRenderLiveState(t *testing.T) {
 	}
 }
 
+// TestSettingsUsersTabRenders guards the Users & Roles settings tab: it must
+// render the add-user form and list managed accounts with role controls.
+func TestSettingsUsersTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "users",
+		Form:      map[string]string{"role": store.RoleViewer},
+		Users: []store.User{
+			{ID: "user-1", Username: "admin", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+			{ID: "user-2", Username: "viewer", DisplayName: "Viewer", Role: store.RoleViewer},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "settings.html", data); err != nil {
+		t.Fatalf("render settings users: %v", err)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`action="/settings/users"`,
+		`action="/settings/users/user-2/role"`,
+		`action="/settings/users/user-2/password"`,
+		`href="/settings/users/user-2/delete"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("users tab missing %q", want)
+		}
+	}
+	// The acting admin must not get a self-delete link.
+	if strings.Contains(body, `href="/settings/users/user-1/delete"`) {
+		t.Error("users tab should not offer a self-delete link")
+	}
+}
+
+// TestSettingsCertsTabRenders guards the Agent certificates settings tab.
+func TestSettingsCertsTabRenders(t *testing.T) {
+	data := PageData{
+		User:            store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:            "token",
+		ActiveTab:       "certificates",
+		CAReady:         true,
+		CAFingerprint:   "AA:BB:CC",
+		CAExpiry:        time.Now().Add(24 * time.Hour),
+		LeafDefaultDays: 30,
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		"AA:BB:CC",
+		`action="/settings/certificates/agent"`,
+		`action="/settings/certificates/app"`,
+		`action="/settings/certificates/rotate-ca"`,
+		`href="/settings/certificates/ca.crt"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("certificates tab missing %q", want)
+		}
+	}
+}
+
+// TestSettingsBackupTabRenders guards the Backup & Restore settings tab.
+func TestSettingsBackupTabRenders(t *testing.T) {
+	data := PageData{
+		User:           store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:           "token",
+		ActiveTab:      "backup",
+		BackupEnabled:  true,
+		BackupWritable: true,
+		BackupDir:      "/var/lib/lightipam/backups",
+		Backups: []backup.Backup{
+			{Name: "lightipam-20260619-143005-mig16.dump", Size: 2048, Migration: 16, CreatedAt: time.Now()},
+		},
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		`action="/settings/backup/create"`,
+		"lightipam-20260619-143005-mig16.dump",
+		`/settings/backup/lightipam-20260619-143005-mig16.dump/download`,
+		"2.0 KiB",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("backup tab missing %q", want)
+		}
+	}
+}
+
+// TestSettingsAuthTabRenders guards the Authentication (SSO) settings tab.
+func TestSettingsAuthTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "authentication",
+		Form: map[string]string{
+			"oidc_enabled":      "on",
+			"oidc_issuer":       "https://idp.example.com",
+			"oidc_base_url":     "https://ipam.example.com",
+			"oidc_redirect_url": "https://ipam.example.com/auth/oidc/callback",
+			"oidc_secret_set":   "1",
+		},
+	}
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "settings.html", data); err != nil {
+		t.Fatalf("render settings auth: %v", err)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`action="/settings/authentication"`,
+		`name="oidc_issuer"`,
+		`name="oidc_client_secret"`,
+		"https://ipam.example.com/auth/oidc/callback",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("auth tab missing %q", want)
+		}
+	}
+}
+
+// TestMFASettingsRenders exercises the three MFA states: enroll (QR + key),
+// freshly-enabled (recovery codes shown once), and enabled management.
+func TestMFASettingsRenders(t *testing.T) {
+	base := PageData{User: store.User{ID: "u1", Username: "admin"}, CSRF: "token", ActiveNav: "account"}
+
+	t.Run("enroll", func(t *testing.T) {
+		d := base
+		d.TOTPSecretFormatted = "ABCD EFGH IJKL"
+		d.TOTPURI = "otpauth://totp/x"
+		body := renderToString(t, "mfa_settings.html", d)
+		for _, want := range []string{`/account/mfa/qr.png`, "ABCD EFGH IJKL", `action="/account/mfa/enable"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("enroll view missing %q", want)
+			}
+		}
+	})
+
+	t.Run("recovery codes", func(t *testing.T) {
+		d := base
+		d.MFAEnabled = true
+		d.RecoveryCodes = []string{"ABCDE-FGHIJ", "KLMNP-QRSTU"}
+		body := renderToString(t, "mfa_settings.html", d)
+		for _, want := range []string{"ABCDE-FGHIJ", "KLMNP-QRSTU", "recovery codes"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("recovery view missing %q", want)
+			}
+		}
+	})
+
+	t.Run("enabled management", func(t *testing.T) {
+		d := base
+		d.MFAEnabled = true
+		d.RecoveryRemaining = 9
+		body := renderToString(t, "mfa_settings.html", d)
+		if !strings.Contains(body, `action="/account/mfa/disable"`) {
+			t.Error("enabled view should offer disable form")
+		}
+	})
+}
+
+func renderToString(t *testing.T, name string, data PageData) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	if err := Render(rec, name, data); err != nil {
+		t.Fatalf("render %s: %v", name, err)
+	}
+	return rec.Body.String()
+}
+
 // TestBulkEditMarkupRenders guards the bulk-edit affordances: each table must
 // post to its /bulk endpoint, render row checkboxes and an action bar, and the
 // shared confirm page must carry selected ids forward as hidden inputs.
 func TestBulkEditMarkupRenders(t *testing.T) {
 	vlan := 20
 	data := PageData{
-		User: store.User{DisplayName: "Admin"},
-		CSRF: "token",
+		User:    store.User{DisplayName: "Admin"},
+		CSRF:    "token",
 		Subnets: []store.Subnet{{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24", VLAN: &vlan, Tags: []string{"core"}}},
 		Subnet:  store.Subnet{ID: "s1", Name: "Office LAN", CIDR: "192.168.10.0/24"},
 		Addresses: []store.IPAddress{{
