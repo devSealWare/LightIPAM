@@ -80,6 +80,67 @@
           <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="enabled" {{ if index .Form "enabled" }}checked{{ end }}>
           <span class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Enabled</span>
         </label>
+
+        <div class="sm:col-span-2 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+          <h2 class="text-sm font-semibold text-zinc-950 dark:text-white">Run window (optional)</h2>
+          <p class="mt-1 text-xs leading-5 text-zinc-400">Restrict this schedule to a time-of-day range and/or specific weekdays. The interval still decides when a run is due; the window only gates when it may fire. Leave both times blank and select no days to allow any time (the default).</p>
+        </div>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Window start</span>
+          <input class="form-input" type="time" name="window_start" value="{{ index .Form "window_start" }}">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Window end</span>
+          <input class="form-input" type="time" name="window_end" value="{{ index .Form "window_end" }}">
+          <span class="mt-1 block text-xs text-zinc-400">A start later than the end wraps past midnight (e.g. 22:00–06:00).</span>
+        </label>
+        <div class="sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Days</span>
+          <div class="flex flex-wrap gap-x-5 gap-y-2">
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="1" {{ if index .Form "window_day_1" }}checked{{ end }}><span>Mon</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="2" {{ if index .Form "window_day_2" }}checked{{ end }}><span>Tue</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="3" {{ if index .Form "window_day_3" }}checked{{ end }}><span>Wed</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="4" {{ if index .Form "window_day_4" }}checked{{ end }}><span>Thu</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="5" {{ if index .Form "window_day_5" }}checked{{ end }}><span>Fri</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="6" {{ if index .Form "window_day_6" }}checked{{ end }}><span>Sat</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input class="h-5 w-5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="window_day" value="0" {{ if index .Form "window_day_0" }}checked{{ end }}><span>Sun</span>
+            </label>
+          </div>
+          <span class="mt-2 block text-xs text-zinc-400">No days selected means every day.</span>
+        </div>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Timezone</span>
+          <input class="form-input" name="window_tz" value="{{ index .Form "window_tz" }}" list="window-tz-options" placeholder="UTC" autocomplete="off">
+          <datalist id="window-tz-options">
+            <option value="UTC"></option>
+            <option value="America/New_York"></option>
+            <option value="America/Chicago"></option>
+            <option value="America/Denver"></option>
+            <option value="America/Los_Angeles"></option>
+            <option value="America/Sao_Paulo"></option>
+            <option value="Europe/London"></option>
+            <option value="Europe/Paris"></option>
+            <option value="Europe/Berlin"></option>
+            <option value="Asia/Kolkata"></option>
+            <option value="Asia/Singapore"></option>
+            <option value="Asia/Tokyo"></option>
+            <option value="Australia/Sydney"></option>
+          </datalist>
+          <span class="mt-1 block text-xs text-zinc-400">IANA name (default UTC). The window times and days above are read in this zone.</span>
+        </label>
       </div>
       <div class="mt-7 flex items-center justify-between gap-3">
         <a class="button-muted" href="/schedules">Cancel</a>

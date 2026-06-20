@@ -68,6 +68,20 @@ The app has:
   (admin-only) enables/disables each check + sets the stale threshold + include-never-
   seen, via the `app_settings` pattern (`settings.policy.updated` audit). App-side only,
   no new privilege, no client JS. See the "Policy / Health checks" section below.
+- **Scheduled scan windows** (Phase 6 slice (b), ADR 0021) — a scan schedule may
+  restrict firing to a **window**: a time-of-day range plus a weekday set, read in the
+  schedule's own IANA timezone, layered on top of the existing interval cadence. A due
+  schedule outside its window is **skipped that tick and re-checked next tick**
+  (`next_run_at` not advanced), so it fires once the window opens. The gate is a pure,
+  unit-tested `windowAllows` (handles midnight-wrap, no-time/no-day, and the
+  empty-window = always-allowed back-compat default). **Migration 18** adds
+  `window_start_min`/`window_end_min` (minutes since midnight, NULL = no time
+  restriction), `window_days` (`0=Sun..6=Sat` int[], empty = any day), and `window_tz`
+  (default UTC). The schedule form gains native time/day/timezone fields (no client
+  JS) and the schedules table shows the window (`ScanSchedule.WindowLabel`).
+  `cmd/server` embeds `time/tzdata` so zone lookups work on the Alpine image.
+  Per-schedule config — no Settings tab, no new privilege. See the "Scheduled scan
+  windows" section below.
 
 ## Current Implementation Style
 
@@ -84,12 +98,12 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-None in progress. **Phase 6 (Advanced Automation) has started**: slice (a) **Policy /
-Health checks** is built (ADR 0020) — see the Current State bullet and the "Policy /
-Health checks" section below. The recommended remaining Phase 6 order is (b) scheduled
-scan windows → (c) change webhooks → (d) NetBox import/export → (e) Terraform
-provider/CLI (last; it depends on a stable authenticated API + roles — confirm before
-starting).
+None in progress. **Phase 6 (Advanced Automation) is underway**: slice (a) **Policy /
+Health checks** (ADR 0020) and slice (b) **Scheduled scan windows** (ADR 0021) are
+built — see the Current State bullets and the "Policy / Health checks" and "Scheduled
+scan windows" sections below. The recommended remaining Phase 6 order is (c) change
+webhooks → (d) NetBox import/export → (e) Terraform provider/CLI (last; it depends on a
+stable authenticated API + roles — confirm before starting).
 
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
@@ -409,6 +423,46 @@ privilege, no scanner surface, **no client JS**, **no migration** (it reuses
   behind `settingsMu` (`PolicySettings`, refreshed on save), audited
   `settings.policy.updated`. Boot default `POLICY_STALE_AFTER` (720h). See ADR 0020.
 
+## Scheduled scan windows (merged, Phase 6, ADR 0021)
+
+The second Phase 6 slice: a scan **schedule** can restrict firing to a **window** — a
+time-of-day range plus a weekday set, read in the schedule's own IANA timezone — on top
+of the existing interval cadence. The interval still decides when a run is *due*; the
+window decides whether a due run may *fire*. App-side only — no new privilege, no
+scanner surface, **no client JS**. The web app stays unprivileged; this changes only
+**when** the in-process scheduler dispatches.
+
+- **Pure decision** in `internal/scanner/orchestrator/windows.go`:
+  `windowAllows(scanWindow, now) bool` (unit-tested, no DB/clock) with
+  `windowFromSchedule(store.ScanSchedule) scanWindow`. Semantics, all chosen so an
+  empty window reproduces the pre-window always-allowed behaviour: unset bounds → any
+  time; empty day set → any day; half-open `[start,end)`; `start==end` → whole day;
+  `start>end` **wraps past midnight** (22:00–06:00); the weekday filter is evaluated
+  against now's **local** weekday (so a wrap window's after-midnight tail belongs to the
+  new day — documented in ADR 0021).
+- **Gate** in `orchestrator.RunDueSchedules`: a due schedule outside its window is
+  **skipped this tick without advancing `next_run_at`** (skip-and-recheck), so it stays
+  due and fires on the next tick once the window opens. Keeps `RunDueSchedules` cheap.
+- **Migration 18** adds to `scan_schedules`: `window_start_min`/`window_end_min`
+  (minutes since midnight, NULL = no time restriction — integers, not Postgres `time`,
+  since the tree uses no `pgtype`), `window_days int[]` (`0=Sun..6=Sat`, empty = any
+  day), `window_tz` (default `UTC`). All-unset = no window = unchanged existing
+  schedules.
+- **Store** (`internal/store/scans.go`): `ScanSchedule`/`ScanScheduleInput` gain the
+  window fields (carried through Create/Update/Get/List/ListDue); `WindowLabel()` /
+  `HasWindow()` render and detect a window ("Mon–Fri 01:00–05:00 UTC", "Any time"), with
+  pure `formatWeekdays` (contiguous-run compression) tested in `scans_test.go`.
+- **Form/handlers** (`internal/app/scans.go`): pure, unit-tested `parseScheduleWindow`
+  (both-or-neither time, `HH:MM` range-check, weekday set ⊆ 0–6, IANA-zone validation)
+  folded into `scheduleInputFromRequest`; round-tripped in `scheduleFormFromSchedule`.
+  `schedule_form.html` gains a "Run window (optional)" section — native
+  `<input type="time">`, seven `window_day` checkboxes, and a `window_tz` text input
+  with a `<datalist>` (works JS-off). `schedules.html` shows a Window column.
+- **tzdata**: `cmd/server/main.go` blank-imports `time/tzdata` so `time.LoadLocation`
+  resolves zones on the Alpine app image (no `/usr/share/zoneinfo`). Per-schedule
+  config, not a Settings tab; the window rides the existing `scan.schedule.created` /
+  `scan.schedule.updated` audit events. See ADR 0021.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -566,15 +620,14 @@ Remaining candidate follow-ups, roughly in priority order:
   operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
   `docs/KEY_ROTATION.md`.
 - **Phase 6 (Advanced Automation) — in progress.** Slice (a) **Policy / Health checks**
-  is done (ADR 0020; see the section above). Remaining slices, recommended order:
-  (b) **scheduled scan windows** (extend the existing `scan_schedules` ticker with
-  time-of-day/day-of-week windows; a pure window-check function; a migration for the new
-  columns — next is **migration 18**), (c) **change webhooks** (outbound HMAC-signed
-  notifications + a Notifications Settings tab; the signing secret seals via the existing
-  `internal/secret`), (d) **NetBox-compatible import/export** (extend
-  `internal/app/portability.go` with a NetBox format; same dry-run + all-or-nothing
-  discipline), (e) **Terraform provider or CLI** (last — needs a stable authenticated
-  read/write API + roles; confirm with the user and propose CLI-vs-provider first).
+  (ADR 0020) and slice (b) **Scheduled scan windows** (ADR 0021, **migration 18**) are
+  done — see the sections above. Remaining slices, recommended order: (c) **change
+  webhooks** (outbound HMAC-signed notifications + a Notifications Settings tab; the
+  signing secret seals via the existing `internal/secret`; **next is migration 19**),
+  (d) **NetBox-compatible import/export** (extend `internal/app/portability.go` with a
+  NetBox format; same dry-run + all-or-nothing discipline), (e) **Terraform provider or
+  CLI** (last — needs a stable authenticated read/write API + roles; confirm with the
+  user and propose CLI-vs-provider first).
 - **Settings panel build-out.** The Settings page is the product's configuration
   surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
   Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**.
@@ -585,5 +638,5 @@ Remaining candidate follow-ups, roughly in priority order:
 
 When starting the next slice, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order). Phase 5 is
-done; **Phase 6 (Advanced Automation) is underway** (slice (a) merged) — see
+done; **Phase 6 (Advanced Automation) is underway** (slices (a) and (b) merged) — see
 `docs/ROADMAP.md`.

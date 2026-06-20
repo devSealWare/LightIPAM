@@ -3,10 +3,13 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 	"github.com/devSealWare/LightIPAM/internal/store"
@@ -754,6 +757,14 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 		"timeout":       strings.TrimSpace(r.FormValue("timeout")),
 		"interval":      strings.TrimSpace(r.FormValue("interval")),
 		"enabled":       strings.TrimSpace(r.FormValue("enabled")),
+		"window_start":  strings.TrimSpace(r.FormValue("window_start")),
+		"window_end":    strings.TrimSpace(r.FormValue("window_end")),
+		"window_tz":     strings.TrimSpace(r.FormValue("window_tz")),
+	}
+	for _, d := range r.Form["window_day"] {
+		if d = strings.TrimSpace(d); d != "" {
+			form["window_day_"+d] = "on"
+		}
 	}
 	if form["name"] == "" {
 		return store.ScanScheduleInput{}, form, errors.New("Schedule name is required.")
@@ -788,6 +799,10 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 		}
 		timeout = parsed
 	}
+	startMin, endMin, days, tz, err := parseScheduleWindow(r.Form)
+	if err != nil {
+		return store.ScanScheduleInput{}, form, err
+	}
 	return store.ScanScheduleInput{
 		Name:            form["name"],
 		AgentID:         form["agent_id"],
@@ -798,7 +813,88 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 		TimeoutSeconds:  timeout,
 		IntervalSeconds: interval,
 		Enabled:         form["enabled"] == "on" || form["enabled"] == "true",
+		WindowStartMin:  startMin,
+		WindowEndMin:    endMin,
+		WindowDays:      days,
+		WindowTZ:        tz,
 	}, form, nil
+}
+
+// parseScheduleWindow validates and normalizes the optional firing-window fields of
+// the schedule form. It is pure (no DB and no wall clock beyond a time.LoadLocation
+// lookup over the embedded zone database), so it is unit-tested directly, mirroring
+// parseBulkRequest / parsePolicySettingsForm. window_start and window_end must be
+// supplied together (or both omitted, meaning no time-of-day restriction);
+// window_day is a set of weekdays (0=Sunday..6=Saturday); window_tz is an IANA zone
+// name (default "UTC").
+func parseScheduleWindow(form url.Values) (startMin, endMin *int, days []int, tz string, err error) {
+	startRaw := strings.TrimSpace(form.Get("window_start"))
+	endRaw := strings.TrimSpace(form.Get("window_end"))
+	switch {
+	case startRaw == "" && endRaw == "":
+		// no time-of-day restriction
+	case startRaw == "" || endRaw == "":
+		return nil, nil, nil, "", errors.New("Set both a window start and end time, or leave both blank.")
+	default:
+		sm, e := parseClockMinutes(startRaw)
+		if e != nil {
+			return nil, nil, nil, "", errors.New("Window start must be a time of day like 01:00.")
+		}
+		em, e := parseClockMinutes(endRaw)
+		if e != nil {
+			return nil, nil, nil, "", errors.New("Window end must be a time of day like 05:00.")
+		}
+		if sm == em {
+			return nil, nil, nil, "", errors.New("Window start and end must be different times.")
+		}
+		startMin, endMin = &sm, &em
+	}
+
+	seen := make(map[int]bool, 7)
+	for _, raw := range form["window_day"] {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		d, e := strconv.Atoi(raw)
+		if e != nil || d < 0 || d > 6 {
+			return nil, nil, nil, "", errors.New("Select valid window days.")
+		}
+		if !seen[d] {
+			seen[d] = true
+			days = append(days, d)
+		}
+	}
+	sort.Ints(days)
+
+	tz = strings.TrimSpace(form.Get("window_tz"))
+	if tz == "" {
+		tz = "UTC"
+	}
+	if tz != "UTC" {
+		if _, e := time.LoadLocation(tz); e != nil {
+			return nil, nil, nil, "", errors.New("Unknown window timezone; use an IANA name like America/New_York.")
+		}
+	}
+	return startMin, endMin, days, tz, nil
+}
+
+// parseClockMinutes parses an "HH:MM" 24-hour time of day into minutes since
+// midnight.
+func parseClockMinutes(s string) (int, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, errors.New("expected HH:MM")
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || h < 0 || h > 23 {
+		return 0, errors.New("hour out of range")
+	}
+	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || m < 0 || m > 59 {
+		return 0, errors.New("minute out of range")
+	}
+	return h*60 + m, nil
 }
 
 func scheduleFormFromSchedule(s store.ScanSchedule) map[string]string {
@@ -806,7 +902,11 @@ func scheduleFormFromSchedule(s store.ScanSchedule) map[string]string {
 	if s.Enabled {
 		enabled = "on"
 	}
-	return map[string]string{
+	tz := s.WindowTZ
+	if tz == "" {
+		tz = "UTC"
+	}
+	form := map[string]string{
 		"name":          s.Name,
 		"agent_id":      s.AgentID,
 		"scan_type":     s.ScanType,
@@ -816,7 +916,26 @@ func scheduleFormFromSchedule(s store.ScanSchedule) map[string]string {
 		"timeout":       strconv.Itoa(s.TimeoutSeconds),
 		"interval":      strconv.Itoa(s.IntervalSeconds),
 		"enabled":       enabled,
+		"window_tz":     tz,
 	}
+	if s.WindowStartMin != nil {
+		form["window_start"] = clockFromMinutes(*s.WindowStartMin)
+	}
+	if s.WindowEndMin != nil {
+		form["window_end"] = clockFromMinutes(*s.WindowEndMin)
+	}
+	for _, d := range s.WindowDays {
+		if d >= 0 && d <= 6 {
+			form["window_day_"+strconv.Itoa(d)] = "on"
+		}
+	}
+	return form
+}
+
+// clockFromMinutes renders minutes-since-midnight as an "HH:MM" value for the
+// schedule form's time inputs.
+func clockFromMinutes(m int) string {
+	return fmt.Sprintf("%02d:%02d", m/60, m%60)
 }
 
 func (a *App) renderScheduleForm(w http.ResponseWriter, r *http.Request, session store.Session, title string, schedule store.ScanSchedule, form map[string]string, message string) {
@@ -827,7 +946,7 @@ func (a *App) renderScheduleForm(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if form == nil {
-		form = map[string]string{"scan_type": "combined", "mode": "standard_active", "interval": "3600", "enabled": "on"}
+		form = map[string]string{"scan_type": "combined", "mode": "standard_active", "interval": "3600", "enabled": "on", "window_tz": "UTC"}
 	}
 	_ = ui.Render(w, "schedule_form.html", ui.PageData{
 		Title:          title,
