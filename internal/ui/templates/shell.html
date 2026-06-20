@@ -20,9 +20,10 @@
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "agents" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/agents">Agents</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "schedules" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/schedules">Schedules</a>
         <p class="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">System</p>
+        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "account" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/account">Account</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "import" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/import">Import / Export</a>
         <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "audit" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/audit">Audit Log</a>
-        <a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "settings" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings">Settings</a>
+        {{ if .User.IsAdmin }}<a class="block rounded-2xl px-3 py-2 text-sm font-medium {{ if eq .ActiveNav "settings" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings">Settings</a>{{ end }}
       </nav>
       <form class="absolute bottom-4 left-4 right-4" method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ .CSRF }}">

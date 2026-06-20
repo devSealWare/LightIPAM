@@ -54,15 +54,19 @@ elevated scanner agent:
 | Tab | Configures | Scope | Status |
 | --- | --- | --- | --- |
 | **Security** | Login lockout (max attempts, window, lockout duration), session idle + absolute timeouts, and the "log out everywhere" behavior (keep this device vs. sign out all). Active-session review + revoke live here too. Future: minimum password length, secure-cookie enforcement, MFA/OIDC toggles. | App | **Done** (ADR 0017) |
+| **Users & Roles** | Manage local accounts; admin vs. read-only operator so a viewer cannot mutate IPAM or scan config; reset passwords; last-admin/self-delete guards. | App | **Done** (ADR 0018) |
+| **Authentication** | OIDC SSO (issuer, client id; **client secret sealed at rest**), auto-provision policy, username claim. MFA (TOTP) enrollment + recovery codes live on the per-user **Account** page. | App (secrets encrypted at rest) | **Done** (ADR 0018) |
+| **Agent certificates** | Managed CA status (fingerprint/expiry), issue downloadable agent/app mTLS bundles (CN/SANs/TTL), download the CA, and rotate the CA. Replaces the dev CA; agents hot-reload rotated certs. | App (mTLS/cert lifecycle) | **Done** (ADR 0018) |
+| **Backup & Restore** | On-demand `pg_dump` (custom format) capturing the schema-migration version; list/download/delete; documented + scripted restore. | App | **Done** (ADR 0018) |
 | **General** | Instance/display name, default site, table page size, date/time format, default theme (light/dark). | App | Planned |
-| **Users & Roles** | Manage local accounts; admin vs. read-only operator so a viewer cannot mutate IPAM or scan config; force first-login password rotation. | App | Planned (Phase 5 — roles) |
-| **Authentication** | OIDC SSO (issuer, client id; **client secret sealed**), MFA (TOTP) enrollment + recovery codes, password policy. | App (secrets encrypted at rest) | Planned (Phase 5) |
 | **Scanning (nmap)** | App-side scan **dispatch defaults**: default scan type (Combined) and nmap depth mode (Light/Standard/Deep), per-type timeout defaults, optional rate/timing cap passed to nmap, default targets/allowlist hints, and the scheduler tick. **Agent-local** nmap/SNMP/DHCP credentials and raw-socket config stay on the agent. | App (dispatch defaults only) | Planned |
 | **Discovery** | Auto-import policy for trusted agents, reconciliation/conflict handling, and review-queue + last-seen retention/aging (when to mark a record stale). | App | Planned |
-| **Agents** | Enrollment defaults (default allowlist CIDRs, auto-approve off by default), and managed certificate issuance/rotation policy replacing the dev CA. The `/agents` page exists today; cert rotation is Phase 5. | App (mTLS/cert lifecycle) | Partial → Phase 5 |
 | **Notifications** | Change webhooks and alert thresholds (e.g. new conflict, stale record, failed scan). | App | Planned (Phase 6) |
-| **Backup & Restore** | Trigger and schedule `pg_dump`, run a tested restore, and capture the schema-migration version with each backup. | App | Planned (Phase 5) |
 | **Data & Audit** | Audit-log retention/export and the CSV / NetBox import-export entry points. | App | Partial (import/export exists) |
+
+> Per-user **Account** (`/account`, all roles): password change, two-factor (TOTP)
+> enrollment with recovery codes, and the user's own active-session review. This is
+> self-service and not part of the admin-only Settings area.
 
 This list is the working plan, not a contract; tabs may be split, merged, or
 re-sequenced as the phases land. The guiding principle is that anything an operator

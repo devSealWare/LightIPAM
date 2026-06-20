@@ -4,10 +4,13 @@
     <header class="glass-panel rounded-[28px] px-5 py-4">
       <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
       <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Settings</h1>
-      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Tune security policy and review the sessions signed in to your account.</p>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Configure how Light IPAM behaves — security policy, user accounts, and more.</p>
       <nav class="mt-4 flex flex-wrap gap-2">
-        {{/* One tab today; the structure supports adding more (e.g. Account, Notifications). */}}
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "security" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/security">Security</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "users" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/users">Users &amp; Roles</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "authentication" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/authentication">Authentication</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "certificates" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/certificates">Agent certificates</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "backup" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/backup">Backup &amp; Restore</a>
       </nav>
     </header>
 
@@ -112,6 +115,256 @@
       </div>
       {{ end }}
     </section>
+    {{ end }}
+
+    {{ if eq .ActiveTab "users" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Add a user</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Admins have full read/write access and manage users and settings. Viewers are read-only operators.</p>
+      <form method="post" action="/settings/users" class="mt-5 grid gap-4 sm:grid-cols-2">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Username</span>
+          <input class="form-input" type="text" name="username" autocomplete="off" required value="{{ index .Form "username" }}">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Display name</span>
+          <input class="form-input" type="text" name="display_name" autocomplete="off" value="{{ index .Form "display_name" }}">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Temporary password</span>
+          <input class="form-input" type="password" name="password" autocomplete="new-password" minlength="12" required>
+          <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">At least 12 characters.</span>
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Role</span>
+          <select class="form-input" name="role">
+            <option value="viewer" {{ if eq (index .Form "role") "viewer" }}selected{{ end }}>Viewer — read-only</option>
+            <option value="admin" {{ if eq (index .Form "role") "admin" }}selected{{ end }}>Admin — full access</option>
+          </select>
+        </label>
+        <div class="sm:col-span-2">
+          <button class="button-primary" type="submit">Create user</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Users</h2>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Change a role, reset a password, or remove an account.</p>
+      </div>
+      {{ range .Users }}
+      <div class="flex flex-col gap-3 border-b border-zinc-100 px-5 py-4 last:border-b-0 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+          <span class="block font-medium text-zinc-900 dark:text-white">{{ .DisplayName }}</span>
+          <span class="block text-sm text-zinc-500 dark:text-zinc-400">{{ .Username }}
+            {{ if .IsAdmin }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-900 px-2 py-0.5 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900">admin</span>{{ else }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">viewer</span>{{ end }}
+            {{ if eq .ID $.User.ID }}<span class="ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">you</span>{{ end }}
+          </span>
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <form method="post" action="/settings/users/{{ .ID }}/role" class="flex items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <select class="form-input h-10 py-0" name="role" aria-label="Role for {{ .Username }}">
+              <option value="viewer" {{ if not .IsAdmin }}selected{{ end }}>Viewer</option>
+              <option value="admin" {{ if .IsAdmin }}selected{{ end }}>Admin</option>
+            </select>
+            <button class="button-muted" type="submit">Set role</button>
+          </form>
+          <form method="post" action="/settings/users/{{ .ID }}/password" class="flex items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <input class="form-input h-10 py-0" type="password" name="password" placeholder="New password" autocomplete="new-password" minlength="12" required aria-label="New password for {{ .Username }}">
+            <button class="button-muted" type="submit">Reset</button>
+          </form>
+          {{ if ne .ID $.User.ID }}
+          <a class="inline-flex h-10 items-center justify-center rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" href="/settings/users/{{ .ID }}/delete">Delete</a>
+          {{ end }}
+        </div>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
+
+    {{ if eq .ActiveTab "authentication" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Single sign-on (OIDC)</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Let users sign in through an OpenID Connect provider (Okta, Entra ID, Google, Keycloak, Authentik…). The client secret is encrypted at rest and never shown again.</p>
+      <form method="post" action="/settings/authentication" class="mt-5 space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+
+        <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="oidc_enabled" {{ if index .Form "oidc_enabled" }}checked{{ end }}>
+          <span>
+            <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Enable single sign-on</span>
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Adds a “Sign in with SSO” button to the login page.</span>
+          </span>
+        </label>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Issuer URL</span>
+            <input class="form-input" type="url" name="oidc_issuer" placeholder="https://idp.example.com/realms/main" value="{{ index .Form "oidc_issuer" }}">
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">The OIDC discovery base (must serve /.well-known/openid-configuration).</span>
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Client ID</span>
+            <input class="form-input" type="text" name="oidc_client_id" value="{{ index .Form "oidc_client_id" }}">
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Client secret</span>
+            <input class="form-input" type="password" name="oidc_client_secret" autocomplete="off" placeholder="{{ if index .Form "oidc_secret_set" }}•••••••• (leave blank to keep){{ else }}Required{{ end }}">
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Base URL</span>
+            <input class="form-input" type="url" name="oidc_base_url" placeholder="https://ipam.example.com" value="{{ index .Form "oidc_base_url" }}">
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">External URL of this app. Register the redirect URI{{ if index .Form "oidc_redirect_url" }} <span class="font-mono text-zinc-700 dark:text-zinc-300">{{ index .Form "oidc_redirect_url" }}</span>{{ else }} <span class="font-mono">&lt;base&gt;/auth/oidc/callback</span>{{ end }} with your IdP.</span>
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Username claim</span>
+            <input class="form-input" type="text" name="oidc_username_claim" placeholder="preferred_username" value="{{ index .Form "oidc_username_claim" }}">
+          </label>
+          <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+            <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="oidc_auto_provision" {{ if index .Form "oidc_auto_provision" }}checked{{ end }}>
+            <span>
+              <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Auto-provision new users</span>
+              <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Create a read-only viewer on first SSO login when no local account matches.</span>
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <button class="button-primary" type="submit">Save authentication settings</button>
+        </div>
+      </form>
+    </section>
+    {{ end }}
+
+    {{ if eq .ActiveTab "certificates" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Managed certificate authority</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">The app owns a CA (private key sealed at rest) that signs short-lived mTLS certificates for scanner agents and the app's own dispatch client. Re-issue before expiry; agents hot-reload a rotated certificate without restarting.</p>
+      {{ if .CAReady }}
+      <dl class="mt-4 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">SHA-256 fingerprint</dt>
+          <dd class="mt-1 break-all font-mono text-xs text-zinc-700 dark:text-zinc-200">{{ .CAFingerprint }}</dd>
+        </div>
+        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">CA expires</dt>
+          <dd class="mt-1 text-sm text-zinc-700 dark:text-zinc-200">{{ datetime .CAExpiry }} UTC</dd>
+        </div>
+      </dl>
+      <div class="mt-4">
+        <a class="button-muted" href="/settings/certificates/ca.crt">Download CA certificate</a>
+      </div>
+      {{ else }}
+      <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">The managed CA is unavailable. It needs an encryption key (<span class="font-mono">APP_ENCRYPTION_KEY</span> or <span class="font-mono">APP_SECRET</span>) to seal its private key.</div>
+      {{ end }}
+    </section>
+
+    {{ if .CAReady }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Issue an agent certificate</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Downloads a zip with <span class="font-mono text-xs">ca.crt</span>, <span class="font-mono text-xs">agent.crt</span>, and <span class="font-mono text-xs">agent.key</span> for a scanner agent. Deploy it to the agent's certificate volume.</p>
+      <form method="post" action="/settings/certificates/agent" class="mt-5 grid gap-4 sm:grid-cols-2">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Common name</span>
+          <input class="form-input" type="text" name="cn" placeholder="light-ipam-scanner-agent">
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Validity (days)</span>
+          <input class="form-input" type="number" name="ttl_days" min="1" max="825" placeholder="{{ .LeafDefaultDays }}">
+        </label>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">DNS names</span>
+          <input class="form-input" type="text" name="dns_names" placeholder="scanner-agent, localhost">
+          <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Comma-separated. Defaults to scanner-agent, localhost.</span>
+        </label>
+        <label class="block sm:col-span-2">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">IP addresses</span>
+          <input class="form-input" type="text" name="ips" placeholder="10.0.0.5">
+          <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Comma-separated, optional. Loopback is always included.</span>
+        </label>
+        <div class="sm:col-span-2">
+          <button class="button-primary" type="submit">Issue &amp; download agent bundle</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Issue the app dispatch certificate</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Downloads <span class="font-mono text-xs">ca.crt</span>, <span class="font-mono text-xs">app.crt</span>, and <span class="font-mono text-xs">app.key</span> for the app's mTLS client used to reach agents.</p>
+      <form method="post" action="/settings/certificates/app" class="mt-5 flex flex-wrap items-end gap-3">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Validity (days)</span>
+          <input class="form-input w-40" type="number" name="ttl_days" min="1" max="825" placeholder="{{ .LeafDefaultDays }}">
+        </label>
+        <button class="button-primary" type="submit">Issue &amp; download app bundle</button>
+      </form>
+    </section>
+
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-rose-700 dark:text-rose-300">Rotate the CA</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Generates a new CA key. This <span class="font-semibold">invalidates every certificate issued by the old CA</span> — you must re-issue and redeploy all agent and app certificates afterwards. Use only if the CA key is compromised.</p>
+      <form method="post" action="/settings/certificates/rotate-ca" class="mt-4">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <button class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-300 dark:focus:ring-rose-900" type="submit">Rotate CA now</button>
+      </form>
+    </section>
+    {{ end }}
+    {{ end }}
+
+    {{ if eq .ActiveTab "backup" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Database backups</h2>
+          <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">On-demand <span class="font-mono text-xs">pg_dump</span> snapshots (custom format). Each records the schema-migration version it was taken at.</p>
+        </div>
+        {{ if and .BackupEnabled .BackupWritable }}
+        <form method="post" action="/settings/backup/create" class="shrink-0">
+          <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+          <button class="button-primary" type="submit">Create backup now</button>
+        </form>
+        {{ end }}
+      </div>
+
+      {{ if not .BackupEnabled }}
+      <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">Backups are not configured. Set <span class="font-mono">BACKUP_DIR</span> to a writable, persisted directory.</div>
+      {{ else if not .BackupWritable }}
+      <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">The backup directory <span class="font-mono">{{ .BackupDir }}</span> is not writable. Mount a writable volume there.</div>
+      {{ else }}
+      <p class="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Stored in <span class="font-mono">{{ .BackupDir }}</span>. Restore with <span class="font-mono">pg_restore</span> — see <span class="font-mono">docs/BACKUP_RESTORE.md</span>.</p>
+      {{ end }}
+    </section>
+
+    {{ if .Backups }}
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="grid grid-cols-[2fr_0.8fr_0.8fr_1fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Backup</span><span>Size</span><span>Migration</span><span class="text-right">Actions</span>
+      </div>
+      {{ range .Backups }}
+      <div class="grid grid-cols-[2fr_0.8fr_0.8fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="min-w-0">
+          <span class="block truncate font-mono text-xs text-zinc-700 dark:text-zinc-200">{{ .Name }}</span>
+          <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ datetime .CreatedAt }} UTC</span>
+        </span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ filesize .Size }}</span>
+        <span class="text-zinc-600 dark:text-zinc-300">#{{ .Migration }}</span>
+        <span class="flex items-center justify-end gap-2">
+          <a class="button-muted" href="/settings/backup/{{ .Name }}/download">Download</a>
+          <form method="post" action="/settings/backup/{{ .Name }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+            <button class="inline-flex h-10 items-center justify-center rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" type="submit">Delete</button>
+          </form>
+        </span>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
     {{ end }}
   </div>
 {{ end }}

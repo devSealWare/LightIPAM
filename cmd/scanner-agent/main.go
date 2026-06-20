@@ -50,7 +50,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	tlsConfig, err := agent.ServerTLSConfig(certPEM, keyPEM, caPEM)
+	// A hot-reloading certificate lets a rotated agent cert be picked up without
+	// restarting the process: an out-of-band re-issue (the app's managed CA writes
+	// fresh files, or a sidecar/cron does) is applied on the next reload tick. The
+	// initial keypair is still validated here.
+	if _, err := agent.ServerTLSConfig(certPEM, keyPEM, caPEM); err != nil {
+		logger.Error("validate server certificate", "error", err)
+		os.Exit(1)
+	}
+	reloader, err := agent.NewCertReloader(certPath, keyPath, logger)
+	if err != nil {
+		logger.Error("init cert reloader", "error", err)
+		os.Exit(1)
+	}
+	tlsConfig, err := agent.ServerTLSConfigReloading(reloader, caPEM)
 	if err != nil {
 		logger.Error("build server TLS config", "error", err)
 		os.Exit(1)
@@ -129,6 +142,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Watch the certificate files and hot-reload on rotation.
+	go reloader.Watch(ctx, time.Duration(positiveInt(os.Getenv("AGENT_CERT_RELOAD_SECONDS"), 300))*time.Second)
 
 	go func() {
 		logger.Info("starting scanner agent",
@@ -303,6 +319,14 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func positiveInt(value string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func splitCSV(value string) []string {

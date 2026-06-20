@@ -14,6 +14,10 @@ services:
       # self-reported identity over mTLS and auto-enrolls it as a pending agent,
       # so an operator only has to approve it. Leave unset to disable auto-enroll.
       SCANNER_AGENT_ENDPOINT: https://scanner-agent:8443
+      # Where in-app pg_dump backups are written. Backed by the named "backups"
+      # volume below so they survive container restarts. pg_dump is a plain DB
+      # client — the app still runs with zero Linux capabilities.
+      BACKUP_DIR: /var/lib/lightipam/backups
     ports:
       # Host port is configurable so deployments whose 8080 is taken can publish
       # elsewhere without editing this file (which a git pull would clobber). Set
@@ -34,6 +38,7 @@ services:
       start_period: 10s
     volumes:
       - ./deploy/scanner-certs:/certs:ro
+      - backups:/var/lib/lightipam/backups
     read_only: true
     cap_drop:
       - ALL
@@ -114,3 +119,4 @@ services:
 
 volumes:
   pgdata:
+  backups:
