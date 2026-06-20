@@ -88,6 +88,12 @@ type PageData struct {
 	CustomFields    []store.CustomFieldValue
 	CustomFieldDefs []store.CustomFieldDef
 
+	// Policy / health. PolicyGroups carries the grouped findings for the /policy
+	// page; PolicySummary the severity counts for that page's header and the
+	// dashboard widget.
+	PolicyGroups  []store.PolicyFindingGroup
+	PolicySummary store.PolicySummary
+
 	Form           map[string]string
 	ActiveNav      string
 	ActiveTab      string

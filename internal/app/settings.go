@@ -52,6 +52,7 @@ func (a *App) loadSettings(ctx context.Context) {
 		stored = nil
 	}
 	a.setSettings(a.mergeSettings(stored))
+	a.setPolicySettings(a.mergePolicySettings(stored))
 	a.loadOIDCSettings(ctx, stored)
 }
 

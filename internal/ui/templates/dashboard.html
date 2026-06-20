@@ -62,6 +62,7 @@
         </div>
       </div>
 
+      <div class="space-y-5">
       <aside class="glass-panel rounded-[28px] p-5">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Review queue</h2>
@@ -80,6 +81,26 @@
         <div class="mt-6 rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">No pending review items.</div>
         {{ end }}
       </aside>
+
+      <aside class="glass-panel rounded-[28px] p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Policy &amp; health</h2>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/policy">View all</a>
+        </div>
+        {{ if .PolicySummary.Total }}
+        <a class="mt-6 flex items-center justify-between gap-3 rounded-2xl border px-5 py-4 transition {{ if .PolicySummary.Critical }}border-rose-200 bg-rose-50 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:hover:bg-rose-950/70{{ else if .PolicySummary.Warning }}border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:hover:bg-amber-950/70{{ else }}border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/40 dark:hover:bg-sky-950/70{{ end }}" href="/policy">
+          <span>
+            <span class="block text-sm font-semibold {{ if .PolicySummary.Critical }}text-rose-800 dark:text-rose-200{{ else if .PolicySummary.Warning }}text-amber-800 dark:text-amber-200{{ else }}text-sky-800 dark:text-sky-200{{ end }}">{{ .PolicySummary.Total }} policy finding(s)</span>
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{{ .PolicySummary.Critical }} critical · {{ .PolicySummary.Warning }} warning · {{ .PolicySummary.Info }} info</span>
+          </span>
+          <span class="inline-flex min-w-[1.75rem] items-center justify-center rounded-full px-2 py-1 text-sm font-semibold text-white {{ if .PolicySummary.Critical }}bg-rose-500{{ else if .PolicySummary.Warning }}bg-amber-500{{ else }}bg-sky-500{{ end }}">{{ .PolicySummary.Total }}</span>
+        </a>
+        {{ else }}
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Hygiene checks across your IPAM data — overlaps, stale records, unmanaged services.</p>
+        <div class="mt-6 rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">No policy findings.</div>
+        {{ end }}
+      </aside>
+      </div>
     </section>
 
     <section class="mt-5 grid gap-5 lg:grid-cols-3">
