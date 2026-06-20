@@ -244,6 +244,11 @@ func TestRenderTemplates(t *testing.T) {
 			"session_idle_minutes":   "30",
 			"session_absolute_hours": "12",
 			"logout_keeps_current":   "on",
+			// Policy tab (settings.html) pre-fill.
+			"policy_check_overlaps": "on",
+			"policy_check_stale":    "on",
+			"policy_check_services": "on",
+			"policy_stale_days":     "30",
 		},
 		Sessions: []store.Session{{
 			ID:         "session-1",
@@ -266,7 +271,14 @@ func TestRenderTemplates(t *testing.T) {
 			{ID: "cf-1", EntityType: "device", Name: "Owner", FieldType: "text", CreatedAt: time.Now()},
 			{ID: "cf-3", EntityType: "subnet", Name: "Cost center", FieldType: "text", CreatedAt: time.Now()},
 		},
-		ActiveTab:   "security",
+		ActiveTab:     "security",
+		PolicySummary: store.PolicySummary{Critical: 1, Warning: 2, Info: 1},
+		PolicyGroups: []store.PolicyFindingGroup{
+			{Check: "overlapping_subnets", Label: "Overlapping subnets", Findings: []store.PolicyFinding{
+				{Check: "overlapping_subnets", Severity: store.SeverityCritical, Title: "10.0.0.0/16 overlaps 10.0.5.0/24", Detail: "Overlapping space.", Link: "/subnets/subnet-1"},
+			}},
+			{Check: "stale_records", Label: "Stale records (not seen in 30 days)", Findings: nil},
+		},
 		SearchQuery: "192.168",
 		SearchResults: store.SearchResults{
 			Query:     "192.168",
@@ -290,6 +302,7 @@ func TestRenderTemplates(t *testing.T) {
 		"device_detail.html",
 		"audit.html",
 		"settings.html",
+		"policy.html",
 		"forbidden.html",
 		"account.html",
 		"mfa_challenge.html",

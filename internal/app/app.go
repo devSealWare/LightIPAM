@@ -47,10 +47,12 @@ type App struct {
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
-	// oidc holds the cached SSO settings; oidcProvider caches the built provider
-	// (invalidated when oidc settings change). All guarded by settingsMu.
+	// policy is the cached policy/health configuration (same pattern). oidc holds
+	// the cached SSO settings; oidcProvider caches the built provider (invalidated
+	// when oidc settings change). All guarded by settingsMu.
 	settingsMu   sync.RWMutex
 	settings     SecuritySettings
+	policy       PolicySettings
 	oidc         OIDCSettings
 	oidcProvider *oidcProvider
 
@@ -124,6 +126,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/users/{id}/password", app.userResetPassword)
 	mux.HandleFunc("GET /settings/users/{id}/delete", app.userDeleteConfirm)
 	mux.HandleFunc("POST /settings/users/{id}/delete", app.userDelete)
+	mux.HandleFunc("GET /settings/policy", app.settingsPolicy)
+	mux.HandleFunc("POST /settings/policy", app.settingsPolicyUpdate)
 	mux.HandleFunc("GET /settings/custom-fields", app.settingsCustomFields)
 	mux.HandleFunc("POST /settings/custom-fields", app.customFieldCreate)
 	mux.HandleFunc("GET /settings/custom-fields/{id}/delete", app.customFieldDeleteConfirm)
@@ -163,6 +167,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /macs/{id}/delete", app.macDeleteConfirm)
 	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
 	mux.HandleFunc("GET /audit", app.auditIndex)
+	mux.HandleFunc("GET /policy", app.policyIndex)
 
 	mux.HandleFunc("GET /scans", app.scansIndex)
 	mux.HandleFunc("GET /scans/new", app.scanNew)
@@ -264,6 +269,10 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Error("list scan jobs", "error", err)
 	}
+	_, policySummary, err := a.computePolicy(r.Context())
+	if err != nil {
+		a.logger.Error("compute policy summary", "error", err)
+	}
 
 	_ = ui.Render(w, "dashboard.html", ui.PageData{
 		Title:            "Dashboard",
@@ -275,6 +284,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 		AuditLogs:        auditLogs,
 		PendingDiscovery: pendingDiscovery,
 		ScanJobs:         recentScans,
+		PolicySummary:    policySummary,
 		ActiveNav:        "dashboard",
 	})
 }
