@@ -43,6 +43,15 @@ The app has:
   tab) with active-session review + "log out everywhere", all auth/session policy
   **editable at runtime** (persisted in `app_settings`, env = boot defaults), and a
   `/readyz` readiness probe (Phase 5, ADR 0017).
+- **Admin vs. read-only roles** (migration 14, central authorize middleware),
+  **TOTP MFA** with recovery codes (migration 15, sealed secret, RFC-vector tested),
+  **OIDC SSO** (auth-code + PKCE, sealed client secret, migration 16),
+  **encrypted secrets at rest** (`internal/secret`, AES-256-GCM), **pg_dump
+  backup/restore** (Backup tab + `docs/BACKUP_RESTORE.md`), and an **app-managed CA**
+  (migration 17) that issues + rotates short-lived agent mTLS certs (the agent
+  hot-reloads them). Settings grew Users & Roles, Authentication, Agent certificates,
+  and Backup & Restore tabs; a per-user `/account` page handles MFA + password +
+  session review (Phase 5, ADR 0018). **Phase 5 exit criteria met — ready for Phase 6.**
 
 ## Current Implementation Style
 
@@ -484,21 +493,25 @@ Remaining candidate follow-ups, roughly in priority order:
   desired: tagged/trunk VLAN membership (only access PVID is mapped today),
   per-interface speed/alias, and an SNMP/API-based DHCP source for appliances that do
   not expose a lease file.
-- **Phase 5 (Production Hardening) — in progress.** First slice **done**: auth +
-  session hardening, plus a tabbed **Settings** page whose **Security** tab makes the
-  auth/session policy runtime-editable (login throttling/lockout, idle+absolute session
-  timeouts, configurable "log out everywhere", `/readyz`, timing-oracle fix; ADR 0017,
-  see the section above). Remaining slices, each its own PR: managed agent certificate
-  issuance/rotation (replacing the dev CA), OIDC SSO, MFA (TOTP), roles beyond the
-  single admin, encrypted secrets at rest, and backup/restore. See `docs/ROADMAP.md`
-  "Phase 5" for the broken-out scope and exit criteria.
-- **Settings panel build-out.** The Settings page is meant to grow into the product's
-  configuration surface; `docs/SETTINGS.md` is the canonical plan (tabs: General,
-  Users & Roles, Authentication, Scanning/nmap, Discovery, Agents, Backup, Notifications,
-  Data & Audit) with the pattern for adding a tab and the **agent-secret boundary**
-  (SNMP communities, nmap egress pinning, DHCP lease paths, agent allowlist stay on the
-  agent — never the app DB or the panel). Most tabs unlock alongside the Phase 5/6 items
-  above; the Scanning, Discovery, and General tabs can land independently.
+- **Phase 5 (Production Hardening) — complete (ADRs 0017 + 0018).** First slice (ADR
+  0017): auth + session hardening + the runtime-editable Security tab + `/readyz`.
+  Second slice (ADR 0018): admin/viewer **roles** (migration 14), **TOTP MFA** +
+  recovery codes (migration 15), **OIDC SSO** auth-code + PKCE (migration 16),
+  **encrypted secrets at rest** (`internal/secret`), **pg_dump backup/restore**
+  (`internal/backup`), and an **app-managed CA** for agent mTLS cert issuance/rotation
+  (migration 17) with agent hot-reload. The Phase 5 exit criteria are met. The one
+  deferred increment is **online agent-pull cert enrollment** (agent renews its own
+  cert over a bootstrap channel) — today the managed CA issues and the agent hot-reloads
+  operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
+  `docs/KEY_ROTATION.md`.
+- **Settings panel build-out.** The Settings page is the product's configuration
+  surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
+  Roles, Authentication, Agent certificates, Backup & Restore. **Still planned**:
+  General, Scanning/nmap, Discovery, Notifications (Phase 6), and richer Data & Audit —
+  each can land independently. The **agent-secret boundary** holds (SNMP communities,
+  nmap egress pinning, DHCP lease paths, agent allowlist stay on the agent — never the
+  app DB or the panel).
 
 When starting the next issue, branch from `main`, and confirm with the user
-which item to pick up (the backlog file no longer drives the order).
+which item to pick up (the backlog file no longer drives the order). Phase 5 is
+done; the next phase is **Phase 6 (Advanced Automation)** — see `docs/ROADMAP.md`.

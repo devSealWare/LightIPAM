@@ -123,12 +123,18 @@ the agent.
 
 ### Identity & access
 
-- **OIDC SSO** (authorization-code + PKCE) as an optional alternative/addition to
-  local login; map the OIDC subject to a Light IPAM user.
-- **MFA (TOTP)** for local accounts, with recovery codes. The auth design already
-  leaves room for this (`docs/MVP.md`).
-- **Roles beyond the single admin** — at minimum admin vs. read-only operator, so a
-  viewer cannot mutate IPAM or scan config.
+- **OIDC SSO (done, ADR 0018).** Authorization-code + PKCE via `go-oidc`/`oauth2`;
+  state/PKCE/nonce in a sealed cookie, ID-token + nonce verified. `users.oidc_subject`
+  (migration 16) binds the IdP subject to a local user; login resolves by subject, then
+  username (linking), then optionally auto-provisions a read-only viewer. Configured on
+  the admin **Authentication** settings tab with the client secret sealed at rest.
+- **MFA (TOTP) (done, ADR 0018).** RFC 6238 TOTP (stdlib, RFC-vector tested) with
+  single-use recovery codes; the per-user secret is sealed at rest (migration 15). Login
+  gains a signed pending-MFA second step; self-service enrollment (QR + manual key),
+  recovery-code display, and disable live on the `/account` page.
+- **Roles beyond the single admin (done, ADR 0018).** `users.role` admin vs. read-only
+  viewer (migration 14); a central middleware blocks viewers from all mutations, the
+  Settings area is admin-only, and a **Users & Roles** tab manages accounts.
 - **Session hardening (done, ADR 0017).** Idle **and** absolute session timeouts,
   per-session client IP + User-Agent capture, a tabbed **Settings page** (Security
   tab) listing active sessions with a "log out everywhere" control, and login
@@ -180,33 +186,49 @@ Planned tabs (sequenced with the phases that unlock them):
 
 ### Secrets & certificates
 
-- **Managed agent certificate issuance + rotation**, replacing the hand-run dev CA
-  (`cmd/scanner-certs`): app-issued short-lived agent certs that auto-renew before
-  expiry, with revocation (short TTLs or a CRL). Today the dev CA never rotates.
-- **Encrypted secrets at rest** — SNMP communities, the OIDC client secret, and DB
-  credentials sealed with a key from env/KMS rather than stored or passed in plaintext.
-- **Rotation for the app's own keys** (session/CSRF signing keys) with a documented
-  runbook.
+- **Managed agent certificate issuance + rotation (done, ADR 0018).** The app owns a CA
+  (private key sealed at rest, migration 17) that signs short-lived agent/app mTLS
+  leaves, replacing the hand-run dev CA as the issuing authority. The **Agent
+  certificates** settings tab issues downloadable bundles (configurable CN/SANs/TTL),
+  downloads the CA, and rotates the CA; the scanner agent hot-reloads a rotated cert
+  without a restart. Revocation relies on short TTLs (the accepted alternative to a CRL).
+  *Follow-up: online agent-pull enrollment so an agent renews its own cert over a
+  bootstrap channel without operator file deployment.*
+- **Encrypted secrets at rest (done, ADR 0018).** `internal/secret` seals the TOTP
+  secret, the OIDC client secret, and the managed-CA key with AES-256-GCM
+  (`APP_ENCRYPTION_KEY`, or derived from `APP_SECRET`). SNMP communities remain
+  **agent-local** by design and never reach the app DB.
+- **Rotation for the app's own keys** — documented in `docs/KEY_ROTATION.md`
+  (`APP_SECRET`, `APP_ENCRYPTION_KEY`, managed CA, and leaf certs).
 
 ### Data durability & operations
 
-- **Backup & restore** — a documented `pg_dump`/`pg_restore` flow plus an
-  app/CLI-triggered backup and a tested restore path; capture the schema-migration
-  version with each backup.
+- **Backup & restore (done, ADR 0018).** `internal/backup` takes on-demand `pg_dump`
+  (custom-format) snapshots into `BACKUP_DIR`, each filename capturing the schema-
+  migration version. The admin **Backup & Restore** tab creates/lists/downloads/deletes
+  them; restore is documented and scripted (`docs/BACKUP_RESTORE.md`,
+  `deploy/restore.sh`) with migrations rolling an older dump forward on boot. The app
+  image bundles `postgresql16-client` and keeps zero Linux capabilities.
 - **Readiness/health depth (done, ADR 0017).** `/healthz` stays the liveness probe;
   `/readyz` is added to ping the DB and report the applied-migration version (503 when
   the DB is unreachable), and the app compose service health-checks it. Agent
   reachability in the probe remains a future enhancement.
-- **Disaster-recovery runbook** covering compose, volumes, and certificates.
+- **Disaster-recovery runbook (done).** `docs/DISASTER_RECOVERY.md` covers compose,
+  volumes (`pgdata`/`backups`), secrets, and scanner-agent certificates.
 
 ### Multi-tenancy (only if needed)
 
 - Organization/tenant separation of IPAM data, users, and agents — deferred unless a
   deployment requires it.
 
-**Exit criteria:** an operator can stand up Light IPAM with SSO + MFA, agents that
-rotate their own certificates, secrets that are never stored in plaintext, and a
-tested backup/restore path.
+**Exit criteria — met (ADRs 0017 + 0018).** An operator can stand up Light IPAM with
+SSO + MFA, a managed CA that issues short-lived agent certs which the agent hot-reloads
+on rotation, secrets sealed at rest, and a tested backup/restore path — on top of
+admin/viewer roles, login throttling, session hardening, and a runtime-editable
+Settings panel. The one explicitly-deferred increment is **online agent-pull
+certificate enrollment** (the agent renewing its own cert over a bootstrap channel);
+today the managed CA issues and the agent hot-reloads operator-deployed certs. Phase 5
+is complete enough to begin **Phase 6**.
 
 ## Phase 6: Advanced Automation
 

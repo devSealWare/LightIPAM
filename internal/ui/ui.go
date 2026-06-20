@@ -81,11 +81,12 @@ type PageData struct {
 	CAFingerprint   string
 	CAExpiry        time.Time
 	LeafDefaultDays int
-	Form              map[string]string
-	ActiveNav         string
-	ActiveTab         string
-	SuccessMessage    string
-	ImportResult      store.ImportResult
+
+	Form           map[string]string
+	ActiveNav      string
+	ActiveTab      string
+	SuccessMessage string
+	ImportResult   store.ImportResult
 }
 
 // ScanTypeGroup is a labeled set of scan types rendered as an <optgroup> in the
