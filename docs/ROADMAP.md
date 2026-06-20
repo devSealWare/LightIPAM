@@ -251,7 +251,18 @@ is complete enough to begin **Phase 6**.
   offending record; a dashboard count widget; and a runtime-editable **Policy** Settings
   tab (enable/disable each check, stale threshold, include-never-seen) following the
   `app_settings` pattern. App-side only, no new privilege, no client JS, no migration.
-- Scheduled scan windows.
+- **Scheduled scan windows (done, ADR 0021).** A schedule may restrict firing to a
+  window — a time-of-day range plus a weekday set, read in the schedule's own IANA
+  timezone — layered on top of the existing interval cadence. A due schedule outside
+  its window is skipped that tick and re-checked on the next one (`next_run_at` is not
+  advanced), so it fires once the window opens. The decision is a pure, unit-tested
+  `windowAllows` (handles midnight-wrap, no-time/no-day, and the empty-window =
+  always-allowed back-compat case); migration 18 adds `window_start_min` /
+  `window_end_min` (minutes since midnight, NULL = no restriction), `window_days`
+  (0=Sun..6=Sat, empty = any day), and `window_tz` (default UTC). The schedule form
+  gains native time/day/timezone fields (no client JS) and the schedules table shows
+  the window. `cmd/server` embeds `time/tzdata` so zone lookups work on the Alpine
+  image. Per-schedule config, no Settings tab, no new privilege.
 - Change webhooks.
 - NetBox-compatible import/export.
 - Terraform provider or CLI.

@@ -8,6 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Embed the IANA timezone database in the binary so per-schedule scan windows
+	// (Phase 6, ADR 0021) can resolve a schedule's window_tz via time.LoadLocation.
+	// The app image is alpine, which ships no /usr/share/zoneinfo; embedding keeps
+	// the lookup working without adding the tzdata OS package.
+	_ "time/tzdata"
 
 	"github.com/devSealWare/LightIPAM/internal/app"
 	"github.com/devSealWare/LightIPAM/internal/config"

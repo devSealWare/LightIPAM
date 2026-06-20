@@ -265,14 +265,22 @@ func servicesFromObservation(services []scanner.ServiceObservation) []store.Disc
 }
 
 // RunDueSchedules enqueues a job for every enabled schedule whose next run has
-// passed, advancing each schedule's timestamps.
+// passed, advancing each schedule's timestamps. A schedule whose firing is
+// restricted to a window (Phase 6, ADR 0021) is skipped this tick when the
+// current time is outside that window: its next_run_at is left in the past so it
+// stays due and fires on the next tick once the window opens.
 func (s *Service) RunDueSchedules(ctx context.Context) {
 	schedules, err := s.store.ListDueScanSchedules(ctx)
 	if err != nil {
 		s.logger.Error("list due scan schedules", "error", err)
 		return
 	}
+	now := time.Now()
 	for _, schedule := range schedules {
+		if !windowAllows(windowFromSchedule(schedule), now) {
+			s.logger.Debug("scan schedule due but outside its window; will retry next tick", "schedule_id", schedule.ID)
+			continue
+		}
 		s.runSchedule(ctx, schedule)
 		if err := s.store.MarkScanScheduleRan(ctx, schedule.ID); err != nil {
 			s.logger.Error("mark scan schedule ran", "schedule_id", schedule.ID, "error", err)

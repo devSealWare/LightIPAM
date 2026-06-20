@@ -13,19 +13,21 @@
 
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       {{ if .ScanSchedules }}
-      <div class="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.9fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+      <div class="grid grid-cols-[1.1fr_0.9fr_0.6fr_1.1fr_0.6fr_0.9fr_auto] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
         <span>Name</span>
         <span>Agent</span>
         <span>Every</span>
+        <span>Window</span>
         <span>Enabled</span>
         <span>Next run</span>
         <span class="text-right">Actions</span>
       </div>
       {{ range .ScanSchedules }}
-      <div class="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.9fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+      <div class="grid grid-cols-[1.1fr_0.9fr_0.6fr_1.1fr_0.6fr_0.9fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
         <a class="font-semibold text-zinc-950 hover:underline dark:text-white" href="/schedules/{{ .ID }}/edit">{{ .Name }}<span class="block text-xs font-normal text-zinc-400">{{ .ScanType }} / {{ .Mode }}</span></a>
         <span class="text-zinc-600 dark:text-zinc-300">{{ if .AgentName }}{{ .AgentName }}{{ else }}removed{{ end }}</span>
         <span class="text-zinc-600 dark:text-zinc-300">{{ .IntervalSeconds }}s</span>
+        <span class="text-zinc-600 dark:text-zinc-300">{{ .WindowLabel }}</span>
         <span>{{ if .Enabled }}{{ template "status_badge" "active" }}{{ else }}{{ template "status_badge" "disabled" }}{{ end }}</span>
         <span class="text-zinc-500 dark:text-zinc-400">{{ datetime .NextRunAt }}</span>
         <div class="flex items-center justify-end gap-2">
