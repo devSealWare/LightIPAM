@@ -435,6 +435,28 @@ CREATE TABLE IF NOT EXISTS app_ca (
 );
 `,
 	},
+	{
+		version: 18,
+		sql: `
+-- Phase 6 scheduled scan windows. A schedule may restrict firing to an allowed
+-- window: a time-of-day range plus a set of weekdays, evaluated in the schedule's
+-- own timezone. The window is an additional gate on top of the existing interval
+-- cadence (the in-process ticker still drives "when due"); a due schedule outside
+-- its window is skipped that tick and re-checked on the next one.
+--
+-- Bounds are stored as minutes-since-midnight (0..1439); NULL means "no time-of-day
+-- restriction". window_days holds the allowed weekdays (0=Sunday..6=Saturday); an
+-- empty array means "any day". window_tz is the IANA zone the bounds/days are read
+-- in (default UTC). All-unset (NULL bounds, empty days) = no window = the previous
+-- always-allowed behaviour, so existing schedules are unchanged.
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_start_min integer
+	CHECK (window_start_min IS NULL OR window_start_min BETWEEN 0 AND 1439);
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_end_min integer
+	CHECK (window_end_min IS NULL OR window_end_min BETWEEN 0 AND 1439);
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_days integer[] NOT NULL DEFAULT '{}';
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_tz text NOT NULL DEFAULT 'UTC';
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

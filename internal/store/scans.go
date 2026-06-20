@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -92,10 +94,19 @@ type ScanSchedule struct {
 	TimeoutSeconds  int
 	IntervalSeconds int
 	Enabled         bool
-	LastRunAt       *time.Time
-	NextRunAt       time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Window restricts firing to a time-of-day range and a weekday set, read in
+	// WindowTZ. WindowStartMin/WindowEndMin are minutes since midnight (nil = no
+	// time-of-day restriction); WindowDays holds allowed weekdays (0=Sunday..
+	// 6=Saturday, empty = any day); WindowTZ is an IANA zone (default "UTC"). All
+	// unset = no window = always allowed.
+	WindowStartMin *int
+	WindowEndMin   *int
+	WindowDays     []int
+	WindowTZ       string
+	LastRunAt      *time.Time
+	NextRunAt      time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // ScanScheduleInput holds editable schedule fields.
@@ -109,6 +120,10 @@ type ScanScheduleInput struct {
 	TimeoutSeconds  int
 	IntervalSeconds int
 	Enabled         bool
+	WindowStartMin  *int
+	WindowEndMin    *int
+	WindowDays      []int
+	WindowTZ        string
 }
 
 // --- Agents ---
@@ -364,22 +379,41 @@ func (s *Store) CreateScanSchedule(ctx context.Context, input ScanScheduleInput)
 		return ScanSchedule{}, err
 	}
 	nextRun := time.Now().Add(time.Duration(input.IntervalSeconds) * time.Second)
+	days := input.WindowDays
+	if days == nil {
+		days = []int{}
+	}
+	tz := input.WindowTZ
+	if tz == "" {
+		tz = "UTC"
+	}
 	if _, err := s.db.Exec(ctx, `
-INSERT INTO scan_schedules (id, name, agent_id, scan_type, mode, allowed_cidrs, targets, timeout_seconds, interval_seconds, enabled, next_run_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		id, input.Name, input.AgentID, input.ScanType, input.Mode, input.AllowedCIDRs, input.Targets, input.TimeoutSeconds, input.IntervalSeconds, input.Enabled, nextRun); err != nil {
+INSERT INTO scan_schedules (id, name, agent_id, scan_type, mode, allowed_cidrs, targets, timeout_seconds, interval_seconds, enabled, next_run_at, window_start_min, window_end_min, window_days, window_tz)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		id, input.Name, input.AgentID, input.ScanType, input.Mode, input.AllowedCIDRs, input.Targets, input.TimeoutSeconds, input.IntervalSeconds, input.Enabled, nextRun,
+		input.WindowStartMin, input.WindowEndMin, days, tz); err != nil {
 		return ScanSchedule{}, fmt.Errorf("create scan schedule: %w", err)
 	}
 	return s.GetScanSchedule(ctx, id)
 }
 
 func (s *Store) UpdateScanSchedule(ctx context.Context, id string, input ScanScheduleInput) (ScanSchedule, error) {
+	days := input.WindowDays
+	if days == nil {
+		days = []int{}
+	}
+	tz := input.WindowTZ
+	if tz == "" {
+		tz = "UTC"
+	}
 	tag, err := s.db.Exec(ctx, `
 UPDATE scan_schedules
 SET name = $2, agent_id = $3, scan_type = $4, mode = $5, allowed_cidrs = $6, targets = $7,
-	timeout_seconds = $8, interval_seconds = $9, enabled = $10, updated_at = now()
+	timeout_seconds = $8, interval_seconds = $9, enabled = $10,
+	window_start_min = $11, window_end_min = $12, window_days = $13, window_tz = $14, updated_at = now()
 WHERE id = $1`,
-		id, input.Name, input.AgentID, input.ScanType, input.Mode, input.AllowedCIDRs, input.Targets, input.TimeoutSeconds, input.IntervalSeconds, input.Enabled)
+		id, input.Name, input.AgentID, input.ScanType, input.Mode, input.AllowedCIDRs, input.Targets, input.TimeoutSeconds, input.IntervalSeconds, input.Enabled,
+		input.WindowStartMin, input.WindowEndMin, days, tz)
 	if err != nil {
 		return ScanSchedule{}, fmt.Errorf("update scan schedule: %w", err)
 	}
@@ -393,12 +427,12 @@ func (s *Store) GetScanSchedule(ctx context.Context, id string) (ScanSchedule, e
 	var sc ScanSchedule
 	if err := s.db.QueryRow(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 WHERE sc.id = $1`, id).Scan(
 		&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-		&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+		&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return ScanSchedule{}, ErrNotFound
@@ -411,7 +445,7 @@ WHERE sc.id = $1`, id).Scan(
 func (s *Store) ListScanSchedules(ctx context.Context) ([]ScanSchedule, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 ORDER BY sc.name`)
@@ -425,7 +459,7 @@ ORDER BY sc.name`)
 		var sc ScanSchedule
 		if err := rows.Scan(
 			&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan scan schedule: %w", err)
 		}
@@ -449,7 +483,7 @@ func (s *Store) DeleteScanSchedule(ctx context.Context, id string) error {
 func (s *Store) ListDueScanSchedules(ctx context.Context) ([]ScanSchedule, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 WHERE sc.enabled AND sc.next_run_at <= now()
@@ -464,13 +498,84 @@ ORDER BY sc.next_run_at`)
 		var sc ScanSchedule
 		if err := rows.Scan(
 			&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan due scan schedule: %w", err)
 		}
 		schedules = append(schedules, sc)
 	}
 	return schedules, rows.Err()
+}
+
+// HasWindow reports whether the schedule restricts firing to a window (a
+// time-of-day range and/or a weekday set). A schedule with no window is allowed
+// to run at any time, the pre-Phase-6 behaviour.
+func (s ScanSchedule) HasWindow() bool {
+	return s.WindowStartMin != nil || s.WindowEndMin != nil || len(s.WindowDays) > 0
+}
+
+// WindowLabel renders the schedule's allowed window for display, e.g.
+// "Mon–Fri 01:00–05:00 UTC", "01:00–05:00 UTC" (any day), "Mon–Fri" (any time),
+// or "Any time" when no window is set.
+func (s ScanSchedule) WindowLabel() string {
+	parts := make([]string, 0, 2)
+	if days := formatWeekdays(s.WindowDays); days != "" {
+		parts = append(parts, days)
+	}
+	if s.WindowStartMin != nil && s.WindowEndMin != nil {
+		tz := s.WindowTZ
+		if tz == "" {
+			tz = "UTC"
+		}
+		parts = append(parts, fmt.Sprintf("%s–%s %s", formatMinutes(*s.WindowStartMin), formatMinutes(*s.WindowEndMin), tz))
+	}
+	if len(parts) == 0 {
+		return "Any time"
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatMinutes(m int) string {
+	return fmt.Sprintf("%02d:%02d", m/60, m%60)
+}
+
+var weekdayNames = [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+
+// formatWeekdays renders a weekday set (0=Sunday..6=Saturday) as compact,
+// comma-separated runs, collapsing three-or-more contiguous days into a range
+// (e.g. {1,2,3,4,5} → "Mon–Fri", {1,3,5} → "Mon, Wed, Fri", {5,6} → "Fri, Sat").
+// An empty set renders as "" (meaning "any day").
+func formatWeekdays(days []int) string {
+	seen := make(map[int]bool, len(days))
+	uniq := make([]int, 0, len(days))
+	for _, d := range days {
+		if d < 0 || d > 6 || seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	if len(uniq) == 0 {
+		return ""
+	}
+	sort.Ints(uniq)
+	var groups []string
+	for i := 0; i < len(uniq); {
+		j := i
+		for j+1 < len(uniq) && uniq[j+1] == uniq[j]+1 {
+			j++
+		}
+		switch run := j - i + 1; {
+		case run >= 3:
+			groups = append(groups, weekdayNames[uniq[i]]+"–"+weekdayNames[uniq[j]])
+		default:
+			for k := i; k <= j; k++ {
+				groups = append(groups, weekdayNames[uniq[k]])
+			}
+		}
+		i = j + 1
+	}
+	return strings.Join(groups, ", ")
 }
 
 // MarkScanScheduleRan advances a schedule's run timestamps after it fires.
