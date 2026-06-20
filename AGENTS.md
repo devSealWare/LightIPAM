@@ -45,6 +45,9 @@ Implemented (manual IPAM):
   Addresses, and Devices tables (Phase 4.5, ADR 0016).
 - Basic CSV import/export of subnets, addresses, and devices with a validated
   dry-run preview and all-or-nothing transactional apply (Phase 4.5, ADR 0016).
+- Operator-defined custom fields (text) per entity type, managed on an admin
+  **Custom fields** Settings tab and edited/shown on each subnet/address/device
+  (sparse, audited; schema from migration 1). Phase 5 audit, ADR 0019.
 
 ## Repository Structure
 

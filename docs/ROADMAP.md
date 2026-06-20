@@ -113,6 +113,13 @@ are not lost between phases:
   read "planned for Phase 2"). They are now wired to live data: the review queue shows
   the real pending-discovery count and links to `/discoveries`, and scan status lists
   recent jobs with their status badges.
+- **Custom fields (done, Phase 5 audit, ADR 0019).** A Phase 1–5 audit (2026-06-19)
+  found custom fields — listed under Phase 1 and in backlog #2/#5 — claimed merged but
+  never actually built: the `custom_fields`/`custom_field_values` tables existed
+  (migration 1) but no code or UI used them. Now built: an admin **Custom fields**
+  Settings tab defines text fields per entity type (subnet/address/device), and each
+  entity's form/detail page edits and shows the values (sparse storage, audited,
+  zero-impact until a field is defined). No schema change. See ADR 0019.
 
 ## Phase 5: Production Hardening
 
@@ -181,6 +188,8 @@ Planned tabs (sequenced with the phases that unlock them):
 - **Backup & Restore** — trigger/schedule `pg_dump`, run a tested restore, capture the
   migration version (this phase's backup/restore item).
 - **Notifications** — change webhooks and alert thresholds (Phase 6).
+- **Custom fields** — define operator-managed text attributes per entity type
+  (subnet/address/device), edited on each record's form. **Done** (ADR 0019).
 - **Data & Audit** — audit-log retention/export and the CSV / NetBox import-export
   entry points (CSV import/export already exists).
 

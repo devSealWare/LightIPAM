@@ -124,6 +124,10 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/users/{id}/password", app.userResetPassword)
 	mux.HandleFunc("GET /settings/users/{id}/delete", app.userDeleteConfirm)
 	mux.HandleFunc("POST /settings/users/{id}/delete", app.userDelete)
+	mux.HandleFunc("GET /settings/custom-fields", app.settingsCustomFields)
+	mux.HandleFunc("POST /settings/custom-fields", app.customFieldCreate)
+	mux.HandleFunc("GET /settings/custom-fields/{id}/delete", app.customFieldDeleteConfirm)
+	mux.HandleFunc("POST /settings/custom-fields/{id}/delete", app.customFieldDelete)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)
@@ -400,6 +404,7 @@ func (a *App) subnetCreate(w http.ResponseWriter, r *http.Request) {
 		a.renderSubnetForm(w, r, session, "New Subnet", store.Subnet{}, form, subnetError(err))
 		return
 	}
+	a.saveCustomFieldValues(r, store.CustomFieldSubnet, subnet.ID)
 	a.audit(r, &session.User.ID, "subnet.created", "subnet", subnet.ID)
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
 }
@@ -429,6 +434,7 @@ func (a *App) subnetShow(w http.ResponseWriter, r *http.Request) {
 		Addresses:     addresses,
 		AddressStates: addressStates(),
 		Devices:       devices,
+		CustomFields:  a.loadCustomFields(r, store.CustomFieldSubnet, subnet.ID),
 		ActiveNav:     "subnets",
 	})
 }
@@ -460,6 +466,7 @@ func (a *App) subnetUpdate(w http.ResponseWriter, r *http.Request) {
 		a.renderSubnetForm(w, r, session, "Edit Subnet", subnet, form, subnetError(err))
 		return
 	}
+	a.saveCustomFieldValues(r, store.CustomFieldSubnet, updated.ID)
 	a.audit(r, &session.User.ID, "subnet.updated", "subnet", updated.ID)
 	http.Redirect(w, r, "/subnets/"+updated.ID, http.StatusSeeOther)
 }
@@ -553,6 +560,7 @@ func (a *App) addressUpdate(w http.ResponseWriter, r *http.Request) {
 		a.renderAddressForm(w, r, session, "Edit Address", subnet, address, addressFormFromInput(input), addressError(err))
 		return
 	}
+	a.saveCustomFieldValues(r, store.CustomFieldAddress, updated.ID)
 	a.audit(r, &session.User.ID, "address.updated", "ip_address", updated.ID)
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
 }
@@ -628,7 +636,7 @@ func (a *App) deviceNew(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.renderDeviceForm(w, session, "New Device", store.Device{}, nil, "")
+	a.renderDeviceForm(w, r, session, "New Device", store.Device{}, nil, "")
 }
 
 func (a *App) deviceCreate(w http.ResponseWriter, r *http.Request) {
@@ -642,14 +650,15 @@ func (a *App) deviceCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	input, form, err := deviceInputFromRequest(r)
 	if err != nil {
-		a.renderDeviceForm(w, session, "New Device", store.Device{}, form, err.Error())
+		a.renderDeviceForm(w, r, session, "New Device", store.Device{}, form, err.Error())
 		return
 	}
 	device, err := a.store.CreateDevice(r.Context(), input)
 	if err != nil {
-		a.renderDeviceForm(w, session, "New Device", store.Device{}, form, "Unable to create device.")
+		a.renderDeviceForm(w, r, session, "New Device", store.Device{}, form, "Unable to create device.")
 		return
 	}
+	a.saveCustomFieldValues(r, store.CustomFieldDevice, device.ID)
 	a.audit(r, &session.User.ID, "device.created", "device", device.ID)
 	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
 }
@@ -678,6 +687,7 @@ func (a *App) deviceShow(w http.ResponseWriter, r *http.Request) {
 		Device:       device,
 		MACAddresses: macs,
 		Addresses:    addresses,
+		CustomFields: a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
 		ActiveNav:    "devices",
 	})
 }
@@ -687,7 +697,7 @@ func (a *App) deviceEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.renderDeviceForm(w, session, "Edit Device", device, deviceFormFromDevice(device), "")
+	a.renderDeviceForm(w, r, session, "Edit Device", device, deviceFormFromDevice(device), "")
 }
 
 func (a *App) deviceUpdate(w http.ResponseWriter, r *http.Request) {
@@ -701,14 +711,15 @@ func (a *App) deviceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	input, form, err := deviceInputFromRequest(r)
 	if err != nil {
-		a.renderDeviceForm(w, session, "Edit Device", device, form, err.Error())
+		a.renderDeviceForm(w, r, session, "Edit Device", device, form, err.Error())
 		return
 	}
 	updated, err := a.store.UpdateDevice(r.Context(), device.ID, input)
 	if err != nil {
-		a.renderDeviceForm(w, session, "Edit Device", device, form, "Unable to update device.")
+		a.renderDeviceForm(w, r, session, "Edit Device", device, form, "Unable to update device.")
 		return
 	}
+	a.saveCustomFieldValues(r, store.CustomFieldDevice, updated.ID)
 	a.audit(r, &session.User.ID, "device.updated", "device", updated.ID)
 	http.Redirect(w, r, "/devices/"+updated.ID, http.StatusSeeOther)
 }
@@ -1268,14 +1279,15 @@ func (a *App) renderSubnetForm(w http.ResponseWriter, r *http.Request, session s
 		form = map[string]string{"site_id": "default"}
 	}
 	_ = ui.Render(w, "subnet_form.html", ui.PageData{
-		Title:     title,
-		Error:     message,
-		User:      session.User,
-		CSRF:      session.CSRFToken,
-		Sites:     sites,
-		Subnet:    subnet,
-		Form:      form,
-		ActiveNav: "subnets",
+		Title:        title,
+		Error:        message,
+		User:         session.User,
+		CSRF:         session.CSRFToken,
+		Sites:        sites,
+		Subnet:       subnet,
+		CustomFields: a.loadCustomFields(r, store.CustomFieldSubnet, subnet.ID),
+		Form:         form,
+		ActiveNav:    "subnets",
 	})
 }
 
@@ -1301,6 +1313,7 @@ func (a *App) renderSubnetDetailError(w http.ResponseWriter, r *http.Request, se
 		Addresses:     addresses,
 		AddressStates: addressStates(),
 		Devices:       devices,
+		CustomFields:  a.loadCustomFields(r, store.CustomFieldSubnet, subnet.ID),
 		ActiveNav:     "subnets",
 	})
 }
@@ -1324,23 +1337,25 @@ func (a *App) renderAddressForm(w http.ResponseWriter, r *http.Request, session 
 		Address:       address,
 		AddressStates: addressStates(),
 		Devices:       devices,
+		CustomFields:  a.loadCustomFields(r, store.CustomFieldAddress, address.ID),
 		Form:          form,
 		ActiveNav:     "subnets",
 	})
 }
 
-func (a *App) renderDeviceForm(w http.ResponseWriter, session store.Session, title string, device store.Device, form map[string]string, message string) {
+func (a *App) renderDeviceForm(w http.ResponseWriter, r *http.Request, session store.Session, title string, device store.Device, form map[string]string, message string) {
 	if form == nil {
 		form = map[string]string{}
 	}
 	_ = ui.Render(w, "device_form.html", ui.PageData{
-		Title:     title,
-		Error:     message,
-		User:      session.User,
-		CSRF:      session.CSRFToken,
-		Device:    device,
-		Form:      form,
-		ActiveNav: "devices",
+		Title:        title,
+		Error:        message,
+		User:         session.User,
+		CSRF:         session.CSRFToken,
+		Device:       device,
+		CustomFields: a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
+		Form:         form,
+		ActiveNav:    "devices",
 	})
 }
 
@@ -1365,6 +1380,7 @@ func (a *App) renderDeviceDetailError(w http.ResponseWriter, r *http.Request, se
 		Device:       device,
 		MACAddresses: macs,
 		Addresses:    addresses,
+		CustomFields: a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
 		ActiveNav:    "devices",
 	})
 }

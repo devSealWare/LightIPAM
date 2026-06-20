@@ -258,6 +258,14 @@ func TestRenderTemplates(t *testing.T) {
 			{ID: "user-1", Username: "admin", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true, CreatedAt: time.Now()},
 			{ID: "user-2", Username: "viewer", DisplayName: "Viewer", Role: store.RoleViewer, CreatedAt: time.Now()},
 		},
+		CustomFields: []store.CustomFieldValue{
+			{Def: store.CustomFieldDef{ID: "cf-1", EntityType: "device", Name: "Owner", FieldType: "text"}, Value: "IT"},
+			{Def: store.CustomFieldDef{ID: "cf-2", EntityType: "device", Name: "Asset tag", FieldType: "text"}},
+		},
+		CustomFieldDefs: []store.CustomFieldDef{
+			{ID: "cf-1", EntityType: "device", Name: "Owner", FieldType: "text", CreatedAt: time.Now()},
+			{ID: "cf-3", EntityType: "subnet", Name: "Cost center", FieldType: "text", CreatedAt: time.Now()},
+		},
 		ActiveTab:   "security",
 		SearchQuery: "192.168",
 		SearchResults: store.SearchResults{
@@ -377,6 +385,35 @@ func TestSettingsUsersTabRenders(t *testing.T) {
 	// The acting admin must not get a self-delete link.
 	if strings.Contains(body, `href="/settings/users/user-1/delete"`) {
 		t.Error("users tab should not offer a self-delete link")
+	}
+}
+
+// TestSettingsCustomFieldsTabRenders guards the Custom fields settings tab: it
+// must render the add-field form and list defined fields with a delete link and
+// a friendly entity label.
+func TestSettingsCustomFieldsTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "customfields",
+		Form:      map[string]string{"entity_type": store.CustomFieldDevice},
+		CustomFieldDefs: []store.CustomFieldDef{
+			{ID: "cf-1", EntityType: store.CustomFieldDevice, Name: "Owner", FieldType: "text"},
+			{ID: "cf-3", EntityType: store.CustomFieldAddress, Name: "Circuit ID", FieldType: "text"},
+		},
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		`action="/settings/custom-fields"`,
+		`href="/settings/custom-fields/cf-1/delete"`,
+		`href="/settings/custom-fields/cf-3/delete"`,
+		"Owner",
+		"Circuit ID",
+		"Address", // entityTypeLabel for ip_address
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("custom fields tab missing %q", want)
+		}
 	}
 }
 

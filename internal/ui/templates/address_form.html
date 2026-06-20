@@ -42,6 +42,7 @@
           <textarea class="form-input min-h-28 py-3" name="notes">{{ index .Form "notes" }}</textarea>
         </label>
       </div>
+      {{ template "custom_fields_form" .CustomFields }}
       <div class="mt-7 flex items-center justify-between gap-3">
         <a class="button-muted" href="/subnets/{{ .Subnet.ID }}">Cancel</a>
         <button class="button-primary" type="submit">Save address</button>

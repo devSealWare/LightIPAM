@@ -28,6 +28,9 @@ The design is intentionally split so risk stays isolated:
   tracking with private/rotating-MAC detection and best-effort OUI vendor lookup.
 - Devices grouped by subnet, global search across subnets/addresses/devices/MACs,
   and per-table selectable columns.
+- Tags and operator-defined **custom fields** (text) on subnets, addresses, and
+  devices — custom fields are defined on an admin Settings tab and edited on each
+  record's form (ADR 0019).
 - Immutable, append-only audit log with UI filters.
 
 **Discovery (optional, agent-driven)**
