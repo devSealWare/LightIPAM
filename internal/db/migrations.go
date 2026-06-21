@@ -457,6 +457,41 @@ ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_days integer[] NOT NU
 ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS window_tz text NOT NULL DEFAULT 'UTC';
 `,
 	},
+	{
+		version: 19,
+		sql: `
+-- Phase 6 change webhooks (ADR 0022). An admin registers outbound webhook
+-- endpoints; the app POSTs an HMAC-signed JSON payload to each enabled, subscribed
+-- endpoint whenever a matching change is audited (the audit log is the change
+-- feed). The optional signing secret is sealed at rest with the app encryption key
+-- (internal/secret), never stored in plaintext.
+CREATE TABLE IF NOT EXISTS webhooks (
+	id text PRIMARY KEY,
+	name text NOT NULL,
+	url text NOT NULL,
+	secret_sealed text NOT NULL DEFAULT '',
+	events text[] NOT NULL DEFAULT '{}',
+	enabled boolean NOT NULL DEFAULT true,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- A bounded delivery log for observability: the most recent attempts per webhook,
+-- with the HTTP status and any transport error. Pruned to a small cap per webhook
+-- on insert so the table cannot grow without bound.
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+	id bigserial PRIMARY KEY,
+	webhook_id text REFERENCES webhooks(id) ON DELETE CASCADE,
+	event_type text NOT NULL,
+	status text NOT NULL,
+	status_code integer NOT NULL DEFAULT 0,
+	error text NOT NULL DEFAULT '',
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries (webhook_id, created_at DESC);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

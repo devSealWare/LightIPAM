@@ -94,6 +94,13 @@ type PageData struct {
 	PolicyGroups  []store.PolicyFindingGroup
 	PolicySummary store.PolicySummary
 
+	// Notifications (change webhooks, settings tab). Webhooks lists the registered
+	// endpoints; WebhookDeliveries the recent delivery log; WebhookCategories the
+	// subscribable event categories for the form checkboxes.
+	Webhooks          []store.Webhook
+	WebhookDeliveries []store.WebhookDelivery
+	WebhookCategories []string
+
 	Form           map[string]string
 	ActiveNav      string
 	ActiveTab      string
@@ -119,6 +126,14 @@ func Render(w http.ResponseWriter, name string, data PageData) error {
 		},
 		"join": func(values []string, sep string) string {
 			return strings.Join(values, sep)
+		},
+		"contains": func(values []string, target string) bool {
+			for _, v := range values {
+				if v == target {
+					return true
+				}
+			}
+			return false
 		},
 		"split": func(value, sep string) []string {
 			if value == "" {

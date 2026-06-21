@@ -82,6 +82,20 @@ The app has:
   `cmd/server` embeds `time/tzdata` so zone lookups work on the Alpine image.
   Per-schedule config — no Settings tab, no new privilege. See the "Scheduled scan
   windows" section below.
+- **Change webhooks** (Phase 6 slice (c), ADR 0022) — an admin registers outbound
+  webhook endpoints on a **Notifications** Settings tab; the app POSTs an HMAC-signed
+  JSON payload to each enabled, subscribed endpoint when a matching change is audited.
+  The **audit log is the change feed**: a single mutex-guarded `store.SetAuditHook`
+  (registered on both the app's and the orchestrator's store) fans events out via the
+  new `internal/webhook` dispatcher, with a pure `categoryForAction` mapping audited
+  actions to four subscribable categories (ipam/discovery/scan/security; empty = all).
+  Delivery is async with a fresh context and gated to a no-op when no webhook is enabled
+  (cached `Active()`); each attempt is recorded in a bounded `webhook_deliveries` log
+  (**migration 19** adds `webhooks` + that log). The per-webhook signing secret is
+  **sealed at rest** (`internal/secret`); the form never echoes it (blank = keep). Pure
+  `parseWebhookForm`/`categoryForAction`/`sign` unit-tested + an httptest test covers
+  the real POST/headers/signature. App-side only, no new privilege, no client JS. See
+  the "Change webhooks" section below.
 
 ## Current Implementation Style
 
@@ -99,11 +113,12 @@ The code avoids large frameworks. Continue using:
 ## Current Issue
 
 None in progress. **Phase 6 (Advanced Automation) is underway**: slice (a) **Policy /
-Health checks** (ADR 0020) and slice (b) **Scheduled scan windows** (ADR 0021) are
-built — see the Current State bullets and the "Policy / Health checks" and "Scheduled
-scan windows" sections below. The recommended remaining Phase 6 order is (c) change
-webhooks → (d) NetBox import/export → (e) Terraform provider/CLI (last; it depends on a
-stable authenticated API + roles — confirm before starting).
+Health checks** (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021), and slice
+(c) **Change webhooks** (ADR 0022) are built — see the Current State bullets and the
+"Policy / Health checks", "Scheduled scan windows", and "Change webhooks" sections
+below. The recommended remaining Phase 6 order is (d) NetBox import/export → (e)
+Terraform provider/CLI (last; it depends on a stable authenticated API + roles — confirm
+before starting).
 
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
@@ -463,6 +478,46 @@ scanner surface, **no client JS**. The web app stays unprivileged; this changes 
   config, not a Settings tab; the window rides the existing `scan.schedule.created` /
   `scan.schedule.updated` audit events. See ADR 0021.
 
+## Change webhooks (merged, Phase 6, ADR 0022)
+
+The third Phase 6 slice: outbound HMAC-signed change notifications. An admin registers
+webhook endpoints on a **Notifications** Settings tab; the app POSTs a JSON payload to
+each enabled, subscribed endpoint when a matching change is audited. App-side only — no
+new privilege, no scanner surface, **no client JS**. The only secret (the per-webhook
+HMAC signing key) is **sealed at rest** with the app encryption key, like the OIDC
+secret and managed-CA key.
+
+- **Audit log = change feed.** `store.CreateAuditLog` is the single chokepoint every
+  IPAM edit and scan-lifecycle event funnels through (app handlers **and** the
+  orchestrator), so one `store.SetAuditHook` (mutex-guarded — the scheduler goroutine
+  writes audits before the hook is registered) captures the whole change surface. The
+  hook is set on **both** store instances (app's + orchestrator's) in `app.New`.
+- **`internal/webhook`.** `Dispatcher` (store + sealer + http client) with pure,
+  unit-tested helpers: `categoryForAction` maps an audited action → one of four
+  subscribable categories (`ipam`/`discovery`/`scan`/`security`; CSV exports and routine
+  auth events are deliberately undelivered), `matches` (empty subscription = all),
+  `sign` (HMAC-SHA256 hex), `EventFromAudit`. `Deliver` runs async with a fresh context
+  and is gated to a no-op via a cached atomic `Active()` (refreshed on startup + every
+  webhook CRUD), so the hot path costs nothing when no webhook is enabled.
+- **Payload/headers.** Body = the marshaled `Event` (`event`, `category`,
+  `subject_type`, `subject_id`, `actor_user_id`, audit `metadata` as a nested object,
+  `instance`, `timestamp`); headers `X-LightIPAM-Event/Category/Timestamp` and, when
+  signed, `X-LightIPAM-Signature: sha256=<hmac>`. An httptest test asserts the real
+  POST/headers/signature/body.
+- **Migration 19**: `webhooks` (`secret_sealed`, `events text[]`, `enabled`) +
+  `webhook_deliveries` (bounded to the last 20 per webhook on insert). Store CRUD +
+  `RecordWebhookDelivery`/`ListWebhookDeliveries`/`CountEnabledWebhooks` in
+  `internal/store/webhooks.go`; `Webhook.EventsLabel()` for display.
+- **Notifications tab** (`internal/app/notifications.go`, admin-only,
+  `GET/POST /settings/notifications` + per-webhook `/{id}`, `/{id}/test`,
+  `/{id}/delete`): add/edit (inline) webhooks, an event-category picker (shared
+  `webhook_events` template partial), "Send test" (synchronous `TestDeliver`), and the
+  recent delivery log. Pure `parseWebhookForm` validator (name, `http(s)://` URL,
+  category set; secret returned separately for sealing — blank on edit keeps the stored
+  one). Audited `settings.notifications.created/updated/deleted/tested`. Best-effort,
+  at-most-once delivery (no retry queue this slice; the log + "Send test" surface
+  failures). See ADR 0022.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -620,23 +675,22 @@ Remaining candidate follow-ups, roughly in priority order:
   operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
   `docs/KEY_ROTATION.md`.
 - **Phase 6 (Advanced Automation) — in progress.** Slice (a) **Policy / Health checks**
-  (ADR 0020) and slice (b) **Scheduled scan windows** (ADR 0021, **migration 18**) are
-  done — see the sections above. Remaining slices, recommended order: (c) **change
-  webhooks** (outbound HMAC-signed notifications + a Notifications Settings tab; the
-  signing secret seals via the existing `internal/secret`; **next is migration 19**),
-  (d) **NetBox-compatible import/export** (extend `internal/app/portability.go` with a
-  NetBox format; same dry-run + all-or-nothing discipline), (e) **Terraform provider or
-  CLI** (last — needs a stable authenticated read/write API + roles; confirm with the
-  user and propose CLI-vs-provider first).
+  (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021, migration 18), and slice
+  (c) **Change webhooks** (ADR 0022, migration 19) are done — see the sections above.
+  Remaining slices, recommended order: (d) **NetBox-compatible import/export** (extend
+  `internal/app/portability.go` with a NetBox format; same dry-run + all-or-nothing
+  discipline; **next is migration 20** if any schema is needed), (e) **Terraform
+  provider or CLI** (last — needs a stable authenticated read/write API + roles; confirm
+  with the user and propose CLI-vs-provider first).
 - **Settings panel build-out.** The Settings page is the product's configuration
   surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
-  Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**.
-  **Still planned**: General, Scanning/nmap, Discovery, Notifications (Phase 6 / slice
-  (c)), and richer Data & Audit — each can land independently. The **agent-secret
-  boundary** holds (SNMP communities, nmap egress pinning, DHCP lease paths, agent
-  allowlist stay on the agent — never the app DB or the panel).
+  Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**,
+  **Notifications** (change webhooks, ADR 0022). **Still planned**: General,
+  Scanning/nmap, Discovery, and richer Data & Audit — each can land independently. The
+  **agent-secret boundary** holds (SNMP communities, nmap egress pinning, DHCP lease
+  paths, agent allowlist stay on the agent — never the app DB or the panel).
 
 When starting the next slice, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order). Phase 5 is
-done; **Phase 6 (Advanced Automation) is underway** (slices (a) and (b) merged) — see
-`docs/ROADMAP.md`.
+done; **Phase 6 (Advanced Automation) is underway** (slices (a), (b), and (c) merged) —
+see `docs/ROADMAP.md`.
