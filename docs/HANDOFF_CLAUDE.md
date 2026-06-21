@@ -11,17 +11,25 @@ making changes. CLAUDE.md's "Recent work" / "Next" sections are the most current
 
 Current product:
 Light IPAM is a Go/PostgreSQL/Tailwind/Docker Compose IPAM application.
-- Phase 1 (manual IPAM) is complete: first-admin bootstrap, local auth, embedded
-  PostgreSQL migrations, subnet CRUD, sparse address records, device CRUD, MAC
-  tracking, private-MAC tagging, OUI vendor matching, immutable audit logs,
-  dashboard, global search, selectable table columns.
-- Phases 2–3 (scanner foundation + nmap discovery MVP) are complete, and Phase 4
-  (Network Context) is underway. The optional scanner-agent runs staged nmap
-  (host discovery -> service/OS on live hosts), SNMP arp_table harvesting, SNMP
-  device inventory, NetBIOS/mDNS name_lookup, LLDP/CDP neighbor harvesting
-  (lldp_cdp), and a combined all-sources scan; observations flow through the
-  /discoveries review queue with reconciliation, per-agent auto-import, and
-  merge-on-rescan. See ADRs 0001-0011.
+Phases 1-6 are all complete (migrations 1-20).
+- Phase 1 (manual IPAM): first-admin bootstrap, local auth, embedded PostgreSQL
+  migrations, subnet CRUD, sparse address records, device CRUD, MAC tracking,
+  private-MAC tagging, OUI vendor matching, immutable audit logs, dashboard, global
+  search, selectable table columns, custom fields, bulk edit + CSV import/export.
+- Phases 2-4 (scanner foundation + nmap discovery MVP + Network Context): the
+  optional scanner-agent runs staged nmap (host discovery -> service/OS on live
+  hosts), SNMP arp_table/snmp_inventory (with 802.1Q VLAN)/lldp_cdp, NetBIOS/mDNS
+  name_lookup, dns_lookup, dhcp_leases, and a combined all-sources scan that
+  enriches the hosts nmap discovers; observations flow through the /discoveries
+  review queue with reconciliation, per-agent auto-import, and merge-on-rescan.
+- Phase 5 (Production Hardening): admin/viewer roles, TOTP MFA, OIDC SSO, encrypted
+  secrets at rest, an app-managed CA with rotation (agent hot-reload), pg_dump
+  backup/restore, login throttling/lockout, session hardening, and a
+  runtime-editable Settings panel.
+- Phase 6 (Advanced Automation): policy/health checks, scheduled scan windows,
+  change webhooks, NetBox-compatible import/export, and a token-authenticated
+  machine API (/api/v1) + lightipam-cli.
+See ADRs 0001-0024.
 
 Architecture rule (do not violate):
 The web app must stay unprivileged — no raw sockets, nmap, packet capture, or
@@ -49,10 +57,16 @@ Verification:
 - docker compose up -d
 - docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 
-Candidate next work (confirm with the user):
-- Phase 4 remaining: DHCP leases, DNS enrichment, VLAN/interface mapping — each
-  reusing the discovery review-queue pattern, in the agent. (LLDP/CDP shipped in
-  ADR 0011.)
-- Phase 5: managed cert issuance/rotation, OIDC/MFA, encrypted secrets,
-  backup/restore.
+Candidate next work (confirm with the user — Phases 1-6 are done, so the next
+phase is open):
+- A Terraform provider against the now-stable /api/v1 (the CLI is the reference
+  client).
+- Online agent-pull cert enrollment (the one explicitly-deferred Phase 5 item):
+  the agent renews its own cert over a bootstrap channel instead of operator file
+  deployment.
+- Optional Phase 4 polish: tagged/trunk VLAN membership (only access PVID is mapped
+  today), per-interface speed/alias, and an SNMP/API-based DHCP source for
+  appliances with no lease file.
+- Remaining Settings tabs: General, Scanning (nmap dispatch defaults), Discovery,
+  and richer Data & Audit (see docs/SETTINGS.md).
 ```

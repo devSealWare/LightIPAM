@@ -1,6 +1,7 @@
 package secret
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -32,8 +33,8 @@ func TestSealOpenRoundTrip(t *testing.T) {
 		if token == plaintext {
 			t.Fatalf("token must not equal plaintext for %q", plaintext)
 		}
-		if !IsSealed(token) {
-			t.Fatalf("token %q should be recognized as sealed", token)
+		if !strings.HasPrefix(token, sealedPrefix) {
+			t.Fatalf("token %q should be in the sealed form", token)
 		}
 		got, err := s.Open(token)
 		if err != nil {

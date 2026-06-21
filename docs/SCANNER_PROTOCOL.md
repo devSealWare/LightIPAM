@@ -67,15 +67,17 @@ Required fields:
 - `agent_id`: intended agent.
 - `requested_by`: user ID or system.
 - `scan_type`: `host_discovery`, `service_detection`, `os_probe`, `combined`,
-  `arp_table`, `snmp_inventory`, `name_lookup`, or `lldp_cdp`. `combined` runs deep
-  nmap plus both SNMP passes, the NetBIOS/mDNS name lookup, and the LLDP/CDP
-  neighbor harvest against the targets and merges the result per host (ADRs
-  0008/0010/0011).
+  `arp_table`, `snmp_inventory`, `name_lookup`, `dns_lookup`, `dhcp_leases`, or
+  `lldp_cdp`. `combined` runs deep nmap plus every passive pass (both SNMP passes,
+  the NetBIOS/mDNS name lookup, DNS, DHCP leases, and the LLDP/CDP neighbor harvest)
+  against the targets and merges the result per host, enriching the hosts nmap
+  discovers (ADRs 0008/0010/0011/0012/0014/0015).
 - `mode`: `passive`, `light_active`, `standard_active`, or `deep_active`. Mode is
-  an nmap depth knob;
-  `arp_table`/`snmp_inventory`/`name_lookup`/`lldp_cdp`/`combined` ignore it (the
-  app hides the picker and normalizes it). `passive` is still a valid value (the
-  agent's no-packets short-circuit) but is no longer offered in the UI.
+  an nmap depth knob; every non-nmap type
+  (`arp_table`/`snmp_inventory`/`name_lookup`/`dns_lookup`/`dhcp_leases`/`lldp_cdp`)
+  and `combined` ignore it (the app hides the picker and normalizes it). `passive` is
+  still a valid value (the agent's no-packets short-circuit) but is no longer offered
+  in the UI.
 - `allowed_cidrs`: explicit IPv4 CIDRs for this job.
 - `targets`: IPv4 CIDRs or individual IPv4 addresses. For an `arp_table` scan
   these are the gateway/L3 device IPs to query over SNMP (see ADR 0006); the
@@ -84,7 +86,10 @@ Required fields:
   0007); the agent reports each device's identity and its interface MACs. For a
   `name_lookup` scan they are the individual host IPs to name over NetBIOS/mDNS
   (see ADR 0010); each must be a single host (a CIDR is reported as a skipped
-  notice, since the probes are unicast). For an `lldp_cdp` scan they are the
+  notice, since the probes are unicast). For a `dns_lookup` scan they are the
+  individual host IPs to resolve via reverse PTR + forward confirmation (see ADR
+  0012). For a `dhcp_leases` scan they scope which IP ranges to ingest from the
+  agent's mounted lease file (see ADR 0014). For an `lldp_cdp` scan they are the
   switch/router IPs to query over SNMP (see ADR 0011); the agent reports the LLDP
   and CDP neighbors each device sees, keyed by the neighbor's management address.
 - `ports`: optional TCP/UDP port selections.
