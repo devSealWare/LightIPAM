@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/devSealWare/LightIPAM/internal/auth"
@@ -12,6 +13,36 @@ import (
 
 type Store struct {
 	db *pgxpool.Pool
+
+	// auditHook, when set, is invoked after every successful audit-log insert. It
+	// is the single fan-out point used to drive change webhooks (Phase 6, ADR
+	// 0022) without instrumenting each handler. Guarded by auditMu because the
+	// scheduler goroutine may write audit logs before the hook is registered at
+	// startup. The hook must be cheap and non-blocking (the webhook dispatcher
+	// hands off to a goroutine).
+	auditMu   sync.RWMutex
+	auditHook AuditHook
+}
+
+// AuditRecord is the immutable detail of an audit-log entry handed to an
+// AuditHook.
+type AuditRecord struct {
+	ActorUserID *string
+	Action      string
+	SubjectType string
+	SubjectID   string
+	Metadata    string // JSON object
+}
+
+// AuditHook receives each audit entry after it is persisted.
+type AuditHook func(ctx context.Context, rec AuditRecord)
+
+// SetAuditHook registers (or clears, with nil) the audit fan-out hook. Safe to
+// call concurrently with audit writes.
+func (s *Store) SetAuditHook(hook AuditHook) {
+	s.auditMu.Lock()
+	s.auditHook = hook
+	s.auditMu.Unlock()
 }
 
 // Roles. A user is either an admin (full read/write, manages users and
@@ -335,6 +366,18 @@ func (s *Store) CreateAuditLog(ctx context.Context, actorUserID *string, action,
 INSERT INTO audit_logs (actor_user_id, action, subject_type, subject_id, metadata)
 VALUES ($1, $2, $3, $4, $5::jsonb)`, actorUserID, action, subjectType, subjectID, metadata); err != nil {
 		return fmt.Errorf("create audit log: %w", err)
+	}
+	s.auditMu.RLock()
+	hook := s.auditHook
+	s.auditMu.RUnlock()
+	if hook != nil {
+		hook(ctx, AuditRecord{
+			ActorUserID: actorUserID,
+			Action:      action,
+			SubjectType: subjectType,
+			SubjectID:   subjectID,
+			Metadata:    metadata,
+		})
 	}
 	return nil
 }

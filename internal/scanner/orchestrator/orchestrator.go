@@ -44,6 +44,13 @@ func (s *Service) DispatchEnabled() bool {
 	return s.dispatcher != nil && s.dispatcher.Enabled()
 }
 
+// SetAuditHook registers the audit fan-out hook on the orchestrator's store, so
+// scan-lifecycle audit events (job failed/completed, schedule changes) reach the
+// change-webhook dispatcher alongside the app handlers' events (ADR 0022).
+func (s *Service) SetAuditHook(hook store.AuditHook) {
+	s.store.SetAuditHook(hook)
+}
+
 // TriggerManual validates and enqueues a user-requested job, then dispatches it
 // asynchronously. A validation/allowlist failure returns an error and creates no
 // job row, so the caller can surface it inline.
