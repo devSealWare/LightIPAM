@@ -91,9 +91,3 @@ func (s *Sealer) Open(token string) (string, error) {
 	}
 	return string(plaintext), nil
 }
-
-// IsSealed reports whether a value is in the sealed token form. It lets callers
-// avoid double-sealing a value and recognize already-encrypted storage.
-func IsSealed(value string) bool {
-	return strings.HasPrefix(value, sealedPrefix)
-}
