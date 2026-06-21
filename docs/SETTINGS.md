@@ -69,8 +69,9 @@ elevated scanner agent:
 | **Data & Audit** | Audit-log retention/export and the CSV / NetBox import-export entry points (CSV **and** NetBox import/export both exist on the Import / Export page, ADR 0016 + 0023). | App | Partial (import/export exists) |
 
 > Per-user **Account** (`/account`, all roles): password change, two-factor (TOTP)
-> enrollment with recovery codes, and the user's own active-session review. This is
-> self-service and not part of the admin-only Settings area.
+> enrollment with recovery codes, the user's own active-session review, and **API
+> tokens** for the machine API / `lightipam-cli` (a token carries the user's role; ADR
+> 0024, `docs/API.md`). This is self-service and not part of the admin-only Settings area.
 
 This list is the working plan, not a contract; tabs may be split, merged, or
 re-sequenced as the phases land. The guiding principle is that anything an operator

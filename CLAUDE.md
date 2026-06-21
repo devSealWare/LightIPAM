@@ -114,12 +114,13 @@ The code avoids large frameworks. Continue using:
 
 ## Current Issue
 
-None in progress. **Phase 6 (Advanced Automation) is underway**: slice (a) **Policy /
-Health checks** (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021), slice (c)
-**Change webhooks** (ADR 0022), and slice (d) **NetBox-compatible import/export** (ADR
-0023) are built — see the Current State bullets and the matching sections below. The one
-remaining Phase 6 slice is (e) **Terraform provider/CLI** (last; it depends on a stable
-authenticated API + roles — confirm CLI-vs-provider with the user before starting).
+None in progress. **Phase 6 (Advanced Automation) is COMPLETE.** All five slices are
+merged: (a) **Policy / Health checks** (ADR 0020), (b) **Scheduled scan windows** (ADR
+0021), (c) **Change webhooks** (ADR 0022), (d) **NetBox-compatible import/export** (ADR
+0023), and (e) **Machine API + CLI** (ADR 0024). See the Current State bullets and the
+matching sections below. The user chose a **CLI** over a Terraform provider for slice (e)
+(a provider can be added later against the same stable `/api/v1`). Next would be a new
+phase — confirm direction with the user before starting.
 
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
@@ -545,6 +546,34 @@ native CSV (ADR 0016). App-side only — no schema change, no new privilege, no 
   `description`; NetBox devices need role/type/site Light IPAM doesn't model) in
   `docs/NETBOX.md`; the IPAM core round-trips. See ADR 0023.
 
+## Machine API + CLI (merged, Phase 6, ADR 0024)
+
+The fifth and final Phase 6 slice: a token-authenticated JSON API + a stdlib-only CLI, so
+automation can manage IPAM. The user chose a **CLI over a Terraform provider** (a provider
+can be added later against the same stable API). App stays unprivileged; no client JS.
+
+- **API tokens (migration 20).** `api_tokens` stores a **SHA-256 hash** (`auth.HashToken`)
+  of each `lipam_<random>` token — plaintext shown once. **Self-service on the Account
+  page** (`POST /account/tokens`, `/account/tokens/{id}/delete`): any user mints/revokes
+  their own; a token inherits the owner's role. `store.AuthenticateAPIToken` resolves a
+  presented hash → user and refreshes `last_used_at` in one statement.
+- **JSON API under `/api/v1`** (`internal/app/api.go`): CRUD for subnets, addresses
+  (nested under a subnet for list/create, flat by id for get/update/delete), devices, plus
+  `whoami`. Each handler wrapped by `apiHandler(write bool, fn)` → authenticates the
+  `Authorization: Bearer` token (401), enforces admin role for writes (403), then runs.
+  **Cookie-free ⇒ CSRF-exempt** (the cookie `authorize` middleware passes API requests
+  through; the per-handler check is the gate). Reuses the **existing store methods +
+  validation** (overlap/containment/state enum); mutations are **audited** (so they also
+  fan out to change webhooks, ADR 0022). `decodeJSON` bounds the body + rejects unknown
+  fields. Pure validators `subnetReq.toInput`/`addressReq.toInput` unit-tested.
+- **`cmd/lightipam-cli`**: stdlib-only binary. Config via flags/env (`LIGHTIPAM_URL`/
+  `LIGHTIPAM_TOKEN`/`LIGHTIPAM_INSECURE`; global flags precede the command). Verbs:
+  `whoami` + `list`/`get`/`create`/`update`/`delete` for subnets/addresses/devices.
+  `create`/`update` build a JSON body from only the `--field` flags set (partial update;
+  `--vlan` as a JSON number); non-2xx prints the API `error` + non-zero exit. Pure
+  `parseFields` unit-tested; the full token→CRUD→401/204 chain verified end-to-end against
+  the running app. See `docs/API.md`.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -701,13 +730,13 @@ Remaining candidate follow-ups, roughly in priority order:
   cert over a bootstrap channel) — today the managed CA issues and the agent hot-reloads
   operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
   `docs/KEY_ROTATION.md`.
-- **Phase 6 (Advanced Automation) — in progress.** Slice (a) **Policy / Health checks**
-  (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021, migration 18), slice (c)
-  **Change webhooks** (ADR 0022, migration 19), and slice (d) **NetBox-compatible
-  import/export** (ADR 0023, no schema change) are done — see the sections above. The one
-  remaining slice is (e) **Terraform provider or CLI** (last — needs a stable
-  authenticated read/write API + roles; confirm with the user and propose CLI-vs-provider
-  first).
+- **Phase 6 (Advanced Automation) — COMPLETE.** All five slices merged: (a) **Policy /
+  Health checks** (ADR 0020), (b) **Scheduled scan windows** (ADR 0021, migration 18),
+  (c) **Change webhooks** (ADR 0022, migration 19), (d) **NetBox-compatible import/export**
+  (ADR 0023, no schema change), and (e) **Machine API + CLI** (ADR 0024, migration 20) —
+  see the sections above. A Terraform **provider** could be a future increment against the
+  now-stable `/api/v1` (the CLI is the reference client); confirm with the user before any
+  new phase.
 - **Settings panel build-out.** The Settings page is the product's configuration
   surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
   Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**,
@@ -716,7 +745,7 @@ Remaining candidate follow-ups, roughly in priority order:
   **agent-secret boundary** holds (SNMP communities, nmap egress pinning, DHCP lease
   paths, agent allowlist stay on the agent — never the app DB or the panel).
 
-When starting the next slice, branch from `main`, and confirm with the user
-which item to pick up (the backlog file no longer drives the order). Phase 5 is
-done; **Phase 6 (Advanced Automation) is underway** (slices (a)–(d) merged; only (e)
-Terraform provider/CLI remains) — see `docs/ROADMAP.md`.
+When starting new work, branch from `main`, and confirm with the user which item to
+pick up (the backlog file no longer drives the order). Phases 1–5 are done and
+**Phase 6 (Advanced Automation) is complete** (all five slices (a)–(e) merged) — see
+`docs/ROADMAP.md`. The next phase is open; confirm direction with the user.

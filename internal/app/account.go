@@ -96,27 +96,42 @@ func (a *App) accountLogoutAll(w http.ResponseWriter, r *http.Request) {
 
 // renderAccount renders the account page with the user's sessions and MFA state.
 func (a *App) renderAccount(w http.ResponseWriter, r *http.Request, session store.Session, errMsg, notice string) {
+	data, ok := a.accountPageData(w, r, session)
+	if !ok {
+		return
+	}
+	data.Error = errMsg
+	data.SuccessMessage = notice
+	_ = ui.Render(w, "account.html", data)
+}
+
+// accountPageData gathers the account page's per-user state (sessions, MFA status,
+// API tokens). It writes an error response and returns ok=false on failure.
+func (a *App) accountPageData(w http.ResponseWriter, r *http.Request, session store.Session) (ui.PageData, bool) {
 	sessions, err := a.store.ListUserSessions(r.Context(), session.User.ID, a.idleCutoff())
 	if err != nil {
 		a.logger.Error("list user sessions", "error", err)
 		http.Error(w, "Unable to load sessions", http.StatusInternalServerError)
-		return
+		return ui.PageData{}, false
 	}
 	enabled, err := a.store.TOTPEnabled(r.Context(), session.User.ID)
 	if err != nil {
 		a.logger.Error("totp enabled", "error", err)
 	}
-	_ = ui.Render(w, "account.html", ui.PageData{
+	tokens, err := a.store.ListAPITokens(r.Context(), session.User.ID)
+	if err != nil {
+		a.logger.Error("list api tokens", "error", err)
+	}
+	return ui.PageData{
 		Title:            "Your account",
 		User:             session.User,
 		CSRF:             session.CSRFToken,
-		Error:            errMsg,
-		SuccessMessage:   notice,
 		Sessions:         sessions,
 		CurrentSessionID: session.ID,
 		MFAEnabled:       enabled,
+		APITokens:        tokens,
 		ActiveNav:        "account",
-	})
+	}, true
 }
 
 // accountNotice maps the post-redirect ?notice marker to a banner message.
@@ -128,6 +143,8 @@ func accountNotice(r *http.Request) string {
 		return "Signed out your other sessions."
 	case "mfa_off":
 		return "Two-factor authentication is off."
+	case "token_revoked":
+		return "API token revoked."
 	default:
 		return ""
 	}

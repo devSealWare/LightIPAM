@@ -219,6 +219,14 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /schedules/{id}/delete", app.scheduleDeleteConfirm)
 	mux.HandleFunc("POST /schedules/{id}/delete", app.scheduleDelete)
 
+	mux.HandleFunc("POST /account/tokens", app.accountTokenCreate)
+	mux.HandleFunc("POST /account/tokens/{id}/delete", app.accountTokenDelete)
+
+	// Token-authenticated JSON API (ADR 0024). Cookie-free, so it sits outside the
+	// session/CSRF flow; each handler authenticates a bearer token and enforces the
+	// owner's role for writes.
+	app.registerAPIRoutes(mux)
+
 	return securityHeaders(app.authorize(mux))
 }
 
