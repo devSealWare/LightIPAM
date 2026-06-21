@@ -70,6 +70,11 @@ type PageData struct {
 	// OIDCEnabled shows the "Sign in with SSO" control on the login page.
 	OIDCEnabled bool
 
+	// API tokens (account page, ADR 0024). APITokens lists the user's tokens;
+	// NewAPIToken carries a just-created token's plaintext, shown exactly once.
+	APITokens   []store.APIToken
+	NewAPIToken string
+
 	// Backup (settings tab)
 	Backups        []backup.Backup
 	BackupDir      string

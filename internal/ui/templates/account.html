@@ -56,6 +56,50 @@
       </form>
     </section>
 
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">API tokens</h2>
+      <p class="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">Personal tokens authenticate the <span class="font-mono text-xs">lightipam-cli</span> and other automation to the JSON API at <span class="font-mono text-xs">/api/v1</span>. A token carries your role, so {{ if .User.IsAdmin }}it can read and write{{ else }}as a viewer it is read-only{{ end }}. Send it as <span class="font-mono text-xs">Authorization: Bearer &lt;token&gt;</span>. See <span class="font-mono text-xs">docs/API.md</span>.</p>
+
+      {{ if .NewAPIToken }}
+      <div class="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/40">
+        <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">Copy your new token now — it will not be shown again.</p>
+        <code class="mt-2 block break-all rounded-xl bg-white px-3 py-2 font-mono text-sm text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">{{ .NewAPIToken }}</code>
+      </div>
+      {{ end }}
+
+      <form method="post" action="/account/tokens" class="mt-5 flex flex-wrap items-end gap-3">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Token name</span>
+          <input class="form-input w-64" type="text" name="name" autocomplete="off" placeholder="e.g. terraform, ci-pipeline" required>
+        </label>
+        <button class="button-primary" type="submit">Create token</button>
+      </form>
+
+      {{ if .APITokens }}
+      <div class="mt-5 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+        <div class="grid grid-cols-[1.3fr_1fr_1fr_auto] gap-4 border-b border-zinc-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          <span>Name</span><span>Created</span><span>Last used</span><span class="text-right">Actions</span>
+        </div>
+        {{ range .APITokens }}
+        <div class="grid grid-cols-[1.3fr_1fr_1fr_auto] items-center gap-4 border-b border-zinc-100 px-4 py-3 text-sm last:border-b-0 dark:border-zinc-800">
+          <span class="truncate font-medium text-zinc-900 dark:text-white">{{ .Name }}</span>
+          <span class="text-zinc-500 dark:text-zinc-400">{{ datetime .CreatedAt }}</span>
+          <span class="text-zinc-500 dark:text-zinc-400">{{ datetimeptr .LastUsedAt }}</span>
+          <span class="flex items-center justify-end">
+            <form method="post" action="/account/tokens/{{ .ID }}/delete">
+              <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+              <button class="inline-flex h-9 items-center justify-center rounded-xl border border-rose-200 px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" type="submit">Revoke</button>
+            </form>
+          </span>
+        </div>
+        {{ end }}
+      </div>
+      {{ else }}
+      <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">No tokens yet.</p>
+      {{ end }}
+    </section>
+
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="flex flex-col gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
         <div>

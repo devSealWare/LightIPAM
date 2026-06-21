@@ -492,6 +492,25 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries (webhook_id, created_at DESC);
 `,
 	},
+	{
+		version: 20,
+		sql: `
+-- Phase 6 machine API tokens (ADR 0024). Per-user bearer tokens authenticate
+-- non-browser clients (the CLI, scripts) to the JSON API. Only the SHA-256 hash is
+-- stored; the plaintext is shown once at creation. A token inherits its owner's
+-- role, so the existing admin/viewer authorization applies to API requests too.
+CREATE TABLE IF NOT EXISTS api_tokens (
+	id text PRIMARY KEY,
+	user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name text NOT NULL,
+	token_hash text NOT NULL UNIQUE,
+	last_used_at timestamptz,
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

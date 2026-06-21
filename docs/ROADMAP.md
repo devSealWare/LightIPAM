@@ -285,4 +285,16 @@ is complete enough to begin **Phase 6**.
   edges that don't align (prefix has no name, devices need role/type/site) are
   documented and lossy by design; the IPAM core round-trips. See `docs/NETBOX.md`. No
   schema change, no new privilege, no client JS.
-- Terraform provider or CLI.
+- **Machine API + CLI (done, ADR 0024).** A token-authenticated JSON API under
+  `/api/v1` (subnets, addresses, devices CRUD + `whoami`) and a stdlib-only
+  `lightipam-cli` that consumes it. Per-user **bearer API tokens** (migration 20, SHA-256
+  hashed, shown once, self-service on the Account page) carry the owner's role, so the
+  existing admin/viewer authorization applies: reads need any valid token, writes need an
+  admin token. The API reuses the existing store methods + validation, is audited, and
+  fans out to change webhooks like the UI. The user chose a CLI over a Terraform provider
+  (lightweight, in-repo, no heavy dependency); a provider can be added later against the
+  same stable API. See `docs/API.md`. No client JS, app stays unprivileged.
+
+**Phase 6 (Advanced Automation) is complete.** Policy/health checks (ADR 0020),
+scheduled scan windows (ADR 0021), change webhooks (ADR 0022), NetBox-compatible
+import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
