@@ -276,5 +276,13 @@ is complete enough to begin **Phase 6**.
   per-webhook signing secret is sealed at rest (`internal/secret`); pure
   `parseWebhookForm`/`categoryForAction`/`sign` are unit-tested and an httptest test
   covers the real POST + signature. App-side only, no new privilege, no client JS.
-- NetBox-compatible import/export.
+- **NetBox-compatible import/export (done, ADR 0023).** A **NetBox** CSV format
+  alongside the native one: a per-type format selector + Export NetBox links. A NetBox
+  upload is a **pure, unit-tested translation** (`translateNetBoxImport`) into the
+  canonical Light IPAM columns, so it reuses the exact same dry-run preview, validators,
+  and all-or-nothing transactional apply — no second pipeline. Exports emit NetBox
+  column names (prefixes / IP addresses / devices) with values mapped back. The model
+  edges that don't align (prefix has no name, devices need role/type/site) are
+  documented and lossy by design; the IPAM core round-trips. See `docs/NETBOX.md`. No
+  schema change, no new privilege, no client JS.
 - Terraform provider or CLI.

@@ -66,7 +66,7 @@ elevated scanner agent:
 | **Scanning (nmap)** | App-side scan **dispatch defaults**: default scan type (Combined) and nmap depth mode (Light/Standard/Deep), per-type timeout defaults, optional rate/timing cap passed to nmap, default targets/allowlist hints, and the scheduler tick. **Agent-local** nmap/SNMP/DHCP credentials and raw-socket config stay on the agent. (A schedule's **run window** — time-of-day + weekdays + timezone, ADR 0021 — is **per-schedule** config on the schedule form, not a global setting here.) | App (dispatch defaults only) | Planned |
 | **Discovery** | Auto-import policy for trusted agents, reconciliation/conflict handling, and review-queue retention. (The "when to mark a record stale" aging knob now lives on the **Policy** tab, ADR 0020.) | App | Planned |
 | **Notifications** | Change webhooks: register outbound endpoints, subscribe each to event categories (IPAM / discovery / scan / security), optionally sign deliveries with a sealed HMAC secret, send a test, and review the recent delivery log. Driven by the audit log as the change feed. Future: alert thresholds. | App (secret sealed at rest) | **Done** (ADR 0022) |
-| **Data & Audit** | Audit-log retention/export and the CSV / NetBox import-export entry points. | App | Partial (import/export exists) |
+| **Data & Audit** | Audit-log retention/export and the CSV / NetBox import-export entry points (CSV **and** NetBox import/export both exist on the Import / Export page, ADR 0016 + 0023). | App | Partial (import/export exists) |
 
 > Per-user **Account** (`/account`, all roles): password change, two-factor (TOTP)
 > enrollment with recovery codes, and the user's own active-session review. This is

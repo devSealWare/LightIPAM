@@ -4,7 +4,7 @@
     <header class="glass-panel rounded-[28px] px-5 py-4">
       <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/">Dashboard</a>
       <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">Import / Export</h1>
-      <p class="mt-2 max-w-2xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Export to CSV for a backup or bulk edit in a spreadsheet, then re-import. Every uploaded row is validated against the same rules as the forms and shown in a dry-run preview — nothing changes until you confirm. Import devices first, then subnets, then addresses, so links and containment resolve.</p>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Export to CSV for a backup or bulk edit in a spreadsheet, then re-import. Every uploaded row is validated against the same rules as the forms and shown in a dry-run preview — nothing changes until you confirm. Import devices first, then subnets, then addresses, so links and containment resolve. Pick the <span class="font-medium text-zinc-600 dark:text-zinc-300">NetBox</span> format to move data to or from a NetBox install — see <span class="font-mono">docs/NETBOX.md</span> for the column mapping.</p>
     </header>
 
     {{ if .Error }}
@@ -12,9 +12,9 @@
     {{ end }}
 
     <div class="mt-5 grid gap-5 lg:grid-cols-3">
-      {{ template "import_card" dict "CSRF" .CSRF "Type" "subnets" "Title" "Subnets" "Columns" "name, cidr, vlan, site, description" "Export" "/subnets/export.csv" "Hint" "IPv4 CIDR (incl. /31, /32). Overlapping subnets are rejected; a matching CIDR updates that subnet." }}
-      {{ template "import_card" dict "CSRF" .CSRF "Type" "addresses" "Title" "Addresses" "Columns" "address, subnet, state, hostname, device, notes" "Export" "/addresses/export.csv" "Hint" "Each address must fall inside an existing subnet. State is available/reserved/assigned/deprecated/conflict. Device links by exact name." }}
-      {{ template "import_card" dict "CSRF" .CSRF "Type" "devices" "Title" "Devices" "Columns" "name, description" "Export" "/devices/export.csv" "Hint" "Keyed by name: a matching name updates that device, otherwise a new one is created." }}
+      {{ template "import_card" dict "CSRF" .CSRF "Type" "subnets" "Title" "Subnets" "Columns" "name, cidr, vlan, site, description" "Export" "/subnets/export.csv" "ExportNetBox" "/subnets/export.netbox.csv" "Hint" "IPv4 CIDR (incl. /31, /32). Overlapping subnets are rejected; a matching CIDR updates that subnet." }}
+      {{ template "import_card" dict "CSRF" .CSRF "Type" "addresses" "Title" "Addresses" "Columns" "address, subnet, state, hostname, device, notes" "Export" "/addresses/export.csv" "ExportNetBox" "/addresses/export.netbox.csv" "Hint" "Each address must fall inside an existing subnet. State is available/reserved/assigned/deprecated/conflict. Device links by exact name." }}
+      {{ template "import_card" dict "CSRF" .CSRF "Type" "devices" "Title" "Devices" "Columns" "name, description" "Export" "/devices/export.csv" "ExportNetBox" "/devices/export.netbox.csv" "Hint" "Keyed by name: a matching name updates that device, otherwise a new one is created." }}
     </div>
   </div>
 {{ end }}
@@ -23,12 +23,22 @@
 <section class="glass-panel flex flex-col rounded-[28px] p-5">
   <div class="flex items-center justify-between gap-3">
     <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ .Title }}</h2>
-    <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="{{ .Export }}">Export CSV</a>
+    <div class="flex items-center gap-3 text-sm font-medium">
+      <a class="text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="{{ .Export }}">Export CSV</a>
+      <a class="text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="{{ .ExportNetBox }}">Export NetBox</a>
+    </div>
   </div>
   <p class="mt-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400">Columns: <span class="font-mono text-zinc-600 dark:text-zinc-300">{{ .Columns }}</span></p>
   <p class="mt-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{{ .Hint }}</p>
   <form class="mt-4 flex flex-col gap-3" method="post" action="/import/{{ .Type }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Format</span>
+      <select class="form-input" name="format">
+        <option value="lightipam">Light IPAM (native)</option>
+        <option value="netbox">NetBox</option>
+      </select>
+    </label>
     <input type="file" name="file" accept=".csv,text/csv" required class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-xl file:border-0 file:bg-zinc-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-zinc-800 dark:text-zinc-300 dark:file:bg-white dark:file:text-zinc-950">
     <button class="button-primary" type="submit">Preview import</button>
   </form>
