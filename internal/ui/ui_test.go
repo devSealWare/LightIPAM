@@ -704,3 +704,30 @@ func TestImportNetBoxControlsRender(t *testing.T) {
 		t.Error("preview apply form missing the carried-forward format")
 	}
 }
+
+// TestAccountAPITokensRender guards the Account page's API tokens section: the
+// create form, the token list with a revoke control, and the one-time reveal of a
+// just-created token's plaintext.
+func TestAccountAPITokensRender(t *testing.T) {
+	last := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := renderToString(t, "account.html", PageData{
+		User:        store.User{ID: "user-1", DisplayName: "Admin", Username: "admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:        "token",
+		ActiveNav:   "account",
+		NewAPIToken: "lipam_brandnewsecret",
+		APITokens: []store.APIToken{
+			{ID: "tok-1", Name: "ci-pipeline", CreatedAt: last, LastUsedAt: &last},
+		},
+	})
+	for _, want := range []string{
+		`action="/account/tokens"`,
+		`action="/account/tokens/tok-1/delete"`,
+		"ci-pipeline",
+		"lipam_brandnewsecret", // one-time reveal
+		"will not be shown again",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("account tokens section missing %q", want)
+		}
+	}
+}
