@@ -669,3 +669,38 @@ func TestSettingsNotificationsTabRenders(t *testing.T) {
 		t.Error("subscribed categories should be pre-checked in the edit form")
 	}
 }
+
+// TestImportNetBoxControlsRender guards the NetBox import/export controls: the
+// import page must offer a format selector and a NetBox export link per type, and
+// the preview must show the NetBox-interpretation note + carry the format forward.
+func TestImportNetBoxControlsRender(t *testing.T) {
+	page := renderToString(t, "import.html", PageData{
+		User: store.User{DisplayName: "Admin"}, CSRF: "token", ActiveNav: "import",
+	})
+	for _, want := range []string{
+		`name="format"`,
+		`value="netbox"`,
+		`href="/subnets/export.netbox.csv"`,
+		`href="/addresses/export.netbox.csv"`,
+		`href="/devices/export.netbox.csv"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("import page missing %q", want)
+		}
+	}
+
+	preview := renderToString(t, "import_preview.html", PageData{
+		User: store.User{DisplayName: "Admin"}, CSRF: "token", ActiveNav: "import",
+		ImportResult: store.ImportResult{
+			Type: "addresses", Format: "netbox", Created: 1,
+			Rows: []store.ImportRow{{Line: 2, Cells: []string{"10.0.0.5", "", "assigned"}, Action: "create"}},
+			CSV:  "address,status\n10.0.0.5/24,active\n",
+		},
+	})
+	if !strings.Contains(preview, "Interpreted as") {
+		t.Error("preview missing the NetBox interpretation note")
+	}
+	if !strings.Contains(preview, `name="format" value="netbox"`) {
+		t.Error("preview apply form missing the carried-forward format")
+	}
+}

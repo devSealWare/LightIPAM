@@ -12,6 +12,10 @@
     <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ $r.FileError }}</div>
     {{ end }}
 
+    {{ if eq $r.Format "netbox" }}
+    <div class="mt-4 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">Interpreted as <span class="font-semibold">NetBox</span> CSV. The rows below show how each NetBox column was mapped to Light IPAM fields.</div>
+    {{ end }}
+
     <section class="mt-5 flex flex-wrap items-center gap-3">
       <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">{{ $r.Created }} to create</span>
       <span class="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">{{ $r.Updated }} to update</span>
@@ -43,6 +47,7 @@
       {{ if and (eq $r.FileError "") (eq $r.Errors 0) $r.Rows }}
       <form method="post" action="/import/{{ $r.Type }}/apply">
         <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <input type="hidden" name="format" value="{{ $r.Format }}">
         <textarea name="csv" class="hidden" aria-hidden="true">{{ $r.CSV }}</textarea>
         <button class="button-primary" type="submit">Apply import</button>
       </form>

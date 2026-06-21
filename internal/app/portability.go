@@ -401,7 +401,7 @@ func (a *App) importPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, _ := a.validateImport(r, entity, string(body))
+	result, _ := a.validateImport(r, entity, string(body), normalizeImportFormat(r.FormValue("format")))
 	a.renderImportPreview(w, session, result)
 }
 
@@ -425,7 +425,7 @@ func (a *App) importApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body := r.FormValue("csv")
-	result, payload := a.validateImport(r, entity, body)
+	result, payload := a.validateImport(r, entity, body, normalizeImportFormat(r.FormValue("format")))
 	// Re-validate before applying: never partially apply an invalid file.
 	if result.FileError != "" || result.Errors > 0 {
 		a.renderImportPreview(w, session, result)
@@ -450,27 +450,36 @@ func (a *App) importApply(w http.ResponseWriter, r *http.Request) {
 
 	uid := session.User.ID
 	actionPrefix, subjectType := importAuditNames(entity)
-	metadata, _ := json.Marshal(map[string]any{"created": result.Created, "updated": result.Updated})
+	metadata, _ := json.Marshal(map[string]any{"created": result.Created, "updated": result.Updated, "format": result.Format})
 	if err := a.store.CreateAuditLog(r.Context(), &uid, actionPrefix+".csv_imported", subjectType, "", string(metadata)); err != nil {
 		a.logger.Error("create audit log", "error", err)
 	}
 	http.Redirect(w, r, redirectForImport(entity), http.StatusSeeOther)
 }
 
-// validateImport parses and validates a CSV body for the given type, returning
-// the dry-run result and (when valid) the typed payload for the store import.
-func (a *App) validateImport(r *http.Request, entity, body string) (importResult, any) {
+// validateImport parses and validates a CSV body for the given type and format,
+// returning the dry-run result and (when valid) the typed payload for the store
+// import. A NetBox-format file is first translated into the canonical Light IPAM
+// columns, so the same validators and apply path handle both dialects.
+func (a *App) validateImport(r *http.Request, entity, body, format string) (importResult, any) {
 	ic, err := a.buildImportContext(r)
 	if err != nil {
 		a.logger.Error("build import context", "error", err)
-		return importResult{Type: entity, FileError: "Unable to load current records for validation.", CSV: body}, nil
+		return importResult{Type: entity, Format: format, FileError: "Unable to load current records for validation.", CSV: body}, nil
 	}
 	header, records, err := parseCSV(body)
 	if err != nil {
-		return importResult{Type: entity, FileError: "The file is not valid CSV.", CSV: body}, nil
+		return importResult{Type: entity, Format: format, FileError: "The file is not valid CSV.", CSV: body}, nil
 	}
 	if len(records) == 0 {
-		return importResult{Type: entity, FileError: "The file has no data rows.", CSV: body}, nil
+		return importResult{Type: entity, Format: format, FileError: "The file has no data rows.", CSV: body}, nil
+	}
+	if format == formatNetBox {
+		canonHeader, canonRecords, fileErr := translateNetBoxImport(entity, header, records)
+		if fileErr != "" {
+			return importResult{Type: entity, Format: format, FileError: fileErr, CSV: body}, nil
+		}
+		header, records = canonHeader, canonRecords
 	}
 
 	var result importResult
@@ -484,6 +493,7 @@ func (a *App) validateImport(r *http.Request, entity, body string) (importResult
 		result, payload = validateDevices(records, header, ic)
 	}
 	result.CSV = body
+	result.Format = format
 	return result, payload
 }
 
