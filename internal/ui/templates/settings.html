@@ -13,6 +13,7 @@
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "backup" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/backup">Backup &amp; Restore</a>
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "customfields" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/custom-fields">Custom fields</a>
         <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "policy" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/policy">Policy</a>
+        <a class="rounded-full px-4 py-2 text-sm font-medium {{ if eq .ActiveTab "notifications" }}bg-zinc-950 text-white dark:bg-white dark:text-zinc-950{{ else }}text-zinc-600 hover:bg-white dark:text-zinc-300 dark:hover:bg-zinc-900{{ end }}" href="/settings/notifications">Notifications</a>
       </nav>
     </header>
 
@@ -478,5 +479,144 @@
       </form>
     </section>
     {{ end }}
+
+    {{ if eq .ActiveTab "notifications" }}
+    <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
+      <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Add a webhook</h2>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Light IPAM POSTs a JSON payload to each enabled endpoint when a subscribed change is recorded. If you set a signing secret, each request carries an <span class="font-mono text-xs">X-LightIPAM-Signature: sha256=…</span> HMAC of the body. The secret is encrypted at rest and never shown again.</p>
+      <form method="post" action="/settings/notifications" class="mt-5 space-y-5">
+        <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Name</span>
+            <input class="form-input" type="text" name="name" autocomplete="off" value="{{ index .Form "name" }}" required>
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Payload URL</span>
+            <input class="form-input" type="url" name="url" placeholder="https://hooks.example.com/light-ipam" value="{{ index .Form "url" }}" required>
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Signing secret (optional)</span>
+            <input class="form-input" type="password" name="secret" autocomplete="new-password" placeholder="Used to HMAC-sign each delivery">
+          </label>
+        </div>
+        {{ template "webhook_events" dict "Selected" (dict "ipam" (index .Form "event_ipam") "discovery" (index .Form "event_discovery") "scan" (index .Form "event_scan") "security" (index .Form "event_security")) }}
+        <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="enabled" {{ if index .Form "enabled" }}checked{{ end }}>
+          <span>
+            <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Enabled</span>
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Disabled webhooks keep their configuration but receive nothing.</span>
+          </span>
+        </label>
+        <div>
+          <button class="button-primary" type="submit">Add webhook</button>
+        </div>
+      </form>
+    </section>
+
+    {{ if .Webhooks }}
+    <section class="mt-5 space-y-5">
+      {{ range .Webhooks }}
+      <div class="glass-panel rounded-[28px] p-5 sm:p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ .Name }}
+              {{ if .Enabled }}<span class="ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">enabled</span>{{ else }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">disabled</span>{{ end }}
+              {{ if .HasSecret }}<span class="ml-1 inline-flex items-center rounded-full bg-zinc-900 px-2 py-0.5 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900">signed</span>{{ end }}
+            </h3>
+            <p class="mt-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ .URL }}</p>
+            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{{ .EventsLabel }}</p>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <form method="post" action="/settings/notifications/{{ .ID }}/test">
+              <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+              <button class="button-muted h-9 px-3 text-xs" type="submit">Send test</button>
+            </form>
+            <a class="inline-flex h-9 items-center justify-center rounded-xl border border-rose-200 px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/40" href="/settings/notifications/{{ .ID }}/delete">Delete</a>
+          </div>
+        </div>
+        <form method="post" action="/settings/notifications/{{ .ID }}" class="mt-4 space-y-5 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+          <input type="hidden" name="csrf_token" value="{{ $.CSRF }}">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="block">
+              <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Name</span>
+              <input class="form-input" type="text" name="name" value="{{ .Name }}" required>
+            </label>
+            <label class="block">
+              <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Payload URL</span>
+              <input class="form-input" type="url" name="url" value="{{ .URL }}" required>
+            </label>
+            <label class="block sm:col-span-2">
+              <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Signing secret</span>
+              <input class="form-input" type="password" name="secret" autocomplete="new-password" placeholder="{{ if .HasSecret }}•••••••• (leave blank to keep){{ else }}Leave blank for unsigned{{ end }}">
+            </label>
+          </div>
+          {{ template "webhook_events" dict "Selected" (dict "ipam" (contains .Events "ipam") "discovery" (contains .Events "discovery") "scan" (contains .Events "scan") "security" (contains .Events "security")) }}
+          <label class="flex items-center gap-3">
+            <input class="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="enabled" {{ if .Enabled }}checked{{ end }}>
+            <span class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Enabled</span>
+          </label>
+          <div>
+            <button class="button-primary" type="submit">Save changes</button>
+          </div>
+        </form>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
+
+    <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
+      <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">Recent deliveries</h2>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">The last delivery attempts across all webhooks.</p>
+      </div>
+      {{ if .WebhookDeliveries }}
+      <div class="grid grid-cols-[1.2fr_1.4fr_0.8fr_1.1fr] gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span>Webhook</span><span>Event</span><span>Result</span><span>When</span>
+      </div>
+      {{ range .WebhookDeliveries }}
+      <div class="grid grid-cols-[1.2fr_1.4fr_0.8fr_1.1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
+        <span class="truncate text-zinc-700 dark:text-zinc-200">{{ if .WebhookName }}{{ .WebhookName }}{{ else }}—{{ end }}</span>
+        <span class="truncate font-mono text-xs text-zinc-600 dark:text-zinc-300">{{ .EventType }}</span>
+        <span>
+          {{ if eq .Status "success" }}<span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">{{ if .StatusCode }}HTTP {{ .StatusCode }}{{ else }}ok{{ end }}</span>
+          {{ else }}<span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300" title="{{ .Error }}">failed</span>{{ end }}
+        </span>
+        <span class="text-zinc-500 dark:text-zinc-400">{{ datetime .CreatedAt }}</span>
+      </div>
+      {{ end }}
+      {{ else }}
+      <div class="p-8">
+        <h3 class="text-lg font-semibold text-zinc-950 dark:text-white">No deliveries yet</h3>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Once a subscribed change occurs (or you send a test), delivery attempts appear here.</p>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
   </div>
+{{ end }}
+
+{{ define "webhook_events" }}
+<fieldset>
+  <legend class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Events</legend>
+  <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Select which changes to send. Choose none to receive every category.</p>
+  <div class="mt-3 grid gap-3 sm:grid-cols-2">
+    <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="event" value="ipam" {{ if index .Selected "ipam" }}checked{{ end }}>
+      <span><span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">IPAM changes</span><span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Subnets, addresses, devices, MACs.</span></span>
+    </label>
+    <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="event" value="discovery" {{ if index .Selected "discovery" }}checked{{ end }}>
+      <span><span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Discovery</span><span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Scan findings recorded, imported, or in conflict.</span></span>
+    </label>
+    <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="event" value="scan" {{ if index .Selected "scan" }}checked{{ end }}>
+      <span><span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Scan lifecycle</span><span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Jobs completed or failed, schedules, agents.</span></span>
+    </label>
+    <label class="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <input class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-400 dark:border-zinc-700" type="checkbox" name="event" value="security" {{ if index .Selected "security" }}checked{{ end }}>
+      <span><span class="block text-sm font-medium text-zinc-700 dark:text-zinc-200">Security</span><span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Settings, users, sessions, lockouts.</span></span>
+    </label>
+  </div>
+</fieldset>
 {{ end }}

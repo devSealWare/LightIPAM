@@ -187,7 +187,9 @@ Planned tabs (sequenced with the phases that unlock them):
   phase's cert-lifecycle item); the `/agents` page exists today.
 - **Backup & Restore** — trigger/schedule `pg_dump`, run a tested restore, capture the
   migration version (this phase's backup/restore item).
-- **Notifications** — change webhooks and alert thresholds (Phase 6).
+- **Notifications** — change webhooks (**done**, ADR 0022) and, later, alert
+  thresholds. Outbound HMAC-signed JSON to subscribed endpoints, driven by the audit
+  log as the change feed.
 - **Custom fields** — define operator-managed text attributes per entity type
   (subnet/address/device), edited on each record's form. **Done** (ADR 0019).
 - **Data & Audit** — audit-log retention/export and the CSV / NetBox import-export
@@ -263,6 +265,16 @@ is complete enough to begin **Phase 6**.
   gains native time/day/timezone fields (no client JS) and the schedules table shows
   the window. `cmd/server` embeds `time/tzdata` so zone lookups work on the Alpine
   image. Per-schedule config, no Settings tab, no new privilege.
-- Change webhooks.
+- **Change webhooks (done, ADR 0022).** An admin registers outbound webhook endpoints
+  on a **Notifications** settings tab; the app POSTs an HMAC-signed JSON payload to each
+  enabled, subscribed endpoint when a matching change is audited. The audit log is the
+  change feed — a single mutex-guarded `store` audit hook (on both store instances) fans
+  events out via `internal/webhook`, with a pure `categoryForAction` mapping audited
+  actions to subscribable categories (ipam / discovery / scan / security). Delivery is
+  asynchronous and gated to a no-op when no webhook is enabled; each attempt is recorded
+  in a bounded `webhook_deliveries` log (migration 19 adds `webhooks` + that log). The
+  per-webhook signing secret is sealed at rest (`internal/secret`); pure
+  `parseWebhookForm`/`categoryForAction`/`sign` are unit-tested and an httptest test
+  covers the real POST + signature. App-side only, no new privilege, no client JS.
 - NetBox-compatible import/export.
 - Terraform provider or CLI.

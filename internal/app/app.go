@@ -22,6 +22,7 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/secret"
 	"github.com/devSealWare/LightIPAM/internal/store"
 	"github.com/devSealWare/LightIPAM/internal/ui"
+	"github.com/devSealWare/LightIPAM/internal/webhook"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,12 +39,13 @@ type Options struct {
 }
 
 type App struct {
-	cfg     config.Config
-	store   *store.Store
-	logger  *slog.Logger
-	scans   *orchestrator.Service
-	sealer  *secret.Sealer
-	backups *backup.Manager
+	cfg      config.Config
+	store    *store.Store
+	logger   *slog.Logger
+	scans    *orchestrator.Service
+	sealer   *secret.Sealer
+	backups  *backup.Manager
+	webhooks *webhook.Dispatcher
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
@@ -78,6 +80,17 @@ func New(options Options) http.Handler {
 	app.backups = backup.New(options.Config.BackupDir, options.Config.DatabaseURL)
 	app.loadSettings(context.Background())
 	app.ensureCA(context.Background())
+
+	// Change webhooks (ADR 0022): the dispatcher fans audited changes out to
+	// subscribed endpoints. Registering its hook on both the app's store and the
+	// orchestrator's store makes the audit log a single change feed covering IPAM
+	// edits and scan-lifecycle events alike.
+	app.webhooks = webhook.NewDispatcher(app.store, app.sealer, app.logger)
+	app.webhooks.Refresh(context.Background())
+	app.store.SetAuditHook(app.webhooks.AuditHook())
+	if app.scans != nil {
+		app.scans.SetAuditHook(app.webhooks.AuditHook())
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
@@ -132,6 +145,12 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/custom-fields", app.customFieldCreate)
 	mux.HandleFunc("GET /settings/custom-fields/{id}/delete", app.customFieldDeleteConfirm)
 	mux.HandleFunc("POST /settings/custom-fields/{id}/delete", app.customFieldDelete)
+	mux.HandleFunc("GET /settings/notifications", app.settingsNotifications)
+	mux.HandleFunc("POST /settings/notifications", app.webhookCreate)
+	mux.HandleFunc("POST /settings/notifications/{id}", app.webhookUpdate)
+	mux.HandleFunc("POST /settings/notifications/{id}/test", app.webhookTest)
+	mux.HandleFunc("GET /settings/notifications/{id}/delete", app.webhookDeleteConfirm)
+	mux.HandleFunc("POST /settings/notifications/{id}/delete", app.webhookDelete)
 	mux.HandleFunc("GET /import", app.importIndex)
 	mux.HandleFunc("POST /import/{type}", app.importPreview)
 	mux.HandleFunc("POST /import/{type}/apply", app.importApply)

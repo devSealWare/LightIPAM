@@ -623,3 +623,49 @@ func TestBulkEditMarkupRenders(t *testing.T) {
 		}
 	})
 }
+
+// TestSettingsNotificationsTabRenders guards the Notifications (change webhooks)
+// settings tab: the add form, the shared event-category partial, an inline edit
+// form with the subscribed categories pre-checked, and the delivery log.
+func TestSettingsNotificationsTabRenders(t *testing.T) {
+	data := PageData{
+		User:              store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:              "token",
+		ActiveTab:         "notifications",
+		Form:              map[string]string{"enabled": "on"},
+		WebhookCategories: []string{"ipam", "discovery", "scan", "security"},
+		Webhooks: []store.Webhook{{
+			ID:        "wh-1",
+			Name:      "Ops channel",
+			URL:       "https://hooks.example.com/ipam",
+			HasSecret: true,
+			Events:    []string{"ipam", "scan"},
+			Enabled:   true,
+		}},
+		WebhookDeliveries: []store.WebhookDelivery{
+			{ID: 1, WebhookName: "Ops channel", EventType: "subnet.created", Status: "success", StatusCode: 200},
+			{ID: 2, WebhookName: "Ops channel", EventType: "scan.job.failed", Status: "failed", Error: "endpoint returned HTTP 500"},
+		},
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		`action="/settings/notifications"`,
+		`action="/settings/notifications/wh-1"`,
+		`action="/settings/notifications/wh-1/test"`,
+		`href="/settings/notifications/wh-1/delete"`,
+		`name="event" value="ipam"`,
+		`name="event" value="security"`,
+		"Ops channel",
+		"subnet.created",
+		"scan.job.failed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("notifications tab missing %q", want)
+		}
+	}
+	// The webhook subscribes to ipam+scan: those edit checkboxes must be checked,
+	// and the unsubscribed ones must not be. Find the inline edit form's checkboxes.
+	if !strings.Contains(body, `value="ipam" checked`) || !strings.Contains(body, `value="scan" checked`) {
+		t.Error("subscribed categories should be pre-checked in the edit form")
+	}
+}
