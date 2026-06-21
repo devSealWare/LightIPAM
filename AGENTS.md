@@ -8,8 +8,11 @@ Light IPAM is a lightweight IP address management system for small business thro
 
 ## Current State
 
-Phase 1 manual IPAM foundation is merged to `main`, as are scanner Phases 2, 3, and
-4 (all complete) — see "Current State of the Scanner Track" below for discovery.
+**Phases 1-6 are all complete** and merged to `main` (migrations 1-20). Phase 1
+(manual IPAM), scanner Phases 2-4 (foundation + nmap MVP + Network Context — see
+"Current State of the Scanner Track" below), Phase 4.5 (bulk edit + CSV), Phase 5
+(Production Hardening), and Phase 6 (Advanced Automation) are done. The next phase is
+open; confirm direction with the user before starting.
 
 Implemented (manual IPAM):
 
@@ -49,6 +52,39 @@ Implemented (manual IPAM):
   **Custom fields** Settings tab and edited/shown on each subnet/address/device
   (sparse, audited; schema from migration 1). Phase 5 audit, ADR 0019.
 
+Implemented (Phase 5 — Production Hardening, ADRs 0017/0018):
+
+- Login throttling + account lockout (`login_attempts`, migration 12), idle +
+  absolute session timeouts with per-session IP/User-Agent capture, active-session
+  review + "log out everywhere", all auth/session policy editable at runtime
+  (`app_settings`, migration 13), and a `/readyz` readiness probe.
+- Admin vs. read-only **viewer roles** (migration 14, central authorize
+  middleware), **TOTP MFA** with recovery codes (migration 15, sealed secret),
+  **OIDC SSO** (auth-code + PKCE, sealed client secret, migration 16).
+- **Encrypted secrets at rest** (`internal/secret`, AES-256-GCM), **pg_dump
+  backup/restore** (`internal/backup` + Backup tab), and an **app-managed CA**
+  (migration 17) issuing/rotating short-lived agent mTLS certs (agent hot-reload).
+- A tabbed **Settings** page (Security, Users & Roles, Authentication, Agent
+  certificates, Backup & Restore, Custom fields, Policy, Notifications) and a
+  per-user `/account` page.
+
+Implemented (Phase 6 — Advanced Automation, ADRs 0020-0024):
+
+- **Policy / Health checks** (`/policy`, ADR 0020): overlapping subnets, stale
+  records, unmanaged/conflicting discovered services; pure check functions over
+  store snapshots, a dashboard widget, and a runtime-editable Policy Settings tab.
+- **Scheduled scan windows** (migration 18, ADR 0021): a schedule may restrict
+  firing to a time-of-day + weekday window in its own IANA timezone.
+- **Change webhooks** (migration 19, ADR 0022): HMAC-signed JSON to subscribed
+  endpoints, driven by the audit log via a `store.SetAuditHook` and
+  `internal/webhook`; signing secret sealed at rest.
+- **NetBox-compatible import/export** (ADR 0023): a pure translation into the
+  canonical columns reusing the existing validators/preview/apply, plus NetBox
+  exports.
+- **Machine API + CLI** (migration 20, ADR 0024): a token-authenticated JSON API
+  under `/api/v1` (`internal/app/api.go`) and a stdlib-only `cmd/lightipam-cli`;
+  per-user bearer tokens carry the owner's role.
+
 ## Repository Structure
 
 - `cmd/server/main.go`: process entrypoint, config load, database connect/migrate, HTTP server lifecycle.
@@ -66,9 +102,14 @@ Implemented (manual IPAM):
 - `internal/ui/static/*.js`: same-origin progressive-enhancement scripts
   (`columns.js` selectable table columns, `scan_form.js` dynamic scan form,
   `bulk.js` multi-select bulk edit); no inline JS, strict CSP.
+- `internal/auth`: password hashing (Argon2id), random/API-token helpers, and TOTP.
+- `internal/secret`: AES-256-GCM sealing of small secrets (OIDC/TOTP/CA/webhook).
+- `internal/backup`: on-demand `pg_dump` snapshot/restore helpers.
+- `internal/webhook`: change-webhook dispatcher fed by the audit hook.
 - `internal/scanner` + `cmd/scanner-agent` + `cmd/scanner-certs`: the scanner
-  protocol, agent, app-side dispatch/orchestrator, and dev PKI (see "Scanner
-  Components").
+  protocol, agent, app-side dispatch/orchestrator, and PKI (managed CA + dev certs;
+  see "Scanner Components").
+- `cmd/lightipam-cli`: stdlib-only CLI client for the `/api/v1` machine API.
 - `docs`: product, architecture, roadmap, backlog, ADRs.
 
 ## Stack
@@ -77,7 +118,7 @@ Implemented (manual IPAM):
 - Web: server-rendered HTML templates.
 - Styling: Tailwind CSS.
 - Database: PostgreSQL.
-- Auth: local admin account for MVP.
+- Auth: local accounts (admin/viewer roles), TOTP MFA, and OIDC SSO.
 - Deployment: Docker Compose.
 - GitHub: issues and PRs are tracked in `devSealWare/LightIPAM`.
 
@@ -86,7 +127,9 @@ Implemented (manual IPAM):
 ```sh
 npm run build:css
 go test ./...
+gofmt -l internal cmd
 docker compose build
+docker compose --profile scanner build
 docker compose up -d
 docker compose exec app wget -qO- http://127.0.0.1:8080/healthz
 ```
@@ -174,26 +217,23 @@ unprivileged (zero capabilities, no nmap).
 
 ## Next
 
-No issue is in progress. Phases 1–4 are complete, as is Phase 4.5 (the carried-forward
-Phase 1 item). Remaining candidate work, roughly in priority order:
+No issue is in progress. **Phases 1-6 are complete** (see `docs/ROADMAP.md`), so the
+next phase is open — confirm direction with the user. Remaining candidate work:
 
-- **Carried forward from earlier phases (done, Phase 4.5, ADR 0016):** bulk edit +
-  CSV import/export for the manual-IPAM UI (Phase 1 / `docs/MVP.md` / backlog #4).
-  Multi-select bulk status/VLAN/tag/clear-device/delete on the Subnets/Addresses/
-  Devices tables (JS-off + JS-on, audited, deletes via `confirm.html`); and validated
-  CSV import/export of subnets/addresses/devices with a dry-run preview and
-  all-or-nothing apply. See `docs/ROADMAP.md` "Carried forward."
-- **Phase 5 (Production Hardening):** managed agent cert issuance/rotation (replacing
-  the dev CA), OIDC SSO, MFA (TOTP), roles beyond the single admin, encrypted secrets
-  at rest, and backup/restore. See `docs/ROADMAP.md` "Phase 5" for the broken-out
-  scope and exit criteria.
+- **Terraform provider** against the now-stable `/api/v1` (the `lightipam-cli` is the
+  reference client; the user chose a CLI first for ADR 0024).
+- **Online agent-pull cert enrollment** — the one explicitly-deferred Phase 5 item:
+  the agent renews its own cert over a bootstrap channel instead of operator file
+  deployment. (Today the managed CA issues + rotates and the agent hot-reloads.)
 - **Optional Phase 4 polish:** tagged/trunk VLAN membership (only access PVID is
   mapped today), per-interface speed/alias, and an SNMP/API-based DHCP source for
   appliances with no lease file.
+- **Remaining Settings tabs** (`docs/SETTINGS.md`): General, Scanning (nmap dispatch
+  defaults), Discovery, and richer Data & Audit.
 
 Known limitations to be aware of (see README "Limitations"): the SNMP, NetBIOS/mDNS,
-DNS, and DHCP backends are unverified against real hardware; IPv4 only; the dev CA
-has no rotation; single admin role, no MFA/OIDC; no backup/restore yet; CSV
-import/export is the basic format only (NetBox-compatible import/export is Phase 6).
+DNS, and DHCP backends are unverified against real hardware; IPv4 only; SNMP v2c
+only; nmap is TCP-only (no UDP/NSE); DHCP ingestion reads a mounted lease file; and
+online agent-pull cert enrollment is not built.
 
 Branch from `main` and confirm the next item with the user before starting.

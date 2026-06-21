@@ -22,7 +22,6 @@ import (
 const (
 	DefaultCAValidFor   = 10 * 365 * 24 * time.Hour
 	DefaultLeafValidFor = 30 * 24 * time.Hour
-	DefaultRenewBefore  = 7 * 24 * time.Hour
 )
 
 // CA is a parsed certificate authority that issues and rotates leaf
@@ -136,38 +135,6 @@ func (c *CA) IssueClient(cn string, ttl time.Duration) (certPEM, keyPEM []byte, 
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 	return signLeaf(template, c.cert, c.key)
-}
-
-// CertNotAfter parses a leaf cert's expiry.
-func CertNotAfter(certPEM []byte) (time.Time, error) {
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return time.Time{}, errors.New("pki: invalid certificate PEM")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("pki: parse certificate: %w", err)
-	}
-	return cert.NotAfter, nil
-}
-
-// NeedsRenewal reports whether a leaf certificate should be re-issued: it is
-// within renewBefore of expiry (or already expired) at time now.
-func NeedsRenewal(certPEM []byte, renewBefore time.Duration, now time.Time) (bool, error) {
-	notAfter, err := CertNotAfter(certPEM)
-	if err != nil {
-		return false, err
-	}
-	return now.Add(renewBefore).After(notAfter), nil
-}
-
-// Fingerprint returns a leaf/CA certificate's SHA-256 fingerprint (colon-hex).
-func Fingerprint(certPEM []byte) (string, error) {
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return "", errors.New("pki: invalid certificate PEM")
-	}
-	return fingerprintDER(block.Bytes), nil
 }
 
 func fingerprintDER(der []byte) string {
