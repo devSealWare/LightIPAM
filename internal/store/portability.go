@@ -35,6 +35,9 @@ type ImportResult struct {
 	Errors    int
 	FileError string
 	CSV       string
+	// Format is the source CSV dialect ("lightipam" or "netbox"); it rides through
+	// the dry-run so the confirmed apply re-parses with the same translation.
+	Format string
 }
 
 // AddressExport is one row of the addresses CSV. Subnet is the containing

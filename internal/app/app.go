@@ -157,6 +157,9 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /subnets/export.csv", app.exportSubnetsCSV)
 	mux.HandleFunc("GET /addresses/export.csv", app.exportAddressesCSV)
 	mux.HandleFunc("GET /devices/export.csv", app.exportDevicesCSV)
+	mux.HandleFunc("GET /subnets/export.netbox.csv", app.exportSubnetsNetBox)
+	mux.HandleFunc("GET /addresses/export.netbox.csv", app.exportAddressesNetBox)
+	mux.HandleFunc("GET /devices/export.netbox.csv", app.exportDevicesNetBox)
 
 	mux.HandleFunc("GET /subnets", app.subnetsIndex)
 	mux.HandleFunc("GET /subnets/new", app.subnetNew)

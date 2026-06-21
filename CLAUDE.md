@@ -37,7 +37,9 @@ The app has:
 - Multi-select bulk edit (status/VLAN/tag/clear-device/delete) on the Subnets,
   Addresses, and Devices tables (Phase 4.5, ADR 0016).
 - Basic CSV import/export of subnets, addresses, and devices with a validated
-  dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016).
+  dry-run preview and all-or-nothing apply (Phase 4.5, ADR 0016), plus a
+  **NetBox-compatible** CSV format on the same Import/Export page (Phase 6 slice (d),
+  ADR 0023).
 - **Operator-defined custom fields** (text) per entity type — an admin **Custom
   fields** Settings tab defines them; each subnet/address/device form edits the
   values and the detail page shows them (sparse storage, audited, zero-impact until
@@ -113,12 +115,11 @@ The code avoids large frameworks. Continue using:
 ## Current Issue
 
 None in progress. **Phase 6 (Advanced Automation) is underway**: slice (a) **Policy /
-Health checks** (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021), and slice
-(c) **Change webhooks** (ADR 0022) are built — see the Current State bullets and the
-"Policy / Health checks", "Scheduled scan windows", and "Change webhooks" sections
-below. The recommended remaining Phase 6 order is (d) NetBox import/export → (e)
-Terraform provider/CLI (last; it depends on a stable authenticated API + roles — confirm
-before starting).
+Health checks** (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021), slice (c)
+**Change webhooks** (ADR 0022), and slice (d) **NetBox-compatible import/export** (ADR
+0023) are built — see the Current State bullets and the matching sections below. The one
+remaining Phase 6 slice is (e) **Terraform provider/CLI** (last; it depends on a stable
+authenticated API + roles — confirm CLI-vs-provider with the user before starting).
 
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
@@ -518,6 +519,32 @@ secret and managed-CA key.
   at-most-once delivery (no retry queue this slice; the log + "Send test" surface
   failures). See ADR 0022.
 
+## NetBox-compatible import/export (merged, Phase 6, ADR 0023)
+
+The fourth Phase 6 slice: read/write CSV in **NetBox**'s column format alongside the
+native CSV (ADR 0016). App-side only — no schema change, no new privilege, no client JS.
+
+- **Import is a pure translation, not a second pipeline.** `translateNetBoxImport(entity,
+  header, records)` (`internal/app/netbox.go`, pure + unit-tested) maps NetBox columns +
+  value semantics into the **canonical Light IPAM columns**, preserving row count/order
+  so the dry-run line numbers still match the file; `validateImport` then runs the
+  **existing** `validateSubnets`/`validateAddresses`/`validateDevices`, dry-run preview,
+  and all-or-nothing transactional apply unchanged. A missing required NetBox column
+  (`prefix`/`address`/`name`) is a file error. The `format` rides through on
+  `store.ImportResult.Format` (hidden field on the apply form) so the confirmed apply
+  re-translates the same file. Value maps: `mapNetBoxIPStatus` (active/dhcp/slaac →
+  assigned, reserved, deprecated), `stripMask` (NetBox `addr/mask` → host).
+- **Export** emits NetBox-named CSV via three handlers (`prefix,status,vlan_vid,site,
+  description` / `address,status,dns_name,description` / `name,status,description`), with
+  `reverseNetBoxIPStatus` and `netboxAddressString` (host + containing-subnet mask, /32
+  fallback) mapping values back. Routes
+  `GET /{subnets,addresses,devices}/export.netbox.csv`.
+- **UI**: the Import/Export page gains a per-type **Format** selector (Light IPAM/NetBox)
+  and **Export NetBox** links; the preview shows an "Interpreted as NetBox" note + the
+  translated rows. **Documented lossy edges** (NetBox prefixes have no name → carried in
+  `description`; NetBox devices need role/type/site Light IPAM doesn't model) in
+  `docs/NETBOX.md`; the IPAM core round-trips. See ADR 0023.
+
 ## Recent UI / IPAM work (merged to `main`)
 
 - **#35 Global search** across subnets, addresses, devices, MACs (`/search`,
@@ -675,13 +702,12 @@ Remaining candidate follow-ups, roughly in priority order:
   operator-deployed certs. Runbooks: `docs/BACKUP_RESTORE.md`, `docs/DISASTER_RECOVERY.md`,
   `docs/KEY_ROTATION.md`.
 - **Phase 6 (Advanced Automation) — in progress.** Slice (a) **Policy / Health checks**
-  (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021, migration 18), and slice
-  (c) **Change webhooks** (ADR 0022, migration 19) are done — see the sections above.
-  Remaining slices, recommended order: (d) **NetBox-compatible import/export** (extend
-  `internal/app/portability.go` with a NetBox format; same dry-run + all-or-nothing
-  discipline; **next is migration 20** if any schema is needed), (e) **Terraform
-  provider or CLI** (last — needs a stable authenticated read/write API + roles; confirm
-  with the user and propose CLI-vs-provider first).
+  (ADR 0020), slice (b) **Scheduled scan windows** (ADR 0021, migration 18), slice (c)
+  **Change webhooks** (ADR 0022, migration 19), and slice (d) **NetBox-compatible
+  import/export** (ADR 0023, no schema change) are done — see the sections above. The one
+  remaining slice is (e) **Terraform provider or CLI** (last — needs a stable
+  authenticated read/write API + roles; confirm with the user and propose CLI-vs-provider
+  first).
 - **Settings panel build-out.** The Settings page is the product's configuration
   surface; `docs/SETTINGS.md` is the canonical plan. **Done** tabs: Security, Users &
   Roles, Authentication, Agent certificates, Backup & Restore, Custom fields, **Policy**,
@@ -692,5 +718,5 @@ Remaining candidate follow-ups, roughly in priority order:
 
 When starting the next slice, branch from `main`, and confirm with the user
 which item to pick up (the backlog file no longer drives the order). Phase 5 is
-done; **Phase 6 (Advanced Automation) is underway** (slices (a), (b), and (c) merged) —
-see `docs/ROADMAP.md`.
+done; **Phase 6 (Advanced Automation) is underway** (slices (a)–(d) merged; only (e)
+Terraform provider/CLI remains) — see `docs/ROADMAP.md`.
