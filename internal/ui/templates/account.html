@@ -58,7 +58,7 @@
 
     <section class="glass-panel mt-5 rounded-[28px] p-5 sm:p-6">
       <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">API tokens</h2>
-      <p class="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">Personal tokens authenticate the <span class="font-mono text-xs">lightipam-cli</span> and other automation to the JSON API at <span class="font-mono text-xs">/api/v1</span>. A token carries your role, so {{ if .User.IsAdmin }}it can read and write{{ else }}as a viewer it is read-only{{ end }}. Send it as <span class="font-mono text-xs">Authorization: Bearer &lt;token&gt;</span>. See <span class="font-mono text-xs">docs/API.md</span>.</p>
+      <p class="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">Personal tokens let the command-line tool and other automation connect to the API at <span class="font-mono text-xs">/api/v1</span>. A token carries your role, so {{ if .User.IsAdmin }}it can read and write{{ else }}as a viewer it is read-only{{ end }}. Send it as <span class="font-mono text-xs">Authorization: Bearer &lt;token&gt;</span>. Keep it secret, and revoke it here if it's ever exposed.</p>
 
       {{ if .NewAPIToken }}
       <div class="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/40">

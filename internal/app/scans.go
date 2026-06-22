@@ -358,13 +358,13 @@ func (a *App) agentDiscover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.scans == nil {
-		a.redirectAgents(w, r, "Scanner dispatch is not configured; mount the app's mTLS client certificate first.")
+		a.redirectAgents(w, r, "Scanning isn't set up yet. An administrator needs to install the app's client certificate first.")
 		return
 	}
 	agent, created, err := a.scans.DiscoverAgent(r.Context(), endpoint)
 	if err != nil {
 		a.logger.Warn("discover agent", "endpoint", endpoint, "error", err)
-		a.redirectAgents(w, r, "Could not reach an agent at that endpoint over mTLS.")
+		a.redirectAgents(w, r, "Couldn't reach an agent at that address. Check the URL and that the agent is running.")
 		return
 	}
 	if created {

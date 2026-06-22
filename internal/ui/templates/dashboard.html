@@ -55,7 +55,7 @@
           {{ else }}
           <div class="p-6">
             <h3 class="text-sm font-semibold text-zinc-950 dark:text-white">No subnets yet</h3>
-            <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Add the first subnet to start tracking sparse address records.</p>
+            <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Add your first subnet to start tracking addresses.</p>
             <a class="button-primary mt-4" href="/subnets/new">Add subnet</a>
           </div>
           {{ end }}
@@ -72,7 +72,7 @@
         <a class="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 transition hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/40 dark:hover:bg-sky-950/70" href="/discoveries">
           <span>
             <span class="block text-sm font-semibold text-sky-800 dark:text-sky-200">{{ .PendingDiscovery }} host(s) awaiting review</span>
-            <span class="mt-1 block text-xs text-sky-700/80 dark:text-sky-300/80">Reconciled against your managed records — import or dismiss each.</span>
+            <span class="mt-1 block text-xs text-sky-700/80 dark:text-sky-300/80">Checked against your existing records — import or dismiss each.</span>
           </span>
           <span class="inline-flex min-w-[1.75rem] items-center justify-center rounded-full bg-sky-500 px-2 py-1 text-sm font-semibold text-white">{{ .PendingDiscovery }}</span>
         </a>

@@ -180,7 +180,7 @@ func (a *App) addressesBulk(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "delete" && !req.Confirmed {
 		a.renderBulkDeleteConfirm(w, session, "subnets",
 			"Remove addresses",
-			"This removes the selected sparse address records. They can be recreated later.",
+			"This removes the selected address records. You can add them again later.",
 			countSubject(len(req.IDs), "address"),
 			"/addresses/bulk", returnTo, "Remove addresses", req.IDs, req.SubnetID)
 		return
