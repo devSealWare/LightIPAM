@@ -68,7 +68,8 @@ Implemented (Phase 5 — Production Hardening, ADRs 0017/0018):
   certificates, Backup & Restore, Custom fields, Policy, Notifications) and a
   per-user `/account` page.
 
-Implemented (Phase 6 — Advanced Automation, ADRs 0020-0024):
+Implemented (Phase 6 — Advanced Automation, ADRs 0020-0024; plus discovery-UX
+ADR 0026):
 
 - **Policy / Health checks** (`/policy`, ADR 0020): overlapping subnets, stale
   records, unmanaged/conflicting discovered services; pure check functions over
@@ -84,6 +85,13 @@ Implemented (Phase 6 — Advanced Automation, ADRs 0020-0024):
 - **Machine API + CLI** (migration 20, ADR 0024): a token-authenticated JSON API
   under `/api/v1` (`internal/app/api.go`) and a stdlib-only `cmd/lightipam-cli`;
   per-user bearer tokens carry the owner's role.
+- **Discovery subnet auto-create + Import all** (ADR 0026, no migration): importing
+  a discovered host with no containing subnet opens a server-rendered, pure-CSS
+  modal pre-filled with the host's `/24` (and scanned VLAN); an **Import all**
+  control imports the whole pending, non-conflicting queue, grouping any missing
+  subnets by `/24` and prompting for each (re-checking until none remain) before
+  importing. App-side only, reuses `CreateSubnet` + `ImportDiscovery` and their
+  audit events.
 
 ## Repository Structure
 
@@ -180,7 +188,9 @@ If Go cache access is blocked in a sandbox, rerun tests with the normal Go build
   merge-on-rescan onto imported devices, and auto-enroll the bundled agent.
 - App routes: `/scans` (+ `/scans/{id}` structured detail), `/agents`
   (+ `/agents/discover`, `/agents/{id}/approve`), `/schedules`, `/discoveries`
-  (import/dismiss), `/search`, the manual-IPAM bulk routes (`POST /subnets/bulk`,
+  (import/dismiss, plus `POST /discoveries/import-all` and `POST /discoveries/subnet`
+  for the subnet auto-create + Import-all flow, ADR 0026), `/search`, the manual-IPAM
+  bulk routes (`POST /subnets/bulk`,
   `/addresses/bulk`, `/devices/bulk`) and CSV import/export (`/import`,
   `POST /import/{type}` + `/apply`, `/{subnets,addresses,devices}` `export.csv`),
   and `/static/scan_form.js` (+ `/static/columns.js`, `/static/bulk.js`).

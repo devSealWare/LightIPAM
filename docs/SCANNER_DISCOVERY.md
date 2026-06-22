@@ -366,13 +366,38 @@ In the UI an operator either:
   private-rotating flag; an existing device that already owns the MAC (or a prior
   import of the same discovery) is reused and refreshed instead of duplicated.
   A MAC-less host (e.g. one scanned over bridged networking) still gets a device,
-  named from its hostname or `host-<ip>`. Import is idempotent and refuses only
-  if no subnet contains the address. For real MACs (and richer fingerprinting),
-  give the agent layer-2 visibility with the macvlan overlay (see
+  named from its hostname or `host-<ip>`. Import is idempotent; when no managed
+  subnet contains the address it opens the **subnet auto-create modal** (below)
+  instead of failing. For real MACs (and richer fingerprinting), give the agent
+  layer-2 visibility with the macvlan overlay (see
   [`docs/SCANNER_AGENT.md`](SCANNER_AGENT.md#layer-2-discovery-mac-addresses-with-macvlan)).
 - **Dismisses** it: it is marked reviewed and will not resurface.
 
 Every import/dismiss is audited.
+
+### Subnet auto-create + Import all (ADR 0026)
+
+Two conveniences sit on top of the queue, both app-side with no client JS:
+
+- **Subnet auto-create on import.** Importing a host whose address falls outside
+  every managed subnet opens a server-rendered modal — the subnet form pre-filled
+  with the **`/24`** containing the host (`suggestSubnetCIDR`) and the scanned VLAN
+  when one was learned. The CIDR is editable; on save the subnet is created (the
+  edited range is validated to still contain the host) and the import resumes
+  automatically. This replaces the old "create the subnet first, then import"
+  dead-end.
+- **Import all.** A header control imports every **pending, non-conflicting**
+  discovery (`store.ListPendingImportTargets`) in one click. If any of them lack a
+  containing subnet the flow doesn't import yet — it walks the missing subnets
+  through the same modal, **grouped by `/24`** (`missingSubnetGroups`, so a network
+  with several hosts prompts once) in ascending network order, **re-checking after
+  each** until none remain, then imports everything and shows an "Imported N hosts"
+  banner. Conflicts are excluded from the bulk action — they stay in the queue for
+  individual review.
+
+Both paths reuse `store.CreateSubnet` + `store.ImportDiscovery` and their audit
+events (`subnet.created`, `scan.discovery.imported`); there is no new schema, route
+privilege, or audit action. See ADR 0026 and `internal/app/discoveries.go`.
 
 ### Reconciliation (conflict detection)
 
