@@ -22,6 +22,9 @@ Phases 1-6 are all complete (migrations 1-20).
   name_lookup, dns_lookup, dhcp_leases, and a combined all-sources scan that
   enriches the hosts nmap discovers; observations flow through the /discoveries
   review queue with reconciliation, per-agent auto-import, and merge-on-rescan.
+  Importing a host with no managed subnet opens a pre-filled subnet auto-create
+  modal, and "Import all" clears the non-conflicting queue in one click,
+  prompting for any missing subnets first (ADR 0026).
 - Phase 5 (Production Hardening): admin/viewer roles, TOTP MFA, OIDC SSO, encrypted
   secrets at rest, an app-managed CA with rotation (agent hot-reload), pg_dump
   backup/restore, login throttling/lockout, session hardening, and a
@@ -29,7 +32,8 @@ Phases 1-6 are all complete (migrations 1-20).
 - Phase 6 (Advanced Automation): policy/health checks, scheduled scan windows,
   change webhooks, NetBox-compatible import/export, and a token-authenticated
   machine API (/api/v1) + lightipam-cli.
-See ADRs 0001-0024.
+Plus a discovery-UX follow-up: subnet auto-create on import + "Import all" (ADR 0026).
+See ADRs 0001-0026.
 
 Architecture rule (do not violate):
 The web app must stay unprivileged — no raw sockets, nmap, packet capture, or

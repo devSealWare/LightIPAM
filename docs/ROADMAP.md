@@ -298,3 +298,14 @@ is complete enough to begin **Phase 6**.
 **Phase 6 (Advanced Automation) is complete.** Policy/health checks (ADR 0020),
 scheduled scan windows (ADR 0021), change webhooks (ADR 0022), NetBox-compatible
 import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
+
+## Discovery UX follow-up
+
+- **Subnet auto-create on import + "Import all" (done, ADR 0026).** Importing a
+  discovered host with no managed subnet opens a server-rendered, pure-CSS modal
+  pre-filled with the host's containing `/24` (and scanned VLAN); on save the subnet
+  is created and the import resumes. An **Import all** control imports the whole
+  pending, non-conflicting `/discoveries` queue in one click, grouping any missing
+  subnets by `/24` and prompting for each (re-checking until none remain) before
+  importing everything. App-side only, no migration, no new privilege; reuses the
+  existing `CreateSubnet` + `ImportDiscovery` paths and their audit events.

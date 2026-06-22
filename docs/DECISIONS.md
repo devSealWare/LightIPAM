@@ -55,6 +55,12 @@ As-built scan types and modes:
 - **Staged nmap:** a fast host-discovery sweep finds live hosts first, then only
   those get service/OS detection. NSE scripts / UDP scanning remain future work.
 
+Review-queue import stays an operator decision, but is low-friction: importing a host
+with no managed subnet opens a pre-filled subnet auto-create modal (the containing `/24`
++ scanned VLAN), and an **Import all** control clears the whole non-conflicting queue in
+one click, prompting once per missing `/24` until none remain. Server-driven, no client
+JS; conflicts are never bulk-imported. See ADR 0026.
+
 ## Authentication
 
 Start with local auth and a web-based first-admin bootstrap page. Support OIDC later for production environments that need centralized identity.

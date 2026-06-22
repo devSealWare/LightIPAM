@@ -98,6 +98,19 @@ The app has:
   `parseWebhookForm`/`categoryForAction`/`sign` unit-tested + an httptest test covers
   the real POST/headers/signature. App-side only, no new privilege, no client JS. See
   the "Change webhooks" section below.
+- **Discovery subnet auto-create + Import all** (discovery-UX follow-up, ADR 0026) —
+  importing a discovered host whose address has no managed subnet opens a
+  server-rendered, pure-CSS modal that **is** the subnet form, pre-filled with the
+  host's containing **`/24`** (`suggestSubnetCIDR`) and the scanned VLAN; on save the
+  subnet is created (the edited CIDR is validated to still contain the host) and the
+  import resumes. An **Import all** header control imports the whole **pending,
+  non-conflicting** `/discoveries` queue in one click — hosts lacking a subnet are
+  **grouped by `/24`** (`missingSubnetGroups`) and prompted one modal at a time,
+  re-checking after each until none remain, then everything imports
+  (`store.ListPendingImportTargets` drives the gate; conflicts are excluded). Routes
+  `POST /discoveries/import-all` + `POST /discoveries/subnet`; reuses `CreateSubnet` +
+  `ImportDiscovery` and their audit events — no migration, no new privilege, no client
+  JS. See the "Discovery subnet auto-create + Import all" section below.
 
 ## Current Implementation Style
 
@@ -121,6 +134,10 @@ merged: (a) **Policy / Health checks** (ADR 0020), (b) **Scheduled scan windows*
 matching sections below. The user chose a **CLI** over a Terraform provider for slice (e)
 (a provider can be added later against the same stable `/api/v1`). Next would be a new
 phase — confirm direction with the user before starting.
+
+One discovery-UX follow-up has since merged on top of Phase 6: **subnet auto-create on
+import + "Import all"** (ADR 0026) — see the Current State bullet and the matching
+section below. App-side only, no migration.
 
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
@@ -573,6 +590,40 @@ can be added later against the same stable API). App stays unprivileged; no clie
   `--vlan` as a JSON number); non-2xx prints the API `error` + non-zero exit. Pure
   `parseFields` unit-tested; the full token→CRUD→401/204 chain verified end-to-end against
   the running app. See `docs/API.md`.
+
+## Discovery subnet auto-create + Import all (merged, ADR 0026)
+
+A discovery-UX follow-up on top of Phase 6: turn a freshly-scanned network into managed
+IPAM in a few clicks. App-side only — no new privilege, no scanner surface, **no client
+JS**, **no migration** (it reuses `subnets`/`scan_discoveries` and the existing
+`CreateSubnet` + `ImportDiscovery` paths).
+
+- **Subnet auto-create on import.** Importing a discovery whose address falls outside
+  every managed subnet used to dead-end on `ErrNoContainingSubnet`; now `discoveryImport`
+  redirects to `/discoveries?resolve_one={id}`, which opens a **server-rendered, pure-CSS
+  modal** that is the subnet form pre-filled with the host's containing **`/24`**
+  (`suggestSubnetCIDR`, pure + unit-tested) and the scanned VLAN when known. On save
+  (`POST /discoveries/subnet`, `flow=import-one`) the subnet is created and the host is
+  imported in the same request. The edited CIDR is validated to still **contain the host**
+  (`ipam.Contains`) before creation, so a mistyped range is an in-modal error, not a
+  silent re-failure.
+- **Import all.** A header control (`POST /discoveries/import-all`, admin-gated, shown
+  with a live count) imports every **pending, non-conflicting** discovery
+  (`store.ListPendingImportTargets` — returns each target's IP/VLAN and a `HasSubnet`
+  computed with the same `cidr >>=` containment the import uses). If any target lacks a
+  subnet the flow **does not import**; it walks the missing subnets through the same modal,
+  **grouped by `/24`** (`missingSubnetGroups`, pure + unit-tested, ascending network
+  order), **re-checking after each** (`flow=import-all` loops via
+  `/discoveries?resolve=1`) until none remain, then imports everything and lands on an
+  "Imported N hosts" banner. **Conflicts are excluded** — resolving a conflict stays an
+  individual operator decision (mirrors auto-import).
+- **Shape.** The modal is a fixed overlay (`glass-panel`, Discoveries sky accent,
+  `role="dialog"`/`aria-modal`, backdrop/Cancel link back to `/discoveries`,
+  `autofocus` on the name field). All mutations are POST with redirect-after-POST, so a
+  refresh never re-submits. View model `ui.DiscoverySubnetPrompt`; handlers + helpers in
+  `internal/app/discoveries.go`; the modal + Import-all control + success banner in
+  `internal/ui/templates/discoveries.html`. Audited via the existing `subnet.created` /
+  `scan.discovery.imported` events (so they also fan out to change webhooks). See ADR 0026.
 
 ## Recent UI / IPAM work (merged to `main`)
 
