@@ -60,6 +60,19 @@ type Discovery struct {
 	LastSeenAt        time.Time
 }
 
+// DiscoveryImportTarget is a lightweight view of a pending, non-conflicting
+// discovery used by the bulk "Import all" flow: just enough to decide whether a
+// managed subnet already contains its address and, when none does, to suggest
+// one. HasSubnet uses the same longest-prefix `cidr >>=` containment ImportDiscovery
+// relies on, so it is the authoritative answer to "can this import without a new
+// subnet?".
+type DiscoveryImportTarget struct {
+	ID        string
+	IP        string
+	VLAN      int
+	HasSubnet bool
+}
+
 // DiscoveryInput holds the fields recorded from a single observation.
 type DiscoveryInput struct {
 	JobID    string
@@ -223,6 +236,33 @@ func (s *Store) CountUnreviewedConflicts(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("count conflict discoveries: %w", err)
 	}
 	return count, nil
+}
+
+// ListPendingImportTargets returns every pending, non-conflicting discovery
+// together with whether a managed subnet already contains it. It backs the
+// "Import all" flow: targets with HasSubnet can be imported straight away, while
+// the rest drive the create-the-missing-subnet prompt. Conflicts are excluded —
+// resolving a conflict is an operator decision, never a bulk action.
+func (s *Store) ListPendingImportTargets(ctx context.Context) ([]DiscoveryImportTarget, error) {
+	rows, err := s.db.Query(ctx, `
+SELECT d.id, host(d.ip), d.vlan, EXISTS (SELECT 1 FROM subnets s WHERE s.cidr >>= d.ip)
+FROM scan_discoveries d
+WHERE d.status = 'pending' AND d.reconcile_status <> 'conflict'
+ORDER BY d.ip`)
+	if err != nil {
+		return nil, fmt.Errorf("list pending import targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []DiscoveryImportTarget
+	for rows.Next() {
+		var t DiscoveryImportTarget
+		if err := rows.Scan(&t.ID, &t.IP, &t.VLAN, &t.HasSubnet); err != nil {
+			return nil, fmt.Errorf("scan import target: %w", err)
+		}
+		targets = append(targets, t)
+	}
+	return targets, rows.Err()
 }
 
 // ListDiscoveries returns discoveries, optionally filtered by review status
