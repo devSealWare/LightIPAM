@@ -54,11 +54,18 @@ type PageData struct {
 	Discovery         store.Discovery
 	PendingDiscovery  int
 	ConflictDiscovery int
-	SearchQuery       string
-	SearchResults     store.SearchResults
-	Sessions          []store.Session
-	CurrentSessionID  string
-	Users             []store.User
+
+	// DiscoveryPrompt, when set, opens the "create the missing subnet" modal on
+	// the Discoveries page with a CIDR pre-filled from the scan. ImportableCount is
+	// the number of pending, non-conflicting discoveries the "Import all" button
+	// acts on (it is hidden when zero).
+	DiscoveryPrompt  *DiscoverySubnetPrompt
+	ImportableCount  int
+	SearchQuery      string
+	SearchResults    store.SearchResults
+	Sessions         []store.Session
+	CurrentSessionID string
+	Users            []store.User
 
 	// MFA / account
 	MFAEnabled          bool
@@ -119,6 +126,31 @@ type PageData struct {
 type ScanTypeGroup struct {
 	Label string
 	Types []string
+}
+
+// DiscoverySubnetPrompt drives the "create the missing subnet" modal on the
+// Discoveries page. It is set when importing a discovery (single or via "Import
+// all") needs a subnet that does not exist yet: the form is pre-filled with a
+// suggested CIDR and the discovered VLAN, and on save it creates the subnet then
+// resumes the import. Flow is "import-one" (after saving, import DiscoveryID) or
+// "import-all" (after saving, re-check for more missing subnets, then import
+// everything). TargetIP is the discovered host the new subnet must contain, used
+// both to validate the operator-edited CIDR and in the explanatory copy.
+type DiscoverySubnetPrompt struct {
+	Flow        string
+	DiscoveryID string
+	TargetIP    string
+	Heading     string
+	Context     string
+	// Error is a validation/creation failure shown inside the modal so the operator
+	// fixes it in place (e.g. an overlapping or non-containing CIDR).
+	Error string
+	// Remaining counts how many distinct missing subnets still need defining
+	// (import-all only); the modal shows it so the operator knows how many prompts
+	// are left. Zero for the single-import flow.
+	Remaining int
+	Form      map[string]string
+	Sites     []store.Site
 }
 
 func Render(w http.ResponseWriter, name string, data PageData) error {

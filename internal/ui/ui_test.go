@@ -333,6 +333,52 @@ func TestRenderTemplates(t *testing.T) {
 	}
 }
 
+// TestDiscoveriesSubnetPromptRenders exercises the "create the missing subnet"
+// modal: the {{ with .DiscoveryPrompt }} block is skipped on a normal queue view,
+// so this guards its markup and field references from silently breaking.
+func TestDiscoveriesSubnetPromptRenders(t *testing.T) {
+	data := PageData{
+		Title:           "Discoveries",
+		CSRF:            "token",
+		User:            store.User{DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		ImportableCount: 3,
+		Form:            map[string]string{"status": "", "reconcile": ""},
+		DiscoveryPrompt: &DiscoverySubnetPrompt{
+			Flow:      "import-all",
+			TargetIP:  "192.168.5.10",
+			Heading:   "Add a missing subnet",
+			Context:   "192.168.5.10 belongs to 192.168.5.0/24, which isn’t managed yet.",
+			Remaining: 2,
+			Form: map[string]string{
+				"cidr":    "192.168.5.0/24",
+				"vlan":    "30",
+				"site_id": "default",
+				"name":    "",
+			},
+			Sites: []store.Site{{ID: "default", Name: "Default"}},
+		},
+	}
+
+	recorder := httptest.NewRecorder()
+	if err := Render(recorder, "discoveries.html", data); err != nil {
+		t.Fatalf("render discoveries with prompt: %v", err)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`action="/discoveries/subnet"`,
+		`name="flow" value="import-all"`,
+		`name="target_ip" value="192.168.5.10"`,
+		`value="192.168.5.0/24"`,
+		"2 to define",
+		"Create &amp; continue",
+		`action="/discoveries/import-all"`, // the "Import all" header control
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("discoveries modal missing %q", want)
+		}
+	}
+}
+
 // TestDashboardWidgetsRenderLiveState guards the dashboard against regressing to
 // the static placeholder widgets it shipped with: the "Review queue" must reflect
 // the real pending-discovery count and the "Scan status" must list recent jobs
