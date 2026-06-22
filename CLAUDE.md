@@ -676,6 +676,16 @@ The app auto-enrolls the bundled agent (pending) on boot; approve it under
 `/discoveries`. Agent allowlist is `AGENT_ALLOWED_CIDRS` (defaults
 `192.168.0.0/16,10.0.0.0/8`); scan targets must fall inside it.
 
+On native-Linux Docker hosts the cert keys (`0600`, operator-owned) are unreadable
+to the `cap_drop: ALL` containers (no `CAP_DAC_OVERRIDE`), so the agent used to
+crash on boot (`read server key … permission denied`) and the app logged `scanner
+dispatch disabled` — macOS/Docker Desktop masks this. Fixed seamlessly by a one-shot
+`cert-perms` compose service running `deploy/fix-cert-perms.sh` before app/agent
+(chowns `agent.key`→root, `app.key`→the app's pinned uid 100, keeps `0600`,
+re-runs every `up` so it self-heals after cert regen, no-op when certs absent). The
+app uid/gid are pinned in `Dockerfile`. Manual fallback: `./deploy/fix-cert-perms.sh`.
+See ADR 0025 and `docs/SCANNER_AGENT.md` "Certificate file ownership on Linux".
+
 ## Next (Phases 3 and 4 complete)
 
 The initial backlog and Roadmap Phases 3 and 4 are done, plus two Phase 3 follow-ups:

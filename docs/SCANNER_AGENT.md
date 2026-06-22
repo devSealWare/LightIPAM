@@ -70,9 +70,90 @@ git-ignored — never commit private keys). Add SANs for non-loopback deployment
 go run ./cmd/scanner-certs -dir deploy/scanner-certs -dns scanner.example.internal -ip 10.0.0.5
 ```
 
+#### Without a local Go toolchain (Docker one-shot)
+
+`scanner-certs` is pure Go — no nmap, no network, no `NET_RAW` — so on a host that
+has Docker but not Go (e.g. a Debian deployment box), generate the certs with a
+throwaway `golang` container instead. Run it from the repository root:
+
+```sh
+docker run --rm \
+  -v "$PWD":/src -w /src \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  golang:1.25-alpine \
+  go run ./cmd/scanner-certs -dir deploy/scanner-certs
+```
+
+The container is deleted on exit (`--rm`); only the generated files in
+`deploy/scanner-certs/` remain on the host. The flags matter:
+
+- `-v "$PWD":/src -w /src` mounts the repo so the output lands on the host, not
+  inside the (discarded) container.
+- `--user "$(id -u):$(id -g)"` makes the written files owned by you rather than
+  `root` — important since the private keys are mode `0600`.
+- `-e HOME=/tmp` gives Go's build/module cache a writable directory for the
+  non-root user (otherwise the build fails trying to write to `/`).
+- `golang:1.25-alpine` matches the toolchain in `Dockerfile.scanner`; the image is
+  pulled on first use and reused after.
+
+Add the same `-dns`/`-ip` SAN flags to the trailing `go run …` as needed. This is
+a one-time step — the agent and app mount the resulting `deploy/scanner-certs/`
+read-only.
+
 Production deployments should issue agent certificates from a managed CA with
 rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
 (agent mTLS rotation).
+
+### Certificate file ownership on Linux
+
+> **Symptom:** on a native-Linux Docker host the `scanner-agent` container exits
+> immediately (`Exited (1)`) with
+> `read server key … open /certs/agent.key: permission denied`, and the `app`
+> logs `scanner dispatch disabled`. **This does not happen on macOS / Docker
+> Desktop**, so it typically appears only on the first real Linux deployment.
+
+**Cause.** Both the `app` and `scanner-agent` services run with `cap_drop: ALL`
+(the agent keeps only `NET_RAW`). Dropping every capability removes
+`CAP_DAC_OVERRIDE`, the capability that normally lets the in-container **root**
+bypass file-permission bits. A Linux bind mount preserves the operator's
+ownership, so the private keys — mode `0600`, owned by the host user who generated
+them — are unreadable to the containers:
+
+- the **agent** runs as **root** but, without `DAC_OVERRIDE`, cannot read a `0600`
+  key it does not own, so it crashes on boot;
+- the **app** runs as **`lightipam` (uid 100)** and hits the same denial, surfaced
+  lazily as `scanner dispatch disabled` (it reads its client key once at startup).
+
+Docker Desktop's VM file-sharing layer does not enforce these bits, which is why
+the same `deploy/scanner-certs/` works on a Mac but not on Debian.
+
+**Fix (automatic).** `compose.yaml` includes a one-shot **`cert-perms`** service
+that runs `deploy/fix-cert-perms.sh` before `app` and `scanner-agent` start. It
+gives each private key to the uid that reads it, keeping mode `0600`:
+
+| File | Owner | Read by |
+| --- | --- | --- |
+| `agent.key` | `root` (`0:0`) | the agent container (runs as root) |
+| `app.key` | `100:101` | the app container's pinned `lightipam` user |
+| `*.crt`, `ca.crt` | unchanged (`0644`) | both (already world-readable) |
+
+It holds only `CHOWN` + `FOWNER` for that moment, then exits, and **re-runs on
+every `docker compose up`**, so it also self-heals after you regenerate the certs
+(which resets them to the operator's `0600`). It is a no-op when the certs are
+absent, so the default `app` + `db` stack is unaffected. See ADR 0025.
+
+**Fix (manual),** e.g. on an older checkout without the `cert-perms` service, or
+for a non-Compose deployment:
+
+```sh
+./deploy/fix-cert-perms.sh                 # self-elevates with sudo on the host
+docker compose --profile scanner up -d
+```
+
+The app's uid/gid (`100:101`) is **pinned** in `Dockerfile` so this mapping stays
+stable across rebuilds; override with `APP_CERT_UID`/`APP_CERT_GID` if you change
+it.
 
 ## Configuration
 

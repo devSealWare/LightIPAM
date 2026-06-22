@@ -19,7 +19,10 @@ FROM alpine:3.20
 # postgresql-client provides pg_dump/pg_restore for the in-app backup feature.
 # It is an ordinary TCP database client — the app keeps zero Linux capabilities.
 RUN apk add --no-cache postgresql16-client
-RUN addgroup -S lightipam && adduser -S -G lightipam lightipam
+# uid/gid are pinned (not left to adduser's defaults) so the one-shot `cert-perms`
+# service in compose.yaml can chown the app's mTLS client key to the exact user
+# this container runs as. See deploy/fix-cert-perms.sh and ADR 0025.
+RUN addgroup -S -g 101 lightipam && adduser -S -u 100 -G lightipam lightipam
 RUN mkdir -p /var/lib/lightipam/backups && chown -R lightipam:lightipam /var/lib/lightipam
 USER lightipam
 WORKDIR /app

@@ -131,6 +131,10 @@ go run ./cmd/scanner-certs -dir deploy/scanner-certs   # one-time dev mTLS mater
 docker compose --profile scanner up --build -d
 ```
 
+> **No Go installed?** Generate the one-time certs with a throwaway `golang`
+> container instead — see
+> [docs/SCANNER_AGENT.md → Without a local Go toolchain](docs/SCANNER_AGENT.md#without-a-local-go-toolchain-docker-one-shot).
+
 The app auto-enrolls the bundled agent as `pending`; approve it under **Agents**,
 create a subnet, then run a scan from **Scans**. Discovered hosts appear under
 **Discoveries**. Scan targets must fall within the agent's `AGENT_ALLOWED_CIDRS`

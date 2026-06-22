@@ -27,6 +27,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Normalize cert ownership before boot — the app reads its mTLS client key
+      # once at startup, so the key must be readable by then. See cert-perms below.
+      cert-perms:
+        condition: service_completed_successfully
     # Liveness is /healthz; readiness is /readyz, which also pings the database
     # and reports the applied migration version, so orchestration only sends
     # traffic once the app can actually serve it.
@@ -45,6 +49,34 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # One-shot init that normalizes scanner cert ownership so the unprivileged app
+  # and agent (cap_drop: ALL) can read their 0600 private keys. On a Linux host a
+  # bind mount keeps the keys owned by the operator, and without CAP_DAC_OVERRIDE
+  # the in-container root cannot read them — the agent would crash with
+  # "read server key ... permission denied". This service gives each key to the
+  # uid that reads it (agent.key -> root, app.key -> the app's pinned uid 100),
+  # then exits, so the real services start with readable keys. It re-runs on every
+  # `up`, so it also self-heals after a cert regeneration. It is the ONLY component
+  # allowed to change ownership, and holds just CHOWN + FOWNER for that millisecond.
+  # Tolerates absent certs (no-op), so the default app+db stack is unaffected.
+  # macOS / Docker Desktop never hit this; it is a native-Linux concern. ADR 0025.
+  cert-perms:
+    image: alpine:3.20
+    command: ["sh", "/fix-cert-perms.sh", "/certs"]
+    volumes:
+      - ./deploy/fix-cert-perms.sh:/fix-cert-perms.sh:ro
+      - ./deploy/scanner-certs:/certs
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   # Optional active-discovery agent. Started only with the "scanner" profile so
   # the default app+db stack stays unchanged. Requires mTLS material generated
   # by `go run ./cmd/scanner-certs` into ./deploy/scanner-certs first.
@@ -55,6 +87,10 @@ services:
       dockerfile: Dockerfile.scanner
     profiles:
       - scanner
+    depends_on:
+      # Wait for cert ownership to be normalized so the agent can read agent.key.
+      cert-perms:
+        condition: service_completed_successfully
     environment:
       AGENT_LISTEN: ":8443"
       AGENT_ID: agent-local
