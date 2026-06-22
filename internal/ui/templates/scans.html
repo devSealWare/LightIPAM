@@ -13,7 +13,7 @@
 
     {{ if not .DispatchReady }}
     <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-      Scanner dispatch is not configured. Jobs will be recorded but fail until the app's mTLS client certificate is mounted. See <span class="font-mono">docs/SCANNER_AGENT.md</span>.
+      Scanning isn't set up yet. You can save scans, but they won't run until the scanner connection is configured. An administrator needs to install the app's client certificate to enable scanning.
     </div>
     {{ end }}
 
@@ -38,7 +38,7 @@
       {{ else }}
       <div class="p-8">
         <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No scans yet</h2>
-        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Run a manual scan or configure a schedule. Scans dispatch to a registered agent over mTLS; the agent enforces its own allowlist before doing any work.</p>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Run a scan now or set one on a schedule. Scans are carried out by a registered agent over a secure connection, and the agent only ever touches the networks you allow.</p>
         <div class="mt-5 flex gap-3">
           <a class="button-primary" href="/scans/new">Run scan</a>
           <a class="button-muted" href="/agents">Manage agents</a>

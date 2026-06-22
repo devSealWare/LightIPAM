@@ -21,6 +21,25 @@
     @apply border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/75 dark:shadow-black/30;
   }
 
+  /* Thin, unobtrusive scrollbar for the sidebar nav so a tall menu scrolls
+     instead of clipping the pinned Sign out button (shell.html). */
+  .sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(212 212 216 / 0.7) transparent;
+  }
+  .dark .sidebar-nav {
+    scrollbar-color: rgb(63 63 70 / 0.8) transparent;
+  }
+  .sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+  }
+  .sidebar-nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sidebar-nav::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-zinc-300/70 dark:bg-zinc-700/80;
+  }
+
   .form-input {
     @apply h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-4 focus:ring-zinc-200/70 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-600 dark:focus:ring-zinc-800/80;
   }

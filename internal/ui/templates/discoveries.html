@@ -103,7 +103,7 @@
       {{ else }}
       <div class="p-8">
         <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No discoveries{{ if or (ne .Form.status "") (ne .Form.reconcile "") }} match this filter{{ else }} yet{{ end }}</h2>
-        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Run an active scan from <a class="font-medium text-zinc-700 underline dark:text-zinc-200" href="/scans">Scans</a>. Hosts the agent finds land here for review — each is reconciled against your managed records so conflicts (a changed MAC, a deprecated address still responding) are flagged before you import. Nothing is written to your IPAM data until you import it.</p>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Run a scan from <a class="font-medium text-zinc-700 underline dark:text-zinc-200" href="/scans">Scans</a>. Hosts the agent finds land here for review — each is checked against your existing records, so conflicts (a changed MAC, a deprecated address still responding) are flagged before you import. Nothing is added to your data until you import it.</p>
       </div>
       {{ end }}
     </section>

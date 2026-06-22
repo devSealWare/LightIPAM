@@ -619,7 +619,7 @@ func (a *App) addressDeleteConfirm(w http.ResponseWriter, r *http.Request) {
 		ActiveNav: "subnets",
 		Form: map[string]string{
 			"heading":      "Remove address",
-			"message":      "This removes the sparse address record. The address can still be recreated later.",
+			"message":      "This removes the address record. You can add the address again later.",
 			"subject":      address.Address + " in " + subnet.Name,
 			"action":       "/addresses/" + address.ID + "/delete",
 			"cancel":       "/subnets/" + subnet.ID,

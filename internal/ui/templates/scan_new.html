@@ -9,7 +9,7 @@
     {{ if not .ScanAgents }}
     <section class="glass-panel rounded-[28px] p-6 sm:p-8">
       <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No agents registered</h2>
-      <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent before running a scan. The agent's allowlist bounds what any job can target.</p>
+      <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Register a scanner agent before running a scan. A scan can only target the networks the agent allows.</p>
       <a class="button-primary mt-5" href="/agents/new">Register agent</a>
     </section>
     {{ else }}
@@ -52,7 +52,7 @@
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
           <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="allowed_cidrs" placeholder="192.168.10.0/24">{{ index .Form "allowed_cidrs" }}</textarea>
-          <span class="mt-1 block text-xs text-zinc-400">One per line. Must be within the agent's allowlist.</span>
+          <span class="mt-1 block text-xs text-zinc-400">One per line. Must be within the agent's allowed networks.</span>
         </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Targets</span>
@@ -67,7 +67,7 @@
       </div>
       <div class="mt-7 flex items-center justify-between gap-3">
         <a class="button-muted" href="/scans">Cancel</a>
-        <button class="button-primary" type="submit">Dispatch scan</button>
+        <button class="button-primary" type="submit">Start scan</button>
       </div>
     </form>
     {{ end }}

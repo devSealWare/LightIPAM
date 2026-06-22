@@ -42,7 +42,7 @@
       {{ else }}
       <div class="p-8">
         <h2 class="text-xl font-semibold text-zinc-950 dark:text-white">No schedules yet</h2>
-        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Schedules run on the app's in-process timer and enqueue scan jobs automatically. Each run is bounded by the agent's allowlist and recorded in the audit log.</p>
+        <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">Schedules run scans automatically at the times you set. Each run stays within the agent's allowed networks and is recorded in the audit log.</p>
         <a class="button-primary mt-5" href="/schedules/new">New schedule</a>
       </div>
       {{ end }}

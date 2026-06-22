@@ -5,14 +5,14 @@
     <div>
       <div class="mb-6 inline-flex rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs font-semibold text-zinc-600 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-zinc-300">First-run setup</div>
       <h1 class="max-w-2xl text-5xl font-semibold tracking-normal text-zinc-950 dark:text-white sm:text-6xl">Create the first Light IPAM admin.</h1>
-      <p class="mt-5 max-w-xl text-lg leading-8 text-zinc-600 dark:text-zinc-300">This account becomes the initial administrator for your IPAM database, audit trail, and future scanner configuration.</p>
+      <p class="mt-5 max-w-xl text-lg leading-8 text-zinc-600 dark:text-zinc-300">This account is the first administrator. It manages your subnets and addresses, the audit trail, and network discovery.</p>
     </div>
 
     <form method="post" action="/bootstrap" class="glass-panel rounded-[28px] p-6 sm:p-8">
       <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
       <div class="mb-7">
         <h2 class="text-2xl font-semibold text-zinc-950 dark:text-white">Admin account</h2>
-        <p class="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">Use a strong password. MFA can be added later without changing this account model.</p>
+        <p class="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">Use a strong password. You can turn on two-factor authentication anytime from your account.</p>
       </div>
       {{ if .Error }}
       <div class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>

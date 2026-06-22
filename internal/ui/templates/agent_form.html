@@ -36,12 +36,12 @@
         <label class="block sm:col-span-2">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Certificate subject (CN)</span>
           <input class="form-input font-mono" name="certificate_subject" value="{{ index .Form "certificate_subject" }}" placeholder="light-ipam-scanner-agent">
-          <span class="mt-1 block text-xs text-zinc-400">Expected mTLS identity of the agent. Optional today; used for stricter verification later.</span>
+          <span class="mt-1 block text-xs text-zinc-400">The agent's expected certificate identity. Optional — set it to verify the agent more strictly.</span>
         </label>
         <label class="block sm:col-span-2">
           <span class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-200">Allowed IPv4 CIDRs</span>
           <textarea class="form-input min-h-24 py-3 font-mono text-sm" name="allowed_cidrs" placeholder="192.168.0.0/16&#10;10.0.0.0/8">{{ index .Form "allowed_cidrs" }}</textarea>
-          <span class="mt-1 block text-xs text-zinc-400">One per line. Every scan job is bounded by this allowlist.</span>
+          <span class="mt-1 block text-xs text-zinc-400">One per line. The agent only scans addresses within these ranges.</span>
         </label>
         <div class="sm:col-span-2 rounded-2xl border border-zinc-200 bg-white/40 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
           <label class="flex items-start gap-3">
