@@ -207,6 +207,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /agents/{id}/delete", app.agentDelete)
 
 	mux.HandleFunc("GET /discoveries", app.discoveriesIndex)
+	mux.HandleFunc("POST /discoveries/import-all", app.discoveriesImportAll)
+	mux.HandleFunc("POST /discoveries/subnet", app.discoverySubnetCreate)
 	mux.HandleFunc("POST /discoveries/{id}/import", app.discoveryImport)
 	mux.HandleFunc("POST /discoveries/{id}/dismiss", app.discoveryDismiss)
 
