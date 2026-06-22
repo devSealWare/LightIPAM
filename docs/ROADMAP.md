@@ -303,9 +303,10 @@ import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
 
 - **Subnet auto-create on import + "Import all" (done, ADR 0026).** Importing a
   discovered host with no managed subnet opens a server-rendered, pure-CSS modal
-  pre-filled with the host's containing `/24` (and scanned VLAN); on save the subnet
-  is created and the import resumes. An **Import all** control imports the whole
-  pending, non-conflicting `/discoveries` queue in one click, grouping any missing
-  subnets by `/24` and prompting for each (re-checking until none remain) before
+  pre-filled with the exact network the scan targeted (the containing scan-job target
+  CIDR, falling back to a `/24` only for a bare-IP scan) and the scanned VLAN; on save
+  the subnet is created and the import resumes. An **Import all** control imports the
+  whole pending, non-conflicting `/discoveries` queue in one click, grouping any missing
+  subnets by their suggested network and prompting for each (re-checking until none remain) before
   importing everything. App-side only, no migration, no new privilege; reuses the
   existing `CreateSubnet` + `ImportDiscovery` paths and their audit events.

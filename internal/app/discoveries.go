@@ -304,11 +304,26 @@ func (a *App) resolveOnePrompt(r *http.Request, id string) (*ui.DiscoverySubnetP
 	if err != nil {
 		return nil, err
 	}
-	cidr, err := suggestSubnetCIDR(discovery.IP)
+	cidr, err := suggestSubnetCIDR(discovery.IP, a.discoveryScanTargets(r, discovery.JobID))
 	if err != nil {
 		return nil, err
 	}
 	return subnetPrompt("import-one", discovery.ID, discovery.IP, 0, subnetPromptForm(cidr, discovery.VLAN)), nil
+}
+
+// discoveryScanTargets returns the targets of the scan job that observed a
+// discovery, so the subnet suggestion can match the exact network the operator
+// scanned. A missing or no-longer-present job yields nil, and the suggestion falls
+// back to the /24 heuristic.
+func (a *App) discoveryScanTargets(r *http.Request, jobID string) []string {
+	if jobID == "" {
+		return nil
+	}
+	job, err := a.store.GetScanJob(r.Context(), jobID)
+	if err != nil {
+		return nil
+	}
+	return job.Targets
 }
 
 // resolveAllPrompt builds the modal for the next subnet the "Import all" flow
@@ -365,9 +380,10 @@ func subnetPromptForm(cidr string, vlan int) map[string]string {
 	return form
 }
 
-// missingSubnet is one /24 that one or more discovered hosts need but no managed
-// subnet provides yet. RepIP is a representative host (the lowest address) used
-// to validate the operator-edited CIDR.
+// missingSubnet is one suggested network that one or more discovered hosts need but
+// no managed subnet provides yet — the exact CIDR the operator scanned when known,
+// otherwise the /24 containing the host. RepIP is a representative host (the lowest
+// address) used to validate the operator-edited CIDR.
 type missingSubnet struct {
 	CIDR  string
 	RepIP string
@@ -376,16 +392,17 @@ type missingSubnet struct {
 }
 
 // missingSubnetGroups collapses the targets that lack a containing subnet into one
-// suggested /24 each, so a scan that turns up several hosts on the same network
-// asks the operator to define it only once. Groups are returned in ascending
-// network order for a stable, predictable prompt sequence.
+// suggested network each (see suggestSubnetCIDR — the scanned CIDR when known), so a
+// scan that turns up several hosts on the same network asks the operator to define it
+// only once. Groups are returned in ascending network order for a stable, predictable
+// prompt sequence.
 func missingSubnetGroups(targets []store.DiscoveryImportTarget) []missingSubnet {
 	groups := map[string]*missingSubnet{}
 	for _, t := range targets {
 		if t.HasSubnet {
 			continue
 		}
-		cidr, err := suggestSubnetCIDR(t.IP)
+		cidr, err := suggestSubnetCIDR(t.IP, t.ScannedTargets)
 		if err != nil {
 			continue
 		}
@@ -411,9 +428,15 @@ func missingSubnetGroups(targets []store.DiscoveryImportTarget) []missingSubnet 
 	return out
 }
 
-// suggestSubnetCIDR proposes the /24 that contains a discovered host — the common
-// small-business subnet size — as the modal's pre-filled, operator-editable CIDR.
-func suggestSubnetCIDR(ip string) (string, error) {
+// suggestSubnetCIDR proposes the subnet to pre-fill in the modal for a discovered
+// host. When the scan that found the host targeted a network (a CIDR) that contains
+// it, that exact network is suggested — it is provably what the operator scanned, so
+// the prefill is correct rather than a guess (e.g. a scan of 192.168.0.0/28 suggests
+// /28, not a blanket /24). The most specific containing target wins when several
+// overlap. Only when no scanned network is known — the host was scanned as a single
+// bare-IP target, which reveals no subnet boundary — does it fall back to the /24
+// that contains the host, the common small-business default.
+func suggestSubnetCIDR(ip string, scannedTargets []string) (string, error) {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
 		return "", err
@@ -421,7 +444,39 @@ func suggestSubnetCIDR(ip string) (string, error) {
 	if !addr.Is4() {
 		return "", fmt.Errorf("only IPv4 hosts are supported")
 	}
+	if cidr, ok := containingTargetCIDR(addr, scannedTargets); ok {
+		return cidr, nil
+	}
 	return netip.PrefixFrom(addr, 24).Masked().String(), nil
+}
+
+// containingTargetCIDR returns the most specific scanned CIDR target that contains
+// addr, masked to its network address. Single-host targets (a bare IP, or a /32) are
+// ignored — they name the host, not a network worth proposing as a subnet — and a
+// malformed target is skipped rather than failing. Returns ok=false when no
+// multi-host scanned network covers the address.
+func containingTargetCIDR(addr netip.Addr, targets []string) (string, bool) {
+	var best netip.Prefix
+	for _, t := range targets {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(t))
+		if err != nil {
+			continue // a bare IP or malformed target: no network to adopt
+		}
+		if !prefix.Addr().Is4() || prefix.Bits() >= 32 {
+			continue // a /32 is a single host, not a subnet
+		}
+		prefix = prefix.Masked()
+		if !prefix.Contains(addr) {
+			continue
+		}
+		if !best.IsValid() || prefix.Bits() > best.Bits() {
+			best = prefix
+		}
+	}
+	if !best.IsValid() {
+		return "", false
+	}
+	return best.String(), true
 }
 
 func (a *App) discoveryDismiss(w http.ResponseWriter, r *http.Request) {

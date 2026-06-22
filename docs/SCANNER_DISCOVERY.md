@@ -381,7 +381,9 @@ Two conveniences sit on top of the queue, both app-side with no client JS:
 
 - **Subnet auto-create on import.** Importing a host whose address falls outside
   every managed subnet opens a server-rendered modal — the subnet form pre-filled
-  with the **`/24`** containing the host (`suggestSubnetCIDR`) and the scanned VLAN
+  with the **exact network the scan targeted** (`suggestSubnetCIDR` adopts the
+  scan-job target CIDR that contains the host — a `/28` scan suggests `/28`, falling
+  back to the host's `/24` only when it was scanned as a bare IP) and the scanned VLAN
   when one was learned. The CIDR is editable; on save the subnet is created (the
   edited range is validated to still contain the host) and the import resumes
   automatically. This replaces the old "create the subnet first, then import"
@@ -389,10 +391,10 @@ Two conveniences sit on top of the queue, both app-side with no client JS:
 - **Import all.** A header control imports every **pending, non-conflicting**
   discovery (`store.ListPendingImportTargets`) in one click. If any of them lack a
   containing subnet the flow doesn't import yet — it walks the missing subnets
-  through the same modal, **grouped by `/24`** (`missingSubnetGroups`, so a network
-  with several hosts prompts once) in ascending network order, **re-checking after
-  each** until none remain, then imports everything and shows an "Imported N hosts"
-  banner. Conflicts are excluded from the bulk action — they stay in the queue for
+  through the same modal, **grouped by the suggested network** (`missingSubnetGroups`,
+  so a network with several hosts prompts once) in ascending network order,
+  **re-checking after each** until none remain, then imports everything and shows an
+  "Imported N hosts" banner. Conflicts are excluded from the bulk action — they stay in the queue for
   individual review.
 
 Both paths reuse `store.CreateSubnet` + `store.ImportDiscovery` and their audit
