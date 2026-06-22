@@ -101,11 +101,13 @@ The app has:
 - **Discovery subnet auto-create + Import all** (discovery-UX follow-up, ADR 0026) —
   importing a discovered host whose address has no managed subnet opens a
   server-rendered, pure-CSS modal that **is** the subnet form, pre-filled with the
-  host's containing **`/24`** (`suggestSubnetCIDR`) and the scanned VLAN; on save the
+  **exact network the scan targeted** (`suggestSubnetCIDR` adopts the containing scan-job
+  target CIDR — e.g. a `/28` scan suggests `/28` — falling back to the host's `/24` only
+  when the host was scanned as a bare IP) and the scanned VLAN; on save the
   subnet is created (the edited CIDR is validated to still contain the host) and the
   import resumes. An **Import all** header control imports the whole **pending,
   non-conflicting** `/discoveries` queue in one click — hosts lacking a subnet are
-  **grouped by `/24`** (`missingSubnetGroups`) and prompted one modal at a time,
+  **grouped by the suggested network** (`missingSubnetGroups`) and prompted one modal at a time,
   re-checking after each until none remain, then everything imports
   (`store.ListPendingImportTargets` drives the gate; conflicts are excluded). Routes
   `POST /discoveries/import-all` + `POST /discoveries/subnet`; reuses `CreateSubnet` +
@@ -601,19 +603,22 @@ JS**, **no migration** (it reuses `subnets`/`scan_discoveries` and the existing
 - **Subnet auto-create on import.** Importing a discovery whose address falls outside
   every managed subnet used to dead-end on `ErrNoContainingSubnet`; now `discoveryImport`
   redirects to `/discoveries?resolve_one={id}`, which opens a **server-rendered, pure-CSS
-  modal** that is the subnet form pre-filled with the host's containing **`/24`**
-  (`suggestSubnetCIDR`, pure + unit-tested) and the scanned VLAN when known. On save
+  modal** that is the subnet form pre-filled with the **exact network the scan targeted**
+  (`suggestSubnetCIDR`, pure + unit-tested — it adopts the most-specific scan-job target
+  CIDR that contains the host, so a `/28` scan suggests `/28`; it falls back to the host's
+  `/24` only when no scanned network is known, e.g. a bare-IP target) and the scanned VLAN
+  when known. On save
   (`POST /discoveries/subnet`, `flow=import-one`) the subnet is created and the host is
   imported in the same request. The edited CIDR is validated to still **contain the host**
   (`ipam.Contains`) before creation, so a mistyped range is an in-modal error, not a
   silent re-failure.
 - **Import all.** A header control (`POST /discoveries/import-all`, admin-gated, shown
   with a live count) imports every **pending, non-conflicting** discovery
-  (`store.ListPendingImportTargets` — returns each target's IP/VLAN and a `HasSubnet`
-  computed with the same `cidr >>=` containment the import uses). If any target lacks a
-  subnet the flow **does not import**; it walks the missing subnets through the same modal,
-  **grouped by `/24`** (`missingSubnetGroups`, pure + unit-tested, ascending network
-  order), **re-checking after each** (`flow=import-all` loops via
+  (`store.ListPendingImportTargets` — returns each target's IP/VLAN, the scan job's targets,
+  and a `HasSubnet` computed with the same `cidr >>=` containment the import uses). If any
+  target lacks a subnet the flow **does not import**; it walks the missing subnets through
+  the same modal, **grouped by the suggested network** (`missingSubnetGroups`, pure +
+  unit-tested, ascending network order), **re-checking after each** (`flow=import-all` loops via
   `/discoveries?resolve=1`) until none remain, then imports everything and lands on an
   "Imported N hosts" banner. **Conflicts are excluded** — resolving a conflict stays an
   individual operator decision (mirrors auto-import).

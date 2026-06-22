@@ -34,10 +34,19 @@ first.
 ### One modal, pre-filled from the scan
 
 When an import has nowhere to land, the page opens a modal that *is* the subnet form,
-pre-filled with a suggested **`/24`** containing the host (`suggestSubnetCIDR`, masks the
-host address to a `/24` — the common small-business size) and the scanned **VLAN** when
-one was learned. The CIDR is editable; the operator typically just names it and saves.
-On save the subnet is created and the import that opened the modal resumes automatically.
+pre-filled with the **exact network the scan targeted** and the scanned **VLAN** when one
+was learned. `suggestSubnetCIDR` adopts the most-specific scan-job target CIDR that
+contains the host — so a scan of `192.168.0.0/28` suggests `/28`, not a blanket `/24`. It
+falls back to the `/24` containing the host only when no scanned network is known (the host
+was scanned as a single bare-IP target, which reveals no subnet boundary). The CIDR is
+editable; the operator typically just names it and saves. On save the subnet is created and
+the import that opened the modal resumes automatically.
+
+The suggestion comes from the scan because guessing a fixed `/24` was *wrong*: a `/28` scan
+of `192.168.0.0/28` would offer `192.168.0.0/24`, a 16× over-wide subnet the operator never
+scanned. The scan-job targets are the authoritative record of what network was probed, and
+targets are validated to be IPv4 CIDRs or bare IPs (no ranges/hostnames), so the containing
+target is always recoverable.
 
 The modal is a **server-rendered, pure-CSS overlay** (the `glass-panel` styling, the
 Discoveries sky accent, `role="dialog"`/`aria-modal`, click-outside and Cancel return to
@@ -53,9 +62,9 @@ field. All mutations are POST with redirect-after-POST, so a refresh never re-su
 
 1. If any targets lack a containing subnet, **do not import** — redirect to the modal for
    the **first missing subnet**.
-2. Hosts are grouped by suggested `/24` (`missingSubnetGroups`), so a network with several
-   discovered hosts prompts **once**, not per host. Groups are walked in ascending
-   network order.
+2. Hosts are grouped by their suggested network (`missingSubnetGroups` — the scanned CIDR
+   when known), so a network with several discovered hosts prompts **once**, not per host.
+   Groups are walked in ascending network order.
 3. After each subnet is created, the flow **re-checks** for remaining missing subnets and
    prompts for the next, **looping until none remain**, then imports everything and lands
    on a "Imported N hosts" banner.
@@ -85,9 +94,9 @@ handler, differing only by a `flow` field (`import-one` vs `import-all`).
 - The modal creates only the core subnet (name / CIDR / VLAN / site / description).
   Operator-defined **custom fields** (ADR 0019) are not edited in the quick-create modal;
   they remain available on the full subnet edit page afterward.
-- The suggested `/24` is a default, not a constraint: an operator who needs a `/25` (or a
-  subnet that doesn't overlap an existing one) edits the prefix, and the existing overlap
-  guard / containment check report the problem in-modal.
+- The suggested network is a default, not a constraint: an operator who needs a different
+  size (or a subnet that doesn't overlap an existing one) edits the prefix, and the existing
+  overlap guard / containment check report the problem in-modal.
 
 ## Alternatives considered
 
@@ -104,10 +113,10 @@ handler, differing only by a `flow` field (`import-one` vs `import-all`).
 ## Implementation
 
 - `internal/store/discoveries.go`: `DiscoveryImportTarget` + `ListPendingImportTargets`
-  (pending, non-conflict, with `HasSubnet`).
+  (pending, non-conflict, with `HasSubnet` and the observing job's `ScannedTargets`).
 - `internal/app/discoveries.go`: `discoveriesImportAll`, `discoverySubnetCreate`, the
-  resolve-loop render helpers, and the pure, unit-tested `suggestSubnetCIDR` /
-  `missingSubnetGroups`.
+  resolve-loop render helpers, and the pure, unit-tested `suggestSubnetCIDR` (with
+  `containingTargetCIDR`, which adopts the scanned network) / `missingSubnetGroups`.
 - `internal/app/app.go`: `POST /discoveries/import-all`, `POST /discoveries/subnet`.
 - `internal/ui/ui.go`: the `DiscoverySubnetPrompt` view model + PageData fields.
 - `internal/ui/templates/discoveries.html`: the "Import all" control, the success
