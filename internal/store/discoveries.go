@@ -65,12 +65,15 @@ type Discovery struct {
 // managed subnet already contains its address and, when none does, to suggest
 // one. HasSubnet uses the same longest-prefix `cidr >>=` containment ImportDiscovery
 // relies on, so it is the authoritative answer to "can this import without a new
-// subnet?".
+// subnet?". ScannedTargets carries the targets of the scan job that observed the
+// host, so a suggested subnet can match the exact network the operator scanned
+// rather than guessing a size.
 type DiscoveryImportTarget struct {
-	ID        string
-	IP        string
-	VLAN      int
-	HasSubnet bool
+	ID             string
+	IP             string
+	VLAN           int
+	HasSubnet      bool
+	ScannedTargets []string
 }
 
 // DiscoveryInput holds the fields recorded from a single observation.
@@ -245,8 +248,11 @@ func (s *Store) CountUnreviewedConflicts(ctx context.Context) (int, error) {
 // resolving a conflict is an operator decision, never a bulk action.
 func (s *Store) ListPendingImportTargets(ctx context.Context) ([]DiscoveryImportTarget, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT d.id, host(d.ip), d.vlan, EXISTS (SELECT 1 FROM subnets s WHERE s.cidr >>= d.ip)
+SELECT d.id, host(d.ip), d.vlan,
+	EXISTS (SELECT 1 FROM subnets s WHERE s.cidr >>= d.ip),
+	COALESCE(j.targets, '{}')
 FROM scan_discoveries d
+LEFT JOIN scan_jobs j ON j.id = d.job_id
 WHERE d.status = 'pending' AND d.reconcile_status <> 'conflict'
 ORDER BY d.ip`)
 	if err != nil {
@@ -257,7 +263,7 @@ ORDER BY d.ip`)
 	var targets []DiscoveryImportTarget
 	for rows.Next() {
 		var t DiscoveryImportTarget
-		if err := rows.Scan(&t.ID, &t.IP, &t.VLAN, &t.HasSubnet); err != nil {
+		if err := rows.Scan(&t.ID, &t.IP, &t.VLAN, &t.HasSubnet, &t.ScannedTargets); err != nil {
 			return nil, fmt.Errorf("scan import target: %w", err)
 		}
 		targets = append(targets, t)

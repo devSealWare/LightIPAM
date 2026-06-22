@@ -56,10 +56,10 @@ As-built scan types and modes:
   those get service/OS detection. NSE scripts / UDP scanning remain future work.
 
 Review-queue import stays an operator decision, but is low-friction: importing a host
-with no managed subnet opens a pre-filled subnet auto-create modal (the containing `/24`
-+ scanned VLAN), and an **Import all** control clears the whole non-conflicting queue in
-one click, prompting once per missing `/24` until none remain. Server-driven, no client
-JS; conflicts are never bulk-imported. See ADR 0026.
+with no managed subnet opens a pre-filled subnet auto-create modal (the exact network the
+scan targeted + scanned VLAN), and an **Import all** control clears the whole
+non-conflicting queue in one click, prompting once per missing network until none remain.
+Server-driven, no client JS; conflicts are never bulk-imported. See ADR 0026.
 
 ## Authentication
 
