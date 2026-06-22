@@ -92,6 +92,10 @@ The design is intentionally split so risk stays isolated:
   reconciled against managed records — flagged **new**, **match**, or **conflict**
   (e.g. a changed MAC, or a deprecated address still responding) — and an operator
   imports or dismisses it. Managed addresses get live `last_seen_at` tracking.
+  **Import all** clears the whole non-conflicting queue in one click, and importing
+  a host with no managed subnet opens a pre-filled **subnet auto-create** modal (the
+  containing `/24` and scanned VLAN filled in) so a fresh network goes from scan to
+  managed IPAM in a few clicks (ADR 0026).
 - **Auto-import & merge-on-rescan:** a trusted agent can auto-import
   non-conflicting hosts, and every scan re-syncs its findings onto already-imported
   devices so different scan types accumulate into one complete record.
