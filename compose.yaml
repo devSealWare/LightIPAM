@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Stamp a version into the binary: `VERSION=v1.0.0 docker compose build`.
+        VERSION: ${VERSION:-dev}
     environment:
       PORT: "8080"
       DATABASE_URL: postgres://lightipam:lightipam@db:5432/lightipam?sslmode=disable
@@ -85,6 +89,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.scanner
+      args:
+        VERSION: ${VERSION:-dev}
     profiles:
       - scanner
     depends_on:

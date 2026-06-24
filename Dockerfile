@@ -6,6 +6,9 @@ RUN npm ci
 RUN npm run build:css
 
 FROM golang:1.25-alpine AS build
+# VERSION is stamped into the binary (main.version) so /healthz and the startup
+# log report it. Defaults to "dev"; the release workflow passes the git tag.
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod ./
 COPY go.sum* ./
@@ -13,7 +16,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY --from=assets /src/internal/ui/static/app.css ./internal/ui/static/app.css
-RUN go build -trimpath -ldflags="-s -w" -o /out/light-ipam ./cmd/server
+RUN go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/light-ipam ./cmd/server
 
 FROM alpine:3.20
 # postgresql-client provides pg_dump/pg_restore for the in-app backup feature.

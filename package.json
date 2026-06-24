@@ -1,6 +1,6 @@
 {
   "name": "light-ipam",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./internal/ui/assets/app.css -o ./internal/ui/static/app.css --minify",

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,8 +23,20 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
 
+// version is the build version, injected at build time via
+// -ldflags "-X main.version=v1.0.0". It defaults to "dev" for local builds and
+// is reported on /healthz and in the startup log so a running instance is
+// identifiable.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println("light-ipam", version)
+		return
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger.Info("Light IPAM", "version", version)
 	cfg := config.Load()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -54,10 +67,11 @@ func main() {
 	scanService.StartAutoEnroll(ctx, cfg.ScannerAgentEndpoint)
 
 	handler := app.New(app.Options{
-		Config: cfg,
-		DB:     pool,
-		Logger: logger,
-		Scans:  scanService,
+		Config:  cfg,
+		DB:      pool,
+		Logger:  logger,
+		Scans:   scanService,
+		Version: version,
 	})
 
 	server := &http.Server{
