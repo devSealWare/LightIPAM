@@ -1,5 +1,8 @@
 # Light IPAM
 
+[![Release](https://img.shields.io/github/v/release/devSealWare/LightIPAM?sort=semver)](https://github.com/devSealWare/LightIPAM/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 Light IPAM is a lightweight IP address management system with a clean web UI and
 optional, tightly-scoped active network discovery. It targets small-business
 networks first while keeping its architecture credible for larger environments.
@@ -129,6 +132,17 @@ Open `http://localhost:8080` and create the first admin from the bootstrap page.
 > `compose.yaml`: copy `.env.example` to `.env` and set e.g. `APP_PORT=31415`,
 > then `docker compose up -d`. The `.env` is gitignored, so it survives upgrades.
 
+**Prebuilt images.** Tagged releases publish multi-arch (amd64/arm64) images to the
+GitHub Container Registry, so you can run a pinned version without building locally:
+
+```sh
+docker pull ghcr.io/devsealware/lightipam:1.0.0          # web app
+docker pull ghcr.io/devsealware/lightipam-scanner:1.0.0  # scanner agent
+```
+
+The default `compose.yaml` builds from source; point its `image:` at these tags (or
+drop the `build:` keys) to deploy the published images instead.
+
 With the scanner agent (active discovery):
 
 ```sh
@@ -204,12 +218,18 @@ Hardening)** added admin/viewer roles, TOTP MFA, OIDC SSO, encrypted secrets at 
 an app-managed CA with rotation, backup/restore, and a runtime-editable Settings
 panel (ADRs 0017–0018). **Phase 6 (Advanced Automation)** added policy/health checks
 (ADR 0020), scheduled scan windows (ADR 0021), change webhooks (ADR 0022),
-NetBox-compatible import/export (ADR 0023), and the machine API + CLI (ADR 0024). The
-next phase is open. See the roadmap for details.
+NetBox-compatible import/export (ADR 0023), and the machine API + CLI (ADR 0024).
+**v1.0.0 is the first stable release** — see the [changelog](CHANGELOG.md). The next
+phase is open. See the roadmap for details.
 
+- [Changelog](CHANGELOG.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security Model](docs/SECURITY.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Scanner Protocol](docs/SCANNER_PROTOCOL.md) · [Scanner Agent](docs/SCANNER_AGENT.md) · [Scanner Discovery](docs/SCANNER_DISCOVERY.md)
 - Architecture decisions: [docs/adr](docs/adr)
+
+## License
+
+Light IPAM is released under the [Apache License 2.0](LICENSE).

@@ -32,10 +32,11 @@ const (
 )
 
 type Options struct {
-	Config config.Config
-	DB     *pgxpool.Pool
-	Logger *slog.Logger
-	Scans  *orchestrator.Service
+	Config  config.Config
+	DB      *pgxpool.Pool
+	Logger  *slog.Logger
+	Scans   *orchestrator.Service
+	Version string
 }
 
 type App struct {
@@ -46,6 +47,7 @@ type App struct {
 	sealer   *secret.Sealer
 	backups  *backup.Manager
 	webhooks *webhook.Dispatcher
+	version  string
 
 	// settings is the active auth/session policy (env defaults overlaid with any
 	// admin overrides from app_settings), cached and refreshed on update.
@@ -66,10 +68,11 @@ type App struct {
 
 func New(options Options) http.Handler {
 	app := &App{
-		cfg:    options.Config,
-		store:  store.New(options.DB),
-		logger: options.Logger,
-		scans:  options.Scans,
+		cfg:     options.Config,
+		store:   store.New(options.DB),
+		logger:  options.Logger,
+		scans:   options.Scans,
+		version: options.Version,
 	}
 	sealer, err := secret.NewSealer(options.Config.EncryptionKey)
 	if err != nil {
@@ -233,8 +236,12 @@ func New(options Options) http.Handler {
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
+	version := a.version
+	if version == "" {
+		version = "dev"
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok","service":"light-ipam"}`))
+	_, _ = fmt.Fprintf(w, `{"status":"ok","service":"light-ipam","version":%q}`, version)
 }
 
 // ready is the readiness probe: unlike /healthz (liveness), it confirms the

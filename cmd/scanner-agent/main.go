@@ -26,8 +26,18 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/scanner/pki"
 )
 
+// version is the build version, injected at build time via
+// -ldflags "-X main.version=v1.0.0". It defaults to "dev" for local builds.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println("scanner-agent", version)
+		return
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger.Info("Light IPAM scanner agent", "version", version, "protocol", scanner.ProtocolVersion)
 
 	listen := getenv("AGENT_LISTEN", ":8443")
 	certPath := getenv("SCANNER_TLS_CERT", "/certs/agent.crt")
