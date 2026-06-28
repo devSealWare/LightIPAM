@@ -144,6 +144,16 @@ services:
       - NET_RAW
     security_opt:
       - no-new-privileges:true
+    # The agent's endpoints require a verified client cert, so a plain wget/nc
+    # cannot probe them. `scanner-agent --healthcheck` self-dials the listen port
+    # instead, so `docker compose ps` shows the agent unhealthy/exited rather than
+    # leaving a stopped agent to surface only as a DNS failure from the app.
+    healthcheck:
+      test: ["CMD", "scanner-agent", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   db:
     image: postgres:16-alpine

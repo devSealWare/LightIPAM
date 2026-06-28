@@ -31,9 +31,18 @@ import (
 var version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println("scanner-agent", version)
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "version":
+			fmt.Println("scanner-agent", version)
+			return
+		case "--healthcheck":
+			// Self-dialing liveness probe for the Compose healthcheck. The HTTP
+			// endpoints require a verified client cert, so a plain wget/nc cannot
+			// complete the handshake; a TCP connect to the listener is enough to
+			// know the process is up and serving.
+			os.Exit(runHealthcheck())
+		}
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -238,6 +247,36 @@ func ipNetString(n *net.IPNet) string {
 		return ""
 	}
 	return n.String()
+}
+
+// runHealthcheck dials the agent's own listen port and returns a process exit
+// code (0 healthy, 1 unhealthy). It is invoked as `scanner-agent --healthcheck`
+// by the Compose healthcheck. A successful TCP connect proves the listener is up;
+// it deliberately does not attempt the mTLS handshake (which needs a client cert
+// this self-probe does not carry).
+func runHealthcheck() int {
+	addr := healthcheckDialAddr(getenv("AGENT_LISTEN", ":8443"))
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "scanner-agent healthcheck: dial %s: %v\n", addr, err)
+		return 1
+	}
+	_ = conn.Close()
+	return 0
+}
+
+// healthcheckDialAddr turns a listen address into a dialable one, replacing a
+// wildcard/empty host (":8443", "0.0.0.0:8443", "[::]:8443") with loopback.
+func healthcheckDialAddr(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen // unrecognized form; dial as-is
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 // resolveSNMP builds the SNMP discovery backend (arp_table + snmp_inventory) from
