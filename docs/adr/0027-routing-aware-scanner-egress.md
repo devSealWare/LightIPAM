@@ -2,11 +2,7 @@
 
 ## Status
 
-Proposed (planned). No code merged yet — this records the design so the work can be
-picked up directly. The immediate, no-code documentation safety net (the macvlan
-routed-subnet warning, the bridge-vs-macvlan decision matrix, and the troubleshooting
-section in `docs/SCANNER_AGENT.md`) ships with this ADR; the behavioral changes below
-are sequenced under "Plan".
+Accepted.
 
 ## Context
 
@@ -199,36 +195,33 @@ Self-contained (no `nc`/iproute2 dependency, no non-mTLS endpoint to secure), so
 
 In `docs/SCANNER_AGENT.md` and the compose comments:
 
-- **Short-term safety warning** near the macvlan instructions: use the macvlan overlay
-  only when the agent should have L2 presence on the subnet being scanned; for a routed
-  subnet through a firewall/router, plain **bridge** mode is usually better (MAC then
-  comes only from gateway SNMP/ARP-table). **Ships with this ADR** (no code).
-- **Bridge vs macvlan decision matrix** (goal → recommended mode → notes). **Ships now.**
+- **Bridge vs macvlan decision matrix** (goal -> recommended mode -> notes).
 - **Troubleshooting section** with `docker compose --profile scanner ps`,
   `docker exec ... ip -br addr` / `ip route` / `ip route get <target>`,
-  `docker exec ... getent hosts scanner-agent`, and how to read each (with a note that
-  these depend on `docker exec`; the new `/diagnostics` + classified errors are the
-  in-product path once §3/§4 land). **Ships now.**
+  `docker exec ... getent hosts scanner-agent`, and how to read each. The
+  `/diagnostics` view + classified errors are the in-product path; the host
+  commands remain useful when the app cannot reach the agent.
 - **Deployment modes as a concept** (`bridge-routed` / `macvlan-l2` / `custom`)
   expressed through the decision matrix and `AGENT_SCAN_PIN_MODE`, **not** a second
   overlapping env enum. The base `--profile scanner` stack already *is* bridge mode, so
   no redundant `compose.scanner-bridge.yaml` is added; a new
   `deploy/compose.scanner-multivlan.example.yaml` documents the "one scanner per VLAN"
-  pattern (the best long-term design for multi-VLAN MAC discovery). **Planned.**
-- The live `AGENT_SCAN_PIN_MODE` config-table row is added **when §1 lands**, not before
-  (the config table stays accurate to shipped behavior).
+  pattern (the best long-term design for multi-VLAN MAC discovery).
+- The live `AGENT_SCAN_PIN_MODE` config-table row documents the implemented values:
+  `auto`, `always`, and `off`.
 
-## Plan / sequencing
+## Implementation
 
-1. **Now (no code):** macvlan routed-subnet warning, decision matrix, troubleshooting
-   section in `docs/SCANNER_AGENT.md`; routed caution in the macvlan compose + `.env`.
-2. **Core:** §1 `AGENT_SCAN_PIN_MODE=auto` routing-aware egress + §2 richer zero-host /
-   mismatch notice. This is the highest-value change and the one that needs no operator
-   action.
-3. **Clarity:** §4 dispatch error classification (small, high signal).
-4. **Ops:** §5 `--healthcheck` + Compose healthcheck.
-5. **Support:** §3 `/diagnostics` endpoint + `/agents` detail surfacing.
-6. **Docs:** §6 multivlan example compose.
+The work was delivered as a small stack:
+
+1. **Core:** §1 `AGENT_SCAN_PIN_MODE=auto` routing-aware egress + §2 richer
+   zero-host / mismatch notices. This is the highest-value change and the one that
+   needs no operator action.
+2. **Clarity:** §4 dispatch error classification.
+3. **Ops:** §5 `--healthcheck` + Compose healthcheck.
+4. **Support:** §3 `/diagnostics` endpoint + `/agents` detail surfacing.
+5. **Docs:** §6 multi-VLAN compose example, final `AGENT_SCAN_PIN_MODE`
+   configuration docs, and updated macvlan/bridge guidance.
 
 ## Consequences
 

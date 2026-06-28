@@ -164,8 +164,9 @@ it.
 | `AGENT_NAME`          | `local-scanner-agent`        | Human-readable name.                      |
 | `AGENT_SITE_ID`       | (unset)                      | Optional site association.                |
 | `AGENT_ALLOWED_CIDRS` | (required)                   | Comma-separated IPv4 CIDRs the agent may scan. |
-| `AGENT_SCAN_SOURCE_IP`| (unset)                      | Pin nmap's probes to the interface owning this IP (the macvlan LAN IP). See "Consistent scans across subnets". |
+| `AGENT_SCAN_SOURCE_IP`| (unset)                      | Source IP used to resolve the scan interface and subnet for routing-aware nmap pinning (usually the macvlan LAN IP). See "Consistent scans across subnets". |
 | `AGENT_SCAN_INTERFACE`| (unset)                      | Name the egress interface directly instead of resolving it from the source IP. |
+| `AGENT_SCAN_PIN_MODE` | `auto`                       | nmap source-pin mode: `auto` pins only targets inside the source subnet, `always` pins every target, `off` pins none. |
 | `AGENT_SNMP_COMMUNITY`| `public`                     | SNMP v2c read community (lives only on the agent, never the app DB). |
 | `AGENT_SNMP_VERSION`  | `2c`                         | SNMP version (only `2c` is wired today; shaped for v3 later). |
 | `AGENT_SNMP_PORT`     | `161`                        | SNMP UDP port.                            |
@@ -246,56 +247,70 @@ macvlan. Its *default route* points at the bridge, which creates an asymmetry:
 - **Different subnet** (routed): OS + services come back, but **no MAC** — this
   half is inherent to crossing an L3 boundary and cannot be fixed.
 
-The overlay closes the same-subnet gap by pinning every scan to the LAN
-interface. It sets `AGENT_SCAN_SOURCE_IP` to the agent's macvlan IP; on startup
-the agent finds the interface owning that address and runs nmap with
-`-e <iface> -S <ip>`, so all probes egress the macvlan. Same- and cross-subnet
-targets then report the **same fields** (minus the MAC across a routed boundary).
-Set `AGENT_SCAN_INTERFACE` to name the interface directly if you prefer. With
-neither set (the plain bridge setup) nmap chooses its own egress, unchanged.
+The overlay closes the same-subnet gap by setting `AGENT_SCAN_SOURCE_IP` to the
+agent's macvlan IP. On startup the agent finds the interface and subnet owning
+that address. With the default `AGENT_SCAN_PIN_MODE=auto`, nmap uses
+`-e <iface> -S <ip>` only for targets inside that source subnet, preserving the
+same-subnet fix; routed targets are scanned unpinned over the kernel's default
+route, so service/OS detection works without the source/route mismatch. Routed
+targets still do not produce nmap-discovered MAC addresses because ARP does not
+cross an L3 boundary.
+
+Set `AGENT_SCAN_INTERFACE` to name the interface directly if you prefer. If the
+agent cannot determine the source subnet, `auto` treats targets as routed and
+does not pin them. With neither a source IP nor interface set (the plain bridge
+setup), nmap chooses its own egress, unchanged.
+
+`AGENT_SCAN_PIN_MODE` values:
+
+| Mode | Behavior |
+| ---- | -------- |
+| `auto` | Default. Pin only targets inside the scan source subnet; scan routed targets unpinned over the default route. |
+| `always` | Pin every target to the configured source/interface. Use only when every target is on that L2 segment. |
+| `off` | Never pin, even when a source IP/interface is configured. |
+
+`same-subnet-only` is accepted as a compatibility alias for `auto`.
 
 Verify the pin from inside the container if a same-subnet scan still misses
 services:
 
 ```sh
-docker compose exec scanner-agent ip route get <target-ip>   # should leave the macvlan iface
+docker compose exec scanner-agent ip route get <target-ip>   # routed targets should use the default route
 docker compose exec scanner-agent ip -br addr                # confirm the macvlan IP/iface name
 ```
-
-> **Use macvlan only to scan the subnet/VLAN the agent has L2 presence on.** The
-> macvlan overlay sets `AGENT_SCAN_SOURCE_IP`, which today pins **every** nmap probe
-> to the macvlan interface. If you point such a scan at a **different, routed** subnet
-> (one reached through a firewall/router, not directly connected to the macvlan
-> segment), the source pin and the kernel's route to that subnet disagree, host
-> discovery finds **zero live hosts**, and the scan returns `succeeded` with no
-> observations and a "no live hosts discovered" notice. For routed subnets use plain
-> **bridge** mode (the base `--profile scanner` stack, no overlay): nmap follows the
-> default route and service/OS detection works — MAC addresses then come only
-> indirectly from a gateway's SNMP/ARP table (`arp_table`), since nmap cannot ARP
-> across an L3 boundary. A routing-aware default that makes a single macvlan agent
-> handle both same-subnet and routed targets automatically is planned — see
-> [ADR 0027](adr/0027-routing-aware-scanner-egress.md).
 
 ## Choosing bridge vs macvlan
 
 | Goal | Recommended mode | Notes |
 | ---- | ---------------- | ----- |
 | Scan the **same** VLAN and collect MAC addresses | **macvlan** | The agent needs a real IP on that VLAN (the overlay). |
-| Scan a **routed** subnet through a firewall/router | **bridge** (base `--profile scanner`) | Service/OS detection works; MACs only via a gateway SNMP/ARP-table source (`arp_table`). |
-| Scan **multiple** VLANs with MAC discovery | **one agent per VLAN** | Best long-term design; see `deploy/compose.scanner-multivlan.example.yaml` (planned, ADR 0027). |
+| Scan a **routed** subnet through a firewall/router | bridge or macvlan with `AGENT_SCAN_PIN_MODE=auto` | Service/OS detection works; MACs only via a gateway SNMP/ARP-table source (`arp_table`). |
+| Scan **multiple** VLANs with MAC discovery | **one agent per VLAN** | Best long-term design; see `deploy/compose.scanner-multivlan.example.yaml`. |
 | Discover clients from a **router's ARP table** | bridge or macvlan | Target the gateway/router with SNMP enabled (`arp_table`); learns IP↔MAC the router already knows. |
-| Scan a **remote** subnet while pinned to the macvlan source | advanced/custom | Requires valid routing through the macvlan gateway; otherwise prefer bridge. |
+| Force every target through one macvlan source | advanced/custom with `AGENT_SCAN_PIN_MODE=always` | Only correct when every target is on that L2 segment or routing through that source is intentionally configured. |
 
 The base `docker compose --profile scanner up` stack **is** bridge mode — best for
 routed scans and the simplest install. The macvlan overlay layers L2 presence on top
-for same-subnet MAC discovery.
+for same-subnet MAC discovery. For multiple VLANs where MAC discovery matters, use
+one macvlan-backed agent per VLAN:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.scanner-multivlan.example.yaml \
+  --profile scanner up -d
+```
+
+Copy that example before production use and give each agent a unique
+`AGENT_ID`, `AGENT_NAME`, macvlan parent, source IP, and `AGENT_ALLOWED_CIDRS`.
+Generate the scanner certificate with DNS SANs for every agent service name, then
+register each additional agent under `/agents` with its service URL.
 
 ## Troubleshooting a scan that finds nothing
 
 A scan that completes as `succeeded` with **zero observations**, or an app that cannot
-reach the agent at all, is almost always one of a few distinct conditions. Until the
-in-product diagnostics land (ADR 0027 adds an agent `/diagnostics` view and classified
-app→agent errors), check them from the host:
+reach the agent at all, is almost always one of a few distinct conditions. The
+agent detail page can run diagnostics over mTLS and show the agent's interfaces,
+source pin, default-route interface, nmap version, capabilities, and warnings. If
+you need to check from the host:
 
 ```sh
 # Is the agent container actually running and on the Compose network?
@@ -317,7 +332,7 @@ Interpreting the result:
 | Symptom | Likely cause | Fix |
 | ------- | ------------ | --- |
 | `scanner-agent` does not resolve from the app | Agent container exited / not on the default Compose network | `docker compose --profile scanner ps`; start it. Docker DNS only resolves **running** containers — this is the `lookup scanner-agent ... no such host` error, **not** a scan bug. |
-| Scan `succeeded`, zero hosts; `ip route get <target>` leaves the **bridge** but `AGENT_SCAN_SOURCE_IP` is on the **macvlan** | Source-pin vs route mismatch (macvlan agent pointed at a routed subnet) | Use bridge mode for the routed subnet, put a scanner on the target VLAN, or (planned) set `AGENT_SCAN_PIN_MODE=auto`. |
+| Scan `succeeded`, zero hosts; diagnostics show `AGENT_SCAN_PIN_MODE=always` and `ip route get <target>` leaves a different interface | Source-pin vs route mismatch (macvlan agent pointed at a routed subnet while every target is forced through the macvlan) | Use the default `AGENT_SCAN_PIN_MODE=auto`, use bridge mode for the routed subnet, or put a scanner on the target VLAN. |
 | Scan finds hosts + services but **no MAC** on a routed subnet | Inherent — nmap cannot ARP across an L3 boundary | Expected. Use a gateway SNMP/ARP-table scan (`arp_table`) or a scanner on that VLAN for MACs. |
 | Same-subnet scan reports MAC but **no services/OS** | Egress not pinned to the macvlan on a dual-homed agent | Set `AGENT_SCAN_SOURCE_IP` to the agent's macvlan IP (the overlay does this). |
 | App reports a TLS/certificate error contacting the agent | mTLS material missing/mismatched | Regenerate certs; see "Generating dev certificates" and "Certificate file ownership on Linux". |

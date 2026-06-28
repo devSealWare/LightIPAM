@@ -1,0 +1,108 @@
+# Example overlay for running one scanner-agent per VLAN.
+#
+# Use this pattern when you need MAC discovery on multiple VLANs. nmap can only
+# learn MAC addresses on the layer-2 segment where the scanner has an address, so
+# the durable design is one scanner per VLAN, each with its own macvlan IP and a
+# narrow AGENT_ALLOWED_CIDRS value for that VLAN.
+#
+# Usage (copy this file to a deployment-specific overlay and edit values, or set
+# the variables in .env):
+#
+#   docker compose -f compose.yaml -f deploy/compose.scanner-multivlan.example.yaml \
+#     --profile scanner up -d
+#
+# Certificate SANs matter. The app verifies each agent endpoint hostname against
+# the agent server certificate. For the hostnames below, generate certs with:
+#
+#   go run ./cmd/scanner-certs -dir deploy/scanner-certs \
+#     -dns scanner-agent,scanner-agent-vlan20
+#
+# Add every extra service name you create to that -dns list. The base app can
+# auto-enroll only SCANNER_AGENT_ENDPOINT (scanner-agent). Register additional
+# agents from /agents using endpoints such as:
+#
+#   https://scanner-agent-vlan20:8443
+#
+# This example uses VLAN subinterfaces as macvlan parents (for example eth0.10
+# and eth0.20). You can also point the parent values at physical NICs or other
+# host interfaces that already carry the target VLANs.
+
+services:
+  # Overrides the base scanner-agent service to put it on VLAN 10.
+  scanner-agent:
+    environment:
+      AGENT_ID: scanner-vlan10
+      AGENT_NAME: scanner-vlan10
+      AGENT_ALLOWED_CIDRS: ${SCAN_VLAN10_SUBNET:-192.168.10.0/24}
+      AGENT_SCAN_SOURCE_IP: ${SCAN_VLAN10_AGENT_IP:-192.168.10.250}
+      # auto is the default: pin only targets inside the source subnet; routed
+      # targets use the default route and will not have nmap-discovered MACs.
+      AGENT_SCAN_PIN_MODE: auto
+    networks:
+      default: {}
+      scan_vlan10:
+        ipv4_address: ${SCAN_VLAN10_AGENT_IP:-192.168.10.250}
+
+  # Duplicate this service/network pair for each additional VLAN.
+  scanner-agent-vlan20:
+    build:
+      context: .
+      dockerfile: Dockerfile.scanner
+      args:
+        VERSION: ${VERSION:-dev}
+    profiles:
+      - scanner
+    depends_on:
+      cert-perms:
+        condition: service_completed_successfully
+    environment:
+      AGENT_LISTEN: ":8443"
+      AGENT_ID: scanner-vlan20
+      AGENT_NAME: scanner-vlan20
+      AGENT_ALLOWED_CIDRS: ${SCAN_VLAN20_SUBNET:-192.168.20.0/24}
+      AGENT_SCAN_SOURCE_IP: ${SCAN_VLAN20_AGENT_IP:-192.168.20.250}
+      AGENT_SCAN_PIN_MODE: auto
+      APP_CLIENT_CN: light-ipam-app
+      SCANNER_TLS_CERT: /certs/agent.crt
+      SCANNER_TLS_KEY: /certs/agent.key
+      SCANNER_TLS_CA: /certs/ca.crt
+      AGENT_SNMP_VERSION: "2c"
+      AGENT_SNMP_COMMUNITY: "public"
+    volumes:
+      - ./deploy/scanner-certs:/certs:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "scanner-agent", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      default: {}
+      scan_vlan20:
+        ipv4_address: ${SCAN_VLAN20_AGENT_IP:-192.168.20.250}
+
+networks:
+  scan_vlan10:
+    driver: macvlan
+    driver_opts:
+      parent: ${SCAN_VLAN10_PARENT:-eth0.10}
+    ipam:
+      config:
+        - subnet: ${SCAN_VLAN10_SUBNET:-192.168.10.0/24}
+          gateway: ${SCAN_VLAN10_GATEWAY:-192.168.10.1}
+
+  scan_vlan20:
+    driver: macvlan
+    driver_opts:
+      parent: ${SCAN_VLAN20_PARENT:-eth0.20}
+    ipam:
+      config:
+        - subnet: ${SCAN_VLAN20_SUBNET:-192.168.20.0/24}
+          gateway: ${SCAN_VLAN20_GATEWAY:-192.168.20.1}
