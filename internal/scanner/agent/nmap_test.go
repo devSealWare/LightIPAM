@@ -2,11 +2,25 @@ package agent
 
 import (
 	"context"
+	"net"
 	"strings"
 	"testing"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
 )
+
+// mustNet parses a CIDR into a *net.IPNet for use as a scan source subnet.
+func mustNet(t *testing.T, cidr string) *net.IPNet {
+	t.Helper()
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil {
+		t.Fatalf("parse %q: %v", cidr, err)
+	}
+	return n
+}
+
+// egressHasPin reports whether an egress renders a source pin.
+func egressHasPin(e EgressOptions) bool { return len(e.args()) > 0 }
 
 func argsContain(args []string, want string) bool {
 	for _, a := range args {
@@ -361,6 +375,200 @@ func TestDiscoverPassiveRunsNoNmap(t *testing.T) {
 	}
 	if len(obs) != 0 {
 		t.Fatalf("passive must yield no observations, got %d", len(obs))
+	}
+}
+
+// --- routing-aware egress (AGENT_SCAN_PIN_MODE) ---
+
+func TestParsePinMode(t *testing.T) {
+	cases := map[string]PinMode{
+		"":                 PinAuto,
+		"auto":             PinAuto,
+		"AUTO":             PinAuto,
+		"same-subnet-only": PinAuto, // back-compat alias
+		"  auto  ":         PinAuto,
+		"bogus":            PinAuto, // unknown → safe default
+		"always":           PinAlways,
+		"ALWAYS":           PinAlways,
+		"off":              PinOff,
+	}
+	for in, want := range cases {
+		if got := ParsePinMode(in); got != want {
+			t.Errorf("ParsePinMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestClassifyAdjacency(t *testing.T) {
+	src := mustNet(t, "192.168.0.0/28") // covers .0–.15
+	cases := []struct {
+		token string
+		want  targetAdjacency
+	}{
+		{"192.168.0.5", adjacencyLocal},       // bare IP inside
+		{"192.168.0.20", adjacencyRouted},     // bare IP just outside the /28
+		{"192.168.1.50", adjacencyRouted},     // bare IP in another subnet
+		{"192.168.0.0/29", adjacencyLocal},    // CIDR fully inside
+		{"192.168.0.0/28", adjacencyLocal},    // CIDR equal to the source subnet
+		{"192.168.0.0/24", adjacencyStraddle}, // CIDR enclosing the source subnet
+		{"10.0.0.0/24", adjacencyRouted},      // disjoint CIDR
+		{"garbage", adjacencyRouted},          // unparseable → not pinned
+	}
+	for _, tc := range cases {
+		if got := classifyAdjacency(tc.token, src); got != tc.want {
+			t.Errorf("classifyAdjacency(%q) = %d, want %d", tc.token, got, tc.want)
+		}
+	}
+	// A nil source subnet cannot prove adjacency: everything is routed.
+	if got := classifyAdjacency("192.168.0.5", nil); got != adjacencyRouted {
+		t.Errorf("nil srcNet: classifyAdjacency = %d, want routed", got)
+	}
+}
+
+func TestPlanEgressOffNeverPins(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinOff, SourceNet: mustNet(t, "192.168.0.0/28")}
+	plan := planEgress(egress, []string{"192.168.0.5", "192.168.1.50"})
+	if len(plan.sets) != 1 {
+		t.Fatalf("off mode should produce a single set, got %d", len(plan.sets))
+	}
+	if egressHasPin(plan.sets[0].egress) {
+		t.Fatalf("off mode must not pin, got %v", plan.sets[0].egress.args())
+	}
+	if len(plan.sets[0].targets) != 2 {
+		t.Fatalf("off mode should scan every target in one set, got %v", plan.sets[0].targets)
+	}
+}
+
+func TestPlanEgressAlwaysPinsAll(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAlways, SourceNet: mustNet(t, "192.168.0.0/28")}
+	plan := planEgress(egress, []string{"192.168.0.5", "192.168.1.50"})
+	if len(plan.sets) != 1 {
+		t.Fatalf("always mode should produce a single set, got %d", len(plan.sets))
+	}
+	if !egressHasPin(plan.sets[0].egress) {
+		t.Fatalf("always mode must pin every target, got %v", plan.sets[0].egress.args())
+	}
+}
+
+func TestPlanEgressNoPinConfiguredIsSingleUnpinnedSet(t *testing.T) {
+	// auto is the default, but with no source configured there is nothing to pin.
+	plan := planEgress(EgressOptions{PinMode: PinAuto}, []string{"192.168.0.5", "192.168.1.50"})
+	if len(plan.sets) != 1 || egressHasPin(plan.sets[0].egress) {
+		t.Fatalf("no pin configured should be one unpinned set, got %+v", plan.sets)
+	}
+}
+
+func TestPlanEgressAutoPartitionsLocalAndRouted(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAuto, SourceNet: mustNet(t, "192.168.0.0/28")}
+	plan := planEgress(egress, []string{"192.168.0.5", "192.168.1.50"})
+	if len(plan.sets) != 2 {
+		t.Fatalf("auto with a local and a routed target should produce two sets, got %d", len(plan.sets))
+	}
+	var pinnedSet, unpinnedSet *egressSet
+	for i := range plan.sets {
+		if egressHasPin(plan.sets[i].egress) {
+			pinnedSet = &plan.sets[i]
+		} else {
+			unpinnedSet = &plan.sets[i]
+		}
+	}
+	if pinnedSet == nil || unpinnedSet == nil {
+		t.Fatalf("expected one pinned and one unpinned set, got %+v", plan.sets)
+	}
+	if len(pinnedSet.targets) != 1 || pinnedSet.targets[0] != "192.168.0.5" {
+		t.Fatalf("pinned set should hold only the L2-adjacent target, got %v", pinnedSet.targets)
+	}
+	if len(unpinnedSet.targets) != 1 || unpinnedSet.targets[0] != "192.168.1.50" {
+		t.Fatalf("unpinned set should hold only the routed target, got %v", unpinnedSet.targets)
+	}
+	if len(plan.notices) != 0 {
+		t.Fatalf("clean local/routed split should not emit notices, got %v", plan.notices)
+	}
+}
+
+func TestPlanEgressAutoStraddleNoticeAndUnpinned(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAuto, SourceNet: mustNet(t, "192.168.0.0/28")}
+	plan := planEgress(egress, []string{"192.168.0.0/24"})
+	if len(plan.sets) != 1 || egressHasPin(plan.sets[0].egress) {
+		t.Fatalf("a straddling CIDR should be scanned unpinned, got %+v", plan.sets)
+	}
+	if len(plan.notices) != 1 {
+		t.Fatalf("a straddling CIDR should emit exactly one notice, got %v", plan.notices)
+	}
+	notice := plan.notices[0]
+	if notice.Code != scanner.CodeScanIgnored || notice.Target != "192.168.0.0/24" {
+		t.Fatalf("unexpected straddle notice %+v", notice)
+	}
+	if !strings.Contains(notice.Message, "straddle") {
+		t.Fatalf("straddle notice should explain the overlap, got %q", notice.Message)
+	}
+}
+
+func TestPlanEgressAutoAllLocalIsSinglePinnedSet(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAuto, SourceNet: mustNet(t, "192.168.0.0/24")}
+	plan := planEgress(egress, []string{"192.168.0.5", "192.168.0.6"})
+	if len(plan.sets) != 1 || !egressHasPin(plan.sets[0].egress) {
+		t.Fatalf("all-local targets should be one pinned set, got %+v", plan.sets)
+	}
+	if len(plan.notices) != 0 {
+		t.Fatalf("no straddle, no notices expected, got %v", plan.notices)
+	}
+}
+
+// TestDiscoverAutoPinsOnlyAdjacentTargets is the end-to-end proof of the core
+// fix: a job with one L2-adjacent and one routed target, scanned under auto,
+// pins the adjacent target's nmap probes (-S) and runs the routed target
+// unpinned, so the routed scan no longer disagrees with the kernel route.
+func TestDiscoverAutoPinsOnlyAdjacentTargets(t *testing.T) {
+	egress := EgressOptions{
+		Interface: "eth0",
+		SourceIP:  "192.168.0.9",
+		PinMode:   PinAuto,
+		SourceNet: mustNet(t, "192.168.0.9/28"),
+	}
+	n := NewNmapDiscoverer("nmap", egress)
+
+	type call struct {
+		target string
+		pinned bool
+	}
+	var calls []call
+	n.run = func(_ context.Context, _ string, args []string) ([]byte, error) {
+		last := args[len(args)-1]
+		calls = append(calls, call{target: last, pinned: argsContain(args, "-S")})
+		// Report the scanned target as up so both stages run for each set.
+		xml := `<nmaprun><host><status state="up"/><address addr="` + last + `" addrtype="ipv4"/></host></nmaprun>`
+		return []byte(xml), nil
+	}
+
+	job := validJob()
+	job.Type = scanner.ScanServiceDetect
+	job.Mode = scanner.ModeStandardActive
+	job.Targets = []string{"192.168.0.5", "192.168.1.50"} // local, routed
+
+	obs, _, err := n.Discover(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(calls) != 4 {
+		t.Fatalf("expected 4 nmap calls (2 sets × 2 stages), got %d: %+v", len(calls), calls)
+	}
+	for _, c := range calls {
+		switch c.target {
+		case "192.168.0.5":
+			if !c.pinned {
+				t.Errorf("L2-adjacent target %s must be pinned (-S)", c.target)
+			}
+		case "192.168.1.50":
+			if c.pinned {
+				t.Errorf("routed target %s must not be pinned", c.target)
+			}
+		default:
+			t.Errorf("unexpected scan target %q", c.target)
+		}
+	}
+	if len(obs) != 2 {
+		t.Fatalf("expected both hosts merged into the result, got %d", len(obs))
 	}
 }
 

@@ -181,30 +181,63 @@ func main() {
 }
 
 // resolveEgress decides which interface and source address nmap should pin its
-// raw probes to. On a dual-homed agent (control-plane bridge + macvlan LAN) the
-// LAN interface must be pinned, or same-subnet service/OS detection silently
-// fails while ARP/MAC still works (see agent.EgressOptions). The operator sets
-// AGENT_SCAN_SOURCE_IP (typically the agent's macvlan LAN IP) and the agent
-// finds the interface that owns it; AGENT_SCAN_INTERFACE can name it directly.
-// With neither set, nmap chooses its own egress (the bridge-only default).
+// raw probes to, and how that pin is applied per target. On a dual-homed agent
+// (control-plane bridge + macvlan LAN) the LAN interface must be pinned for a
+// same-subnet target, or service/OS detection silently fails while ARP/MAC still
+// works (see agent.EgressOptions, #37). The operator sets AGENT_SCAN_SOURCE_IP
+// (typically the agent's macvlan LAN IP) and the agent finds the interface that
+// owns it (and that interface's subnet); AGENT_SCAN_INTERFACE can name it
+// directly. With neither set, nmap chooses its own egress (the bridge-only
+// default).
+//
+// AGENT_SCAN_PIN_MODE controls when the pin applies: the default "auto" pins only
+// targets that are layer-2 adjacent to the source subnet and lets routed targets
+// use the kernel's default route, so a single macvlan agent scans both its own
+// segment and routed subnets correctly with no config change. "always" restores
+// the old unconditional pin; "off" disables pinning.
 func resolveEgress(logger *slog.Logger) agent.EgressOptions {
 	egress := agent.EgressOptions{
 		Interface: os.Getenv("AGENT_SCAN_INTERFACE"),
 		SourceIP:  os.Getenv("AGENT_SCAN_SOURCE_IP"),
+		PinMode:   agent.ParsePinMode(os.Getenv("AGENT_SCAN_PIN_MODE")),
 	}
-	if egress.SourceIP != "" && egress.Interface == "" {
-		if iface, err := interfaceForIP(egress.SourceIP); err != nil {
-			logger.Warn("could not match scan source IP to a local interface; nmap will choose its own egress",
+	switch {
+	case egress.SourceIP != "":
+		// Resolve the source IP to its owning interface and subnet. The subnet is
+		// what auto mode uses to tell L2-adjacent targets from routed ones.
+		if iface, srcNet, err := interfaceForIP(egress.SourceIP); err != nil {
+			logger.Warn("could not match scan source IP to a local interface; routed targets will not be pinned",
 				"source_ip", egress.SourceIP, "error", err)
 		} else {
-			egress.Interface = iface
+			if egress.Interface == "" {
+				egress.Interface = iface
+			}
+			egress.SourceNet = srcNet
+		}
+	case egress.Interface != "":
+		// Interface named directly without a source IP: best-effort subnet lookup so
+		// auto adjacency still works.
+		if srcNet := subnetForInterface(egress.Interface); srcNet != nil {
+			egress.SourceNet = srcNet
 		}
 	}
 	if egress.Interface != "" || egress.SourceIP != "" {
-		logger.Info("pinning nmap egress for consistent cross-subnet scans",
-			"interface", egress.Interface, "source_ip", egress.SourceIP)
+		logger.Info("nmap egress pinning configured",
+			"interface", egress.Interface,
+			"source_ip", egress.SourceIP,
+			"pin_mode", string(egress.PinMode),
+			"source_subnet", ipNetString(egress.SourceNet),
+		)
 	}
 	return egress
+}
+
+// ipNetString renders a *net.IPNet for logging, tolerating nil.
+func ipNetString(n *net.IPNet) string {
+	if n == nil {
+		return ""
+	}
+	return n.String()
 }
 
 // resolveSNMP builds the SNMP discovery backend (arp_table + snmp_inventory) from
@@ -300,15 +333,17 @@ func atoiDefault(s string, fallback int) int {
 	return n
 }
 
-// interfaceForIP returns the name of the local interface that owns ip.
-func interfaceForIP(ip string) (string, error) {
+// interfaceForIP returns the name of the local interface that owns ip and that
+// address's subnet (the *net.IPNet from the matching interface address). The
+// subnet lets auto pin mode tell L2-adjacent targets from routed ones.
+func interfaceForIP(ip string) (string, *net.IPNet, error) {
 	target := net.ParseIP(ip)
 	if target == nil {
-		return "", fmt.Errorf("invalid AGENT_SCAN_SOURCE_IP %q", ip)
+		return "", nil, fmt.Errorf("invalid AGENT_SCAN_SOURCE_IP %q", ip)
 	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
@@ -317,11 +352,31 @@ func interfaceForIP(ip string) (string, error) {
 		}
 		for _, addr := range addrs {
 			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.Equal(target) {
-				return iface.Name, nil
+				return iface.Name, ipNet, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("no local interface has address %s", ip)
+	return "", nil, fmt.Errorf("no local interface has address %s", ip)
+}
+
+// subnetForInterface returns the first IPv4 subnet on the named interface, or nil
+// if the interface is unknown or has no IPv4 address. It is the interface-only
+// fallback for auto adjacency when AGENT_SCAN_INTERFACE is set without a source IP.
+func subnetForInterface(name string) *net.IPNet {
+	iface, err := net.InterfaceByName(name)
+	if err != nil {
+		return nil
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil
+	}
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+			return ipNet
+		}
+	}
+	return nil
 }
 
 func getenv(key, fallback string) string {
