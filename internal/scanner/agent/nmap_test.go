@@ -572,6 +572,114 @@ func TestDiscoverAutoPinsOnlyAdjacentTargets(t *testing.T) {
 	}
 }
 
+// --- self-explaining zero-host notices (ADR 0027 §2) ---
+
+func TestZeroHostNoticeNoPinIsSilent(t *testing.T) {
+	// Plain bridge mode: an empty subnet is unremarkable, so no notice.
+	if n := zeroHostNotice(EgressOptions{}, egressSet{targets: []string{"192.168.1.0/24"}}); n != nil {
+		t.Fatalf("no pin configured should emit no notice, got %q", n.Message)
+	}
+}
+
+func TestZeroHostNoticeAlwaysRoutedIsMismatch(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAlways, SourceNet: mustNet(t, "192.168.0.0/28")}
+	set := egressSet{targets: []string{"192.168.1.50"}, egress: egress, pinned: true}
+	n := zeroHostNotice(egress, set)
+	if n == nil || n.Code != scanner.CodeScanIgnored {
+		t.Fatalf("expected an ignored mismatch notice, got %+v", n)
+	}
+	for _, want := range []string{"192.168.0.9 on eth0", "routed", "AGENT_SCAN_PIN_MODE=auto", "192.168.1.50"} {
+		if !strings.Contains(n.Message, want) {
+			t.Fatalf("mismatch notice missing %q: %q", want, n.Message)
+		}
+	}
+}
+
+func TestZeroHostNoticeUnpinnedRoutedIsConfirmation(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAuto, SourceNet: mustNet(t, "192.168.0.0/28")}
+	// In auto, the routed target rides the unpinned set.
+	set := egressSet{targets: []string{"192.168.1.50"}, egress: egress.withoutPin(), pinned: false}
+	n := zeroHostNotice(egress, set)
+	if n == nil || n.Code != scanner.CodeScanIgnored {
+		t.Fatalf("expected an ignored confirmation notice, got %+v", n)
+	}
+	for _, want := range []string{"default route", "layer-2 adjacency", "arp_table"} {
+		if !strings.Contains(n.Message, want) {
+			t.Fatalf("confirmation notice missing %q: %q", want, n.Message)
+		}
+	}
+	// A confirmation must not scold about a mismatch.
+	if strings.Contains(n.Message, "wrong interface") {
+		t.Fatalf("unpinned routed result should read as confirmation, not mismatch: %q", n.Message)
+	}
+}
+
+func TestZeroHostNoticePinnedAdjacentIsEmptySegment(t *testing.T) {
+	egress := EgressOptions{Interface: "eth0", SourceIP: "192.168.0.9", PinMode: PinAuto, SourceNet: mustNet(t, "192.168.0.0/28")}
+	set := egressSet{targets: []string{"192.168.0.5"}, egress: egress, pinned: true}
+	n := zeroHostNotice(egress, set)
+	if n == nil {
+		t.Fatal("expected a notice for an empty pinned segment")
+	}
+	if !strings.Contains(n.Message, "pinned source segment") {
+		t.Fatalf("expected an empty-segment notice, got %q", n.Message)
+	}
+}
+
+// TestDiscoverEmitsZeroHostNoticeForRoutedTarget proves the notice reaches the
+// scan result: an always-mode scan that pins a routed target and finds nothing
+// comes back self-explaining rather than silently empty.
+func TestDiscoverEmitsZeroHostNoticeForRoutedTarget(t *testing.T) {
+	egress := EgressOptions{
+		Interface: "eth0",
+		SourceIP:  "192.168.0.9",
+		PinMode:   PinAlways,
+		SourceNet: mustNet(t, "192.168.0.9/28"),
+	}
+	n := NewNmapDiscoverer("nmap", egress)
+	n.run = func(_ context.Context, _ string, _ []string) ([]byte, error) {
+		return []byte(`<nmaprun></nmaprun>`), nil // nothing answered discovery
+	}
+
+	job := validJob()
+	job.Type = scanner.ScanServiceDetect
+	job.Mode = scanner.ModeStandardActive
+	job.Targets = []string{"192.168.1.50"} // routed
+
+	obs, notices, err := n.Discover(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(obs) != 0 {
+		t.Fatalf("expected no observations, got %d", len(obs))
+	}
+	if len(notices) != 1 || notices[0].Code != scanner.CodeScanIgnored {
+		t.Fatalf("expected a single ignored zero-host notice, got %+v", notices)
+	}
+	if !strings.Contains(notices[0].Message, "AGENT_SCAN_PIN_MODE=auto") {
+		t.Fatalf("zero-host notice should recommend the fix, got %q", notices[0].Message)
+	}
+}
+
+func TestDiscoverNoZeroHostNoticeWithoutPin(t *testing.T) {
+	// Bridge mode (no pin): a dead range stays a quiet empty result, as before.
+	n := NewNmapDiscoverer("nmap", EgressOptions{})
+	n.run = func(_ context.Context, _ string, _ []string) ([]byte, error) {
+		return []byte(`<nmaprun></nmaprun>`), nil
+	}
+	job := validJob()
+	job.Type = scanner.ScanServiceDetect
+	job.Mode = scanner.ModeStandardActive
+
+	_, notices, err := n.Discover(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(notices) != 0 {
+		t.Fatalf("bridge mode should not add a zero-host notice, got %+v", notices)
+	}
+}
+
 const sampleNmapXML = `<?xml version="1.0"?>
 <nmaprun>
   <host>

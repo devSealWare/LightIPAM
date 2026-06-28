@@ -191,11 +191,77 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 		if err != nil {
 			return nil, nil, err
 		}
+		// A set that found nothing alive explains itself when a pin is configured —
+		// otherwise a routed scan returns "succeeded" with zero observations and no
+		// clue why (the silent failure ADR 0027 fixes).
+		if len(obs) == 0 {
+			if notice := zeroHostNotice(n.egress, set); notice != nil {
+				errs = append(errs, *notice)
+			}
+		}
 		allObs = append(allObs, obs...)
 		errs = append(errs, setErrs...)
 	}
 
 	return mergeObservations(allObs), errs, nil
+}
+
+// zeroHostNotice explains a set that found no live hosts, in terms of the egress
+// pin, so an operator can tell an empty subnet from a pin/route mismatch. It
+// returns nil when no pin is configured (plain bridge mode — an empty subnet is
+// unremarkable). The three configured cases:
+//
+//   - pinned routed target (always mode pinning across a router): the classic
+//     mismatch — probes leave the wrong interface and replies are lost.
+//   - unpinned routed target (auto/off over the default route): expected — MAC
+//     discovery needs L2 adjacency, so a routed subnet yields no MACs this way.
+//   - pinned adjacent target: the local segment is simply empty.
+func zeroHostNotice(egress EgressOptions, set egressSet) *scanner.ScanError {
+	if !egress.pinConfigured() {
+		return nil
+	}
+	targets := strings.Join(set.targets, ", ")
+	var msg string
+	switch {
+	case set.pinned && setHasRouted(set.targets, egress.SourceNet):
+		msg = fmt.Sprintf("No live hosts discovered for %s. The scanner pins egress to %s "+
+			"(AGENT_SCAN_PIN_MODE=always), but the target is routed (outside the source subnet %s), so probes "+
+			"leave the wrong interface and replies are lost. Set AGENT_SCAN_PIN_MODE=auto, use bridge mode for "+
+			"routed scans, or place a scanner on the target VLAN.",
+			targets, pinSourceLabel(egress), ipNetString(egress.SourceNet))
+	case !set.pinned:
+		msg = fmt.Sprintf("No live hosts discovered for %s over the default route (unpinned). MAC discovery needs "+
+			"layer-2 adjacency, so a routed subnet yields no MACs this way — scan its gateway with "+
+			"arp_table/snmp_inventory, or place a scanner on that VLAN.", targets)
+	default:
+		msg = fmt.Sprintf("No live hosts discovered for %s on the pinned source segment %s.",
+			targets, ipNetString(egress.SourceNet))
+	}
+	return &scanner.ScanError{Code: scanner.CodeScanIgnored, Message: msg}
+}
+
+// setHasRouted reports whether any target in the set is not L2-adjacent to the
+// source subnet (so pinning it would disagree with the kernel route).
+func setHasRouted(targets []string, srcNet *net.IPNet) bool {
+	for _, t := range targets {
+		if classifyAdjacency(t, srcNet) != adjacencyLocal {
+			return true
+		}
+	}
+	return false
+}
+
+// pinSourceLabel renders the configured pin source for a notice ("192.168.0.9 on
+// eth0", or just the IP/interface when only one is known).
+func pinSourceLabel(e EgressOptions) string {
+	switch {
+	case e.SourceIP != "" && e.Interface != "":
+		return fmt.Sprintf("%s on %s", e.SourceIP, e.Interface)
+	case e.SourceIP != "":
+		return e.SourceIP
+	default:
+		return e.Interface
+	}
 }
 
 // discoverSet runs the staged nmap passes (host discovery, then service/OS on the
@@ -237,9 +303,12 @@ func (n *NmapDiscoverer) discoverSet(ctx context.Context, job scanner.ScanJob, t
 
 // egressSet is one partition of a job's targets and the egress pin to apply to
 // them: the pinned set carries the source pin, the unpinned set has it stripped.
+// pinned records which it is, so a zero-host result can explain itself (a pinned
+// routed target is a mismatch; an unpinned routed target is an expected no-MAC).
 type egressSet struct {
 	targets []string
 	egress  EgressOptions
+	pinned  bool
 }
 
 // egressPlan is the routing-aware partition of a job's targets into pinned and
@@ -262,10 +331,10 @@ func planEgress(egress EgressOptions, targets []string) egressPlan {
 	mode := egress.effectivePinMode()
 
 	if !egress.pinConfigured() || mode == PinOff {
-		return egressPlan{sets: []egressSet{{targets: targets, egress: egress.withoutPin()}}}
+		return egressPlan{sets: []egressSet{{targets: targets, egress: egress.withoutPin(), pinned: false}}}
 	}
 	if mode == PinAlways {
-		return egressPlan{sets: []egressSet{{targets: targets, egress: egress}}}
+		return egressPlan{sets: []egressSet{{targets: targets, egress: egress, pinned: true}}}
 	}
 
 	// auto: pin only the L2-adjacent targets.
@@ -290,10 +359,10 @@ func planEgress(egress EgressOptions, targets []string) egressPlan {
 
 	plan := egressPlan{notices: notices}
 	if len(pinned) > 0 {
-		plan.sets = append(plan.sets, egressSet{targets: pinned, egress: egress})
+		plan.sets = append(plan.sets, egressSet{targets: pinned, egress: egress, pinned: true})
 	}
 	if len(unpinned) > 0 {
-		plan.sets = append(plan.sets, egressSet{targets: unpinned, egress: egress.withoutPin()})
+		plan.sets = append(plan.sets, egressSet{targets: unpinned, egress: egress.withoutPin(), pinned: false})
 	}
 	return plan
 }
