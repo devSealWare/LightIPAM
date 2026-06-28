@@ -501,6 +501,55 @@ func (a *App) agentDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/agents", http.StatusSeeOther)
 }
 
+// agentShow renders the agent detail page — identity, allowlist, status — with a
+// "Run diagnostics" control that probes the agent's network self-view on demand.
+func (a *App) agentShow(w http.ResponseWriter, r *http.Request) {
+	session, agent, ok := a.loadAgentPage(w, r)
+	if !ok {
+		return
+	}
+	a.renderAgentDetail(w, session, agent, nil, r.URL.Query().Get("error"))
+}
+
+// agentDiagnostics fetches the agent's GET /diagnostics over mTLS and re-renders
+// the detail page with the result. On-demand and read-only — nothing is
+// persisted, so a refresh simply re-probes. Admin-gated by the authorize
+// middleware (an unsafe method).
+func (a *App) agentDiagnostics(w http.ResponseWriter, r *http.Request) {
+	session, agent, ok := a.loadAgentPage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if a.scans == nil || !a.scans.DispatchEnabled() {
+		a.renderAgentDetail(w, session, agent, nil, "Scanning isn't set up yet, so diagnostics can't be run. An administrator needs to install the app's client certificate first.")
+		return
+	}
+	diag, err := a.scans.AgentDiagnostics(r.Context(), agent.EndpointURL)
+	if err != nil {
+		a.logger.Warn("agent diagnostics", "agent", agent.ID, "error", err)
+		a.renderAgentDetail(w, session, agent, nil, "Couldn't fetch diagnostics: "+err.Error())
+		return
+	}
+	a.renderAgentDetail(w, session, agent, &diag, "")
+}
+
+func (a *App) renderAgentDetail(w http.ResponseWriter, session store.Session, agent store.ScanAgent, diag *scanner.AgentDiagnostics, message string) {
+	_ = ui.Render(w, "agent_detail.html", ui.PageData{
+		Title:            "Agent · " + agent.Name,
+		User:             session.User,
+		CSRF:             session.CSRFToken,
+		Error:            message,
+		ScanAgent:        agent,
+		AgentDiagnostics: diag,
+		DispatchReady:    a.scans != nil && a.scans.DispatchEnabled(),
+		ActiveNav:        "agents",
+	})
+}
+
 func agentInputFromRequest(r *http.Request) (store.ScanAgentInput, map[string]string, error) {
 	if err := r.ParseForm(); err != nil {
 		return store.ScanAgentInput{}, nil, err

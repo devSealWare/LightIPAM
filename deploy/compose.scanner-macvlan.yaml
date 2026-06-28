@@ -18,10 +18,10 @@
 # Because the agent is dual-homed, its DEFAULT route points at the bridge. Left
 # alone, nmap's SYN/OS probes to a *same-subnet* target can leave (or have their
 # replies return on) the bridge instead of the macvlan, so service/OS detection
-# silently comes back empty even though the ARP ping reports the MAC. To fix
-# that we pin nmap to the macvlan via AGENT_SCAN_SOURCE_IP (below): every scan
-# then egresses the LAN interface, so same- and cross-subnet targets report the
-# same fields (minus the MAC across an L3 boundary, which is inherent).
+# silently comes back empty even though the ARP ping reports the MAC. The agent
+# fixes that by resolving AGENT_SCAN_SOURCE_IP (below) to the macvlan interface
+# and, by default, pinning only targets inside that source subnet. Routed targets
+# stay unpinned and use the kernel's default route.
 #
 # Usage (alongside the base compose, not instead of it):
 #
@@ -46,6 +46,13 @@
 # macvlan interface (and vice versa). That is intentional and harmless here —
 # the host/app reach the agent over the bridge, and the macvlan is used only for
 # the agent's outbound scans of the LAN.
+#
+# AGENT_SCAN_PIN_MODE defaults to auto. Same-subnet targets are pinned to the
+# macvlan so ARP/MAC and service/OS detection agree; routed targets are scanned
+# unpinned over the default route. That makes routed service/OS scans work from a
+# macvlan agent, but MAC discovery still requires L2 adjacency, a gateway
+# SNMP/ARP-table scan (arp_table), or one scanner per VLAN. Set
+# AGENT_SCAN_PIN_MODE=always only when every target is on this macvlan segment.
 
 services:
   scanner-agent:
@@ -53,9 +60,10 @@ services:
       # Pin nmap's raw probes to the macvlan LAN interface. A dual-homed agent's
       # default route points at the control-plane bridge, so without this a
       # *same-subnet* target's service/OS detection silently returns nothing even
-      # though ARP/MAC succeeds (and a routed, *cross-subnet* target gets OS/
-      # services but no MAC). Pinning makes both consistent. The agent resolves
-      # the interface that owns this IP, so only the address is needed here.
+      # though ARP/MAC succeeds. In the default auto pin mode, only targets inside
+      # this source subnet are pinned; routed targets run over the default route.
+      # The agent resolves the interface that owns this IP, so only the address is
+      # needed here.
       AGENT_SCAN_SOURCE_IP: ${SCAN_LAN_AGENT_IP:-192.168.0.250}
     networks:
       # Control-plane: unchanged bridge reachability for app -> agent mTLS.

@@ -35,6 +35,12 @@ type Config struct {
 	// agent stays a no-op (validates and accepts jobs but reports no
 	// observations), preserving the pre-discovery behavior for tests.
 	Discoverer Discoverer
+	// Egress is the scan egress configuration (source IP/interface, pin mode,
+	// source subnet), reported by GET /diagnostics so an operator can see the
+	// source/route/interface picture. Zero value = no pin.
+	Egress EgressOptions
+	// NmapBinary is the nmap binary path used for the /diagnostics version probe.
+	NmapBinary string
 	Logger     *slog.Logger
 }
 
@@ -42,6 +48,14 @@ type Config struct {
 type Agent struct {
 	cfg    Config
 	logger *slog.Logger
+
+	// Diagnostics system seams, set to real implementations in New and
+	// overridable in tests so /diagnostics assembly does not touch real
+	// interfaces, the route table, or /proc.
+	sysInterfaces   func() []scanner.NetworkInterface
+	sysDefaultRoute func() string
+	sysCapabilities func() []string
+	nmapVersion     func(ctx context.Context) string
 }
 
 // New returns an agent for the given config. A nil logger is replaced with a
@@ -51,7 +65,12 @@ func New(cfg Config) *Agent {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Agent{cfg: cfg, logger: logger}
+	a := &Agent{cfg: cfg, logger: logger}
+	a.sysInterfaces = listNetworkInterfaces
+	a.sysDefaultRoute = readDefaultRouteInterface
+	a.sysCapabilities = readEffectiveCaps
+	a.nmapVersion = func(ctx context.Context) string { return probeNmapVersion(ctx, cfg.NmapBinary) }
+	return a
 }
 
 // Handler returns the agent's HTTP routes.
@@ -59,8 +78,23 @@ func (a *Agent) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.health)
 	mux.HandleFunc("GET /register", a.register)
+	mux.HandleFunc("GET /diagnostics", a.diagnostics)
 	mux.HandleFunc("POST /jobs", a.submitJob)
 	return mux
+}
+
+// diagnostics returns the agent's network self-view (interfaces, scan source,
+// resolved/default-route interface, pin mode, nmap version, capabilities, and
+// computed warnings) so the app can surface the source/route/interface picture
+// without a docker exec. Same mTLS client-identity check as the other endpoints;
+// read-only, no secrets.
+func (a *Agent) diagnostics(w http.ResponseWriter, r *http.Request) {
+	if err := a.verifyClient(r); err != nil {
+		a.logger.Warn("rejected diagnostics: client identity", "error", err)
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	writeJSON(w, http.StatusOK, a.collectDiagnostics(r.Context()))
 }
 
 func (a *Agent) health(w http.ResponseWriter, r *http.Request) {

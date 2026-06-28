@@ -18,9 +18,11 @@ RUN go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/scann
 FROM alpine:3.20
 RUN apk add --no-cache nmap nmap-scripts
 WORKDIR /app
-COPY --from=build /out/scanner-agent /app/scanner-agent
+# Install on PATH so the bare name resolves for the Compose healthcheck
+# (`scanner-agent --healthcheck`) and for interactive `docker exec`.
+COPY --from=build /out/scanner-agent /usr/local/bin/scanner-agent
 # Runs as root so nmap can use the raw sockets granted by NET_RAW. The container
 # still drops every other capability (see compose), keeping the blast radius to
 # this isolated discovery component.
 EXPOSE 8443
-ENTRYPOINT ["/app/scanner-agent"]
+ENTRYPOINT ["scanner-agent"]

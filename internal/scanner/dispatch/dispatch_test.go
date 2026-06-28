@@ -2,7 +2,15 @@ package dispatch
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"net"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/devSealWare/LightIPAM/internal/scanner"
@@ -88,9 +96,81 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestDiagnostics(t *testing.T) {
+	url, d := startAgent(t)
+	diag, err := d.Diagnostics(context.Background(), url)
+	if err != nil {
+		t.Fatalf("diagnostics: %v", err)
+	}
+	if diag.AgentID != "agent-1" {
+		t.Fatalf("expected agent-1, got %q", diag.AgentID)
+	}
+	// No egress configured on the test agent, so the pin mode is the default.
+	if diag.PinMode != "auto" {
+		t.Fatalf("expected default pin mode auto, got %q", diag.PinMode)
+	}
+}
+
 func TestDispatchUnreachableAgent(t *testing.T) {
 	_, d := startAgent(t)
-	if _, err := d.Dispatch(context.Background(), "https://127.0.0.1:1", job()); err == nil {
+	_, err := d.Dispatch(context.Background(), "https://127.0.0.1:1", job())
+	if err == nil {
 		t.Fatal("expected error contacting unreachable agent")
+	}
+	// The refused connection is classified as a TCP failure, not an opaque wrap.
+	if !strings.Contains(err.Error(), "connection failed") {
+		t.Fatalf("expected a classified TCP failure, got %q", err)
+	}
+}
+
+func TestClassifyDialError(t *testing.T) {
+	// Mirror how the HTTP client wraps transport errors: in a *url.Error.
+	wrap := func(e error) error {
+		return &url.Error{Op: "Post", URL: "https://scanner-agent:8443/jobs", Err: e}
+	}
+
+	dns := wrap(&net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Name: "scanner-agent", IsNotFound: true}})
+	tcp := wrap(&net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}})
+	tlsErr := wrap(&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"dns", dns, "not resolvable"},
+		{"tcp", tcp, "connection failed"},
+		{"tls", tlsErr, "mTLS/certificate"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyDialError(tc.err)
+			if got == nil {
+				t.Fatalf("classifyDialError returned nil for %v", tc.err)
+			}
+			if !strings.Contains(got.Error(), tc.want) {
+				t.Fatalf("classifyDialError(%s) = %q, want substring %q", tc.name, got, tc.want)
+			}
+			// The original transport error must remain unwrappable for logs.
+			if !errors.Is(got, tc.err) {
+				t.Fatalf("%s: classified error dropped the original (errors.Is failed)", tc.name)
+			}
+		})
+	}
+
+	// DNS must win over the generic *net.OpError it is wrapped in.
+	var opErr *net.OpError
+	if errors.As(dns, &opErr) {
+		if got := classifyDialError(dns); !strings.Contains(got.Error(), "not resolvable") {
+			t.Fatalf("DNS error must classify as unresolvable even though it is an OpError, got %q", got)
+		}
+	}
+
+	// An unknown error keeps the original wording rather than mislabeling it.
+	if got := classifyDialError(errors.New("weird")); !strings.Contains(got.Error(), "contact agent") {
+		t.Fatalf("unknown error should fall back to the generic wrapper, got %q", got)
+	}
+	if classifyDialError(nil) != nil {
+		t.Fatal("classifyDialError(nil) should be nil")
 	}
 }

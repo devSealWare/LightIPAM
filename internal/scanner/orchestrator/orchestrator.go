@@ -343,6 +343,23 @@ type enroller interface {
 	FetchRegistration(ctx context.Context, endpointURL string) (scanner.AgentRegistration, error)
 }
 
+// diagnoser is the subset of the dispatcher used to fetch an agent's network
+// self-view. Optional, like enroller.
+type diagnoser interface {
+	Diagnostics(ctx context.Context, endpointURL string) (scanner.AgentDiagnostics, error)
+}
+
+// AgentDiagnostics fetches an agent's network self-view (interfaces, scan
+// source/route, pin mode, nmap version, capabilities, warnings) over mTLS, for
+// the app's agent detail page.
+func (s *Service) AgentDiagnostics(ctx context.Context, endpointURL string) (scanner.AgentDiagnostics, error) {
+	dg, ok := s.dispatcher.(diagnoser)
+	if !ok || !s.DispatchEnabled() {
+		return scanner.AgentDiagnostics{}, fmt.Errorf("scanner dispatch is not configured")
+	}
+	return dg.Diagnostics(ctx, endpointURL)
+}
+
 // DiscoverAgent pulls an agent's self-reported identity from its /register
 // endpoint over mTLS and enrolls it (as a pending agent if new). The boolean
 // reports whether a new agent was created.

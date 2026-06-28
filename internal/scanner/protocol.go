@@ -189,6 +189,29 @@ type ScanError struct {
 	Target  string `json:"target,omitempty"`
 }
 
+// NetworkInterface is one of the agent's local interfaces and its addresses, as
+// reported by the diagnostics endpoint.
+type NetworkInterface struct {
+	Name  string   `json:"name"`
+	Addrs []string `json:"addrs"`
+}
+
+// AgentDiagnostics is the agent's network self-view, returned by GET /diagnostics
+// and surfaced on the app's agent detail page. It lets an operator see the
+// source/route/interface picture (and any pin/route mismatch) without a
+// docker exec. It is read-only and carries no secrets.
+type AgentDiagnostics struct {
+	AgentID               string             `json:"agent_id"`
+	Interfaces            []NetworkInterface `json:"interfaces"`
+	ScanSourceIP          string             `json:"scan_source_ip,omitempty"`
+	ResolvedScanInterface string             `json:"resolved_scan_interface,omitempty"`
+	DefaultRouteInterface string             `json:"default_route_interface,omitempty"`
+	PinMode               string             `json:"pin_mode"`
+	NmapVersion           string             `json:"nmap_version,omitempty"`
+	Capabilities          []string           `json:"capabilities,omitempty"`
+	Warnings              []string           `json:"warnings,omitempty"`
+}
+
 // Valid reports whether the scan type is a known protocol value.
 func (t ScanType) Valid() bool {
 	switch t {

@@ -1,0 +1,130 @@
+{{ define "content" }}{{ template "app_shell" . }}{{ end }}
+{{ define "page" }}
+  <div>
+    <header class="glass-panel rounded-[28px] px-5 py-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <a class="text-sm font-medium text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" href="/agents">Scanner Agents</a>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal text-zinc-950 dark:text-white">{{ .ScanAgent.Name }}</h1>
+        </div>
+        <div class="flex items-center gap-2">
+          {{ if eq .ScanAgent.Status "pending" }}
+          <form method="post" action="/agents/{{ .ScanAgent.ID }}/approve">
+            <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+            <button class="button-primary" type="submit">Approve</button>
+          </form>
+          {{ end }}
+          <a class="button-muted" href="/agents/{{ .ScanAgent.ID }}/edit">Edit</a>
+        </div>
+      </div>
+    </header>
+
+    {{ if .Error }}
+    <div class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">{{ .Error }}</div>
+    {{ end }}
+
+    <section class="glass-panel mt-5 rounded-[28px] p-6">
+      <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Identity</h2>
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Endpoint</dt>
+          <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ .ScanAgent.EndpointURL }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Status</dt>
+          <dd class="mt-1">{{ template "status_badge" .ScanAgent.Status }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Allowed CIDRs</dt>
+          <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ join .ScanAgent.AllowedCIDRs ", " }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Version</dt>
+          <dd class="mt-1 text-sm text-zinc-700 dark:text-zinc-200">{{ or .ScanAgent.Version "—" }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Last seen</dt>
+          <dd class="mt-1 text-sm text-zinc-700 dark:text-zinc-200">{{ datetimeptr .ScanAgent.LastSeenAt }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Auto-import</dt>
+          <dd class="mt-1 text-sm text-zinc-700 dark:text-zinc-200">{{ if .ScanAgent.AutoImport }}On{{ else }}Off{{ end }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="glass-panel mt-5 rounded-[28px] p-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div class="max-w-2xl">
+          <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Network diagnostics</h2>
+          <p class="mt-1 text-sm leading-6 text-zinc-500 dark:text-zinc-400">Probe the agent's interfaces, scan source, and routing on demand. This spots a pin/route mismatch — the macvlan-vs-routed-subnet footgun — without a <span class="font-mono">docker exec</span>. Read-only; nothing is saved.</p>
+        </div>
+        <form method="post" action="/agents/{{ .ScanAgent.ID }}/diagnostics">
+          <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
+          <button class="button-primary whitespace-nowrap" type="submit"{{ if not .DispatchReady }} disabled{{ end }}>Run diagnostics</button>
+        </form>
+      </div>
+
+      {{ if not .DispatchReady }}
+      <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+        The scanner connection isn't set up yet, so the app can't reach this agent to run diagnostics.
+      </div>
+      {{ end }}
+
+      {{ with .AgentDiagnostics }}
+      <div class="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+        {{ if .Warnings }}
+        <div class="space-y-2">
+          {{ range .Warnings }}
+          <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{{ . }}</div>
+          {{ end }}
+        </div>
+        {{ else }}
+        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">No routing or pin-mode issues detected.</div>
+        {{ end }}
+
+        <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Scan source IP</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ or .ScanSourceIP "—" }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Resolved scan interface</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ or .ResolvedScanInterface "—" }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Default-route interface</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ or .DefaultRouteInterface "—" }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Pin mode</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ .PinMode }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">nmap version</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ or .NmapVersion "—" }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Capabilities</dt>
+            <dd class="mt-1 font-mono text-sm text-zinc-700 dark:text-zinc-200">{{ if .Capabilities }}{{ join .Capabilities ", " }}{{ else }}—{{ end }}</dd>
+          </div>
+        </dl>
+
+        <h3 class="mt-6 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Interfaces</h3>
+        {{ if .Interfaces }}
+        <div class="mt-2 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          {{ range .Interfaces }}
+          <div class="grid grid-cols-[0.5fr_1.5fr] items-baseline gap-4 border-b border-zinc-100 px-4 py-2.5 text-sm last:border-b-0 dark:border-zinc-800">
+            <span class="font-mono font-semibold text-zinc-700 dark:text-zinc-200">{{ .Name }}</span>
+            <span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ if .Addrs }}{{ join .Addrs ", " }}{{ else }}(no addresses){{ end }}</span>
+          </div>
+          {{ end }}
+        </div>
+        {{ else }}
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">No interfaces reported.</p>
+        {{ end }}
+      </div>
+      {{ end }}
+    </section>
+  </div>
+{{ end }}

@@ -38,6 +38,10 @@ type PageData struct {
 	AuditActors       []store.User
 	ScanAgents        []store.ScanAgent
 	ScanAgent         store.ScanAgent
+	// AgentDiagnostics, when set, renders the agent's network self-view (source/
+	// route/interface, pin mode, nmap version, capabilities, warnings) on the
+	// agent detail page after "Run diagnostics" (ADR 0027 §3).
+	AgentDiagnostics *scanner.AgentDiagnostics
 	ScanJobs          []store.ScanJob
 	ScanJob           store.ScanJob
 	ScanObservations  []scanner.Observation

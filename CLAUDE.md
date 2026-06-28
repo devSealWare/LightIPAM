@@ -141,6 +141,24 @@ One discovery-UX follow-up has since merged on top of Phase 6: **subnet auto-cre
 import + "Import all"** (ADR 0026) — see the Current State bullet and the matching
 section below. App-side only, no migration.
 
+**Planned next (not started): routing-aware scanner egress + scan diagnostics (ADR
+0027).** A field deployment on Alpine showed a macvlan scanner silently finding **zero
+hosts** when scanning a *routed* subnet: the macvlan overlay pins every nmap probe to the
+macvlan source IP, which disagrees with the kernel route to a routed target, so host
+discovery returns nothing and the job reports `succeeded` with no observations. The plan
+makes egress routing-aware by default — `AGENT_SCAN_PIN_MODE` (default `auto`) pins only
+L2-adjacent targets and lets routed ones use the default route, so a single macvlan agent
+handles both **with no operator config change** (`always` = old unconditional pin, `off` =
+never pin). Plus self-explaining zero-host/mismatch notices, an agent `GET /diagnostics`
+endpoint surfaced on `/agents/{id}`, classified app→agent dispatch errors (DNS/TCP/TLS/
+HTTP — the `lookup scanner-agent ... no such host` confusion becomes "container not
+running"), a `scanner-agent --healthcheck` + Compose healthcheck, and docs (bridge-vs-
+macvlan decision matrix, troubleshooting, a one-scanner-per-VLAN example). The **no-code
+docs safety net** (macvlan routed-subnet warning, decision matrix, troubleshooting in
+`docs/SCANNER_AGENT.md`; cautions in the macvlan compose + `.env.example`) is **already
+written**; the behavioral changes are sequenced in ADR 0027. App stays unprivileged, no
+client JS, no migration. Confirm with the user before starting the code.
+
 A full Phase 1–5 audit (2026-06-19) confirmed the repo was ready
 for Phase 6: build/test/vet/`docker compose build` all green, migrations 1–17
 ordered, all 10 scan types wired end-to-end, and the Phase 5 security code (secret
