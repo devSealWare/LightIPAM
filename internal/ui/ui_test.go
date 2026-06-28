@@ -141,6 +141,20 @@ func TestRenderTemplates(t *testing.T) {
 			AllowedCIDRs: []string{"192.168.0.0/16"},
 			Status:       "pending",
 		},
+		AgentDiagnostics: &scanner.AgentDiagnostics{
+			AgentID:               "agent-1",
+			ScanSourceIP:          "192.168.0.9",
+			ResolvedScanInterface: "eth0",
+			DefaultRouteInterface: "eth1",
+			PinMode:               "auto",
+			NmapVersion:           "7.94",
+			Capabilities:          []string{"NET_RAW"},
+			Interfaces: []scanner.NetworkInterface{
+				{Name: "eth0", Addrs: []string{"192.168.0.9/28"}},
+				{Name: "eth1", Addrs: []string{"172.18.0.2/16"}},
+			},
+			Warnings: []string{"The scan source is on eth0 but the default route is eth1; routed targets will use the default route (not pinned)."},
+		},
 		ScanJobs: []store.ScanJob{{
 			ID:           "job-1",
 			AgentName:    "local-scanner-agent",
@@ -313,6 +327,7 @@ func TestRenderTemplates(t *testing.T) {
 		"scan_new.html",
 		"scan_detail.html",
 		"agents.html",
+		"agent_detail.html",
 		"agent_form.html",
 		"schedules.html",
 		"schedule_form.html",
@@ -596,6 +611,50 @@ func TestMFASettingsRenders(t *testing.T) {
 			t.Error("enabled view should offer disable form")
 		}
 	})
+}
+
+// TestAgentDetailDiagnosticsRender guards the agent detail page (ADR 0027 §3):
+// the "Run diagnostics" control, and — when a diagnostics result is present — the
+// warnings, the source/route summary, and the interface rows.
+func TestAgentDetailDiagnosticsRender(t *testing.T) {
+	data := PageData{
+		User:          store.User{ID: "u1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:          "token",
+		DispatchReady: true,
+		ScanAgent: store.ScanAgent{
+			ID:           "agent-1",
+			Name:         "local-scanner-agent",
+			EndpointURL:  "https://scanner-agent:8443",
+			AllowedCIDRs: []string{"192.168.0.0/16"},
+			Status:       "active",
+		},
+		AgentDiagnostics: &scanner.AgentDiagnostics{
+			AgentID:               "agent-1",
+			ScanSourceIP:          "192.168.0.9",
+			ResolvedScanInterface: "eth0",
+			DefaultRouteInterface: "eth1",
+			PinMode:               "auto",
+			NmapVersion:           "7.94",
+			Capabilities:          []string{"NET_RAW"},
+			Interfaces:            []scanner.NetworkInterface{{Name: "eth0", Addrs: []string{"192.168.0.9/28"}}},
+			Warnings:              []string{"routed targets will use the default route (not pinned)"},
+		},
+	}
+	body := renderToString(t, "agent_detail.html", data)
+	for _, want := range []string{
+		`action="/agents/agent-1/diagnostics"`,
+		"Run diagnostics",
+		"192.168.0.9",    // scan source IP
+		"eth1",           // default-route interface
+		"7.94",           // nmap version
+		"NET_RAW",        // capability
+		"192.168.0.9/28", // interface address
+		"routed targets will use the default route (not pinned)", // warning
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("agent detail missing %q", want)
+		}
+	}
 }
 
 func renderToString(t *testing.T, name string, data PageData) string {

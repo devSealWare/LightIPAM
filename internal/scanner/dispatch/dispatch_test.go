@@ -96,6 +96,21 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestDiagnostics(t *testing.T) {
+	url, d := startAgent(t)
+	diag, err := d.Diagnostics(context.Background(), url)
+	if err != nil {
+		t.Fatalf("diagnostics: %v", err)
+	}
+	if diag.AgentID != "agent-1" {
+		t.Fatalf("expected agent-1, got %q", diag.AgentID)
+	}
+	// No egress configured on the test agent, so the pin mode is the default.
+	if diag.PinMode != "auto" {
+		t.Fatalf("expected default pin mode auto, got %q", diag.PinMode)
+	}
+}
+
 func TestDispatchUnreachableAgent(t *testing.T) {
 	_, d := startAgent(t)
 	_, err := d.Dispatch(context.Background(), "https://127.0.0.1:1", job())

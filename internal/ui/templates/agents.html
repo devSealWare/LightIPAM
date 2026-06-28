@@ -43,7 +43,7 @@
       </div>
       {{ range .ScanAgents }}
       <div class="grid grid-cols-[1.1fr_1.2fr_1fr_0.7fr_0.6fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800">
-        <a class="min-w-0" href="/agents/{{ .ID }}/edit">
+        <a class="min-w-0" href="/agents/{{ .ID }}">
           <span class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white">{{ .Name }}</span>
           {{ if .Version }}<span class="block text-xs text-zinc-400">v{{ .Version }}</span>{{ end }}
           {{ if .AutoImport }}<span class="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">Auto-import</span>{{ end }}

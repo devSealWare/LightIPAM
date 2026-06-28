@@ -106,7 +106,9 @@ func main() {
 	// Active discovery is performed by nmap, which uses raw sockets granted to
 	// this container (and only this container) via the NET_RAW capability. The
 	// app never carries this risk profile.
-	nmap := agent.NewNmapDiscoverer(os.Getenv("SCANNER_NMAP_BIN"), resolveEgress(logger))
+	nmapBinary := os.Getenv("SCANNER_NMAP_BIN")
+	egress := resolveEgress(logger)
+	nmap := agent.NewNmapDiscoverer(nmapBinary, egress)
 
 	// SNMP is a separate, unprivileged backend: it speaks UDP/161 from an ordinary
 	// socket (no NET_RAW) to read a gateway's neighbor cache (arp_table), a device's
@@ -149,6 +151,8 @@ func main() {
 		Registration:     registration,
 		ExpectedClientCN: getenv("APP_CLIENT_CN", pki.AppClientCN),
 		Discoverer:       router,
+		Egress:           egress,
+		NmapBinary:       nmapBinary,
 		Logger:           logger,
 	})
 

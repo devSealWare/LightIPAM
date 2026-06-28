@@ -203,9 +203,11 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /agents/new", app.agentNew)
 	mux.HandleFunc("POST /agents", app.agentCreate)
 	mux.HandleFunc("POST /agents/discover", app.agentDiscover)
+	mux.HandleFunc("GET /agents/{id}", app.agentShow)
 	mux.HandleFunc("GET /agents/{id}/edit", app.agentEdit)
 	mux.HandleFunc("POST /agents/{id}", app.agentUpdate)
 	mux.HandleFunc("POST /agents/{id}/approve", app.agentApprove)
+	mux.HandleFunc("POST /agents/{id}/diagnostics", app.agentDiagnostics)
 	mux.HandleFunc("GET /agents/{id}/delete", app.agentDeleteConfirm)
 	mux.HandleFunc("POST /agents/{id}/delete", app.agentDelete)
 

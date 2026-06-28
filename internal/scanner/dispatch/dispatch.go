@@ -144,6 +144,33 @@ func (d *Dispatcher) HealthCheck(ctx context.Context, endpointURL string) (strin
 	return body.ProtocolVersion, nil
 }
 
+// Diagnostics fetches the agent's network self-view from its /diagnostics
+// endpoint over mTLS, for the app's agent detail page. Read-only; the same mTLS
+// client identity gates it as the other endpoints.
+func (d *Dispatcher) Diagnostics(ctx context.Context, endpointURL string) (scanner.AgentDiagnostics, error) {
+	if !d.Enabled() {
+		return scanner.AgentDiagnostics{}, fmt.Errorf("dispatcher is not configured")
+	}
+	url := strings.TrimRight(endpointURL, "/") + "/diagnostics"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return scanner.AgentDiagnostics{}, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return scanner.AgentDiagnostics{}, classifyDialError(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return scanner.AgentDiagnostics{}, fmt.Errorf("agent diagnostics returned %d", resp.StatusCode)
+	}
+	var diag scanner.AgentDiagnostics
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&diag); err != nil {
+		return scanner.AgentDiagnostics{}, fmt.Errorf("decode agent diagnostics: %w", err)
+	}
+	return diag, nil
+}
+
 // classifyDialError maps a transport error from contacting an agent to an
 // actionable category, so an operator can tell the failure modes apart instead
 // of reading one opaque "contact agent" wrapper:
