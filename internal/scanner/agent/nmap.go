@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -24,18 +25,59 @@ type Discoverer interface {
 // parsing without a real nmap binary or raw-socket privileges.
 type commandRunner func(ctx context.Context, name string, args []string) ([]byte, error)
 
+// PinMode selects how the egress source pin (EgressOptions) is applied to a
+// job's targets. The default is auto: pin only the targets that are layer-2
+// adjacent to the scan source interface, and let routed targets use the kernel's
+// default route. See ParsePinMode and planEgress.
+type PinMode string
+
+const (
+	// PinAuto pins a target only when it is L2-adjacent to the scan source
+	// interface (its IP/CIDR falls inside the source subnet); routed targets run
+	// unpinned. This keeps the #37 same-subnet fix while letting one macvlan agent
+	// also scan routed subnets without silently finding zero hosts.
+	PinAuto PinMode = "auto"
+	// PinAlways pins every target to the source interface/IP (the pre-#37
+	// unconditional behavior). Correct only when every target is on the source
+	// segment.
+	PinAlways PinMode = "always"
+	// PinOff never pins; nmap chooses its own egress even when a source IP is set.
+	PinOff PinMode = "off"
+)
+
+// ParsePinMode interprets the AGENT_SCAN_PIN_MODE value, defaulting to auto. It
+// accepts "same-subnet-only" as a back-compat alias of auto (the pin decision is
+// identical; auto simply also warns on a routed mismatch) and treats any
+// unrecognized value as auto, the safe routing-aware default.
+func ParsePinMode(s string) PinMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case string(PinAlways):
+		return PinAlways
+	case string(PinOff):
+		return PinOff
+	default: // "", "auto", "same-subnet-only", or anything unknown
+		return PinAuto
+	}
+}
+
 // EgressOptions pins nmap's raw probes to a specific source interface and
 // address. On a dual-homed agent (control-plane bridge + macvlan LAN) the
 // default route points at the bridge, so without pinning, nmap's SYN/OS probes
 // to a directly-connected LAN target can egress (or have replies return on) the
 // wrong interface and never complete: the ARP ping succeeds — so the MAC is
-// reported — but service/OS detection silently comes back empty. Pinning every
-// scan to the LAN interface makes the results consistent regardless of whether
-// the target shares the agent's subnet. Both fields are empty by default, in
-// which case nmap chooses egress itself (the original bridge-only behavior).
+// reported — but service/OS detection silently comes back empty. Pinning a
+// same-subnet scan to the LAN interface makes the results consistent.
+//
+// The pin is applied per-target according to PinMode (see planEgress): in the
+// default auto mode only targets inside SourceNet (L2-adjacent) are pinned, so a
+// routed target no longer disagrees with the kernel route and silently returns
+// zero hosts. Interface/SourceIP are empty by default, in which case nmap chooses
+// egress itself (the original bridge-only behavior) regardless of mode.
 type EgressOptions struct {
-	Interface string // nmap -e <iface>
-	SourceIP  string // nmap -S <ip>
+	Interface string     // nmap -e <iface>
+	SourceIP  string     // nmap -S <ip>
+	PinMode   PinMode    // how the pin is applied per target (default auto)
+	SourceNet *net.IPNet // the scan source interface's subnet, for auto L2-adjacency
 }
 
 // args renders the egress pin as nmap flags, omitting any unset field.
@@ -48,6 +90,28 @@ func (e EgressOptions) args() []string {
 		out = append(out, "-S", e.SourceIP)
 	}
 	return out
+}
+
+// effectivePinMode normalizes an empty PinMode (the zero value) to auto, so the
+// routing-aware default applies whenever a caller leaves the mode unset.
+func (e EgressOptions) effectivePinMode() PinMode {
+	if e.PinMode == "" {
+		return PinAuto
+	}
+	return e.PinMode
+}
+
+// withoutPin returns a copy with the source interface/address cleared, so its
+// args() render no pin — used for the unpinned (routed/default-route) target set.
+func (e EgressOptions) withoutPin() EgressOptions {
+	e.Interface = ""
+	e.SourceIP = ""
+	return e
+}
+
+// pinConfigured reports whether any source pin is set to apply.
+func (e EgressOptions) pinConfigured() bool {
+	return strings.TrimSpace(e.Interface) != "" || strings.TrimSpace(e.SourceIP) != ""
 }
 
 // NmapDiscoverer drives the nmap binary to perform host discovery, TCP service
@@ -102,8 +166,14 @@ const hostDiscoveryTimeoutSeconds = 60
 // are actually alive (a quick host-discovery sweep), then — only for the live
 // ones — scan ports and let nmap version-probe just the ports it finds open. A
 // target range with nothing alive short-circuits after stage 1 instead of
-// wasting the whole budget probing dead address space. Stage-1 (alive + MAC) and
-// stage-2 (services + OS) findings are merged per host.
+// wasting the whole budget probing dead address space.
+//
+// Egress pinning is routing-aware (see planEgress): the targets are partitioned
+// into a pinned set (L2-adjacent to the scan source interface) and an unpinned
+// set (routed, using the kernel default route), each run through the staged
+// passes with its own egress, then merged per host. In the default auto mode this
+// keeps the #37 same-subnet pin while letting routed targets succeed instead of
+// silently returning zero hosts.
 func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]scanner.Observation, []scanner.ScanError, error) {
 	if job.Mode == scanner.ModePassive {
 		return []scanner.Observation{}, []scanner.ScanError{}, nil
@@ -112,8 +182,99 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 		return nil, nil, fmt.Errorf("scan job has no targets")
 	}
 
+	plan := planEgress(n.egress, job.Targets)
+
+	var allObs []scanner.Observation
+	errs := append([]scanner.ScanError{}, plan.notices...)
+	for _, set := range plan.sets {
+		obs, setErrs, err := n.discoverSet(ctx, job, set.targets, set.egress)
+		if err != nil {
+			return nil, nil, err
+		}
+		// A set that found nothing alive explains itself when a pin is configured —
+		// otherwise a routed scan returns "succeeded" with zero observations and no
+		// clue why (the silent failure ADR 0027 fixes).
+		if len(obs) == 0 {
+			if notice := zeroHostNotice(n.egress, set); notice != nil {
+				errs = append(errs, *notice)
+			}
+		}
+		allObs = append(allObs, obs...)
+		errs = append(errs, setErrs...)
+	}
+
+	return mergeObservations(allObs), errs, nil
+}
+
+// zeroHostNotice explains a set that found no live hosts, in terms of the egress
+// pin, so an operator can tell an empty subnet from a pin/route mismatch. It
+// returns nil when no pin is configured (plain bridge mode — an empty subnet is
+// unremarkable). The three configured cases:
+//
+//   - pinned routed target (always mode pinning across a router): the classic
+//     mismatch — probes leave the wrong interface and replies are lost.
+//   - unpinned routed target (auto/off over the default route): expected — MAC
+//     discovery needs L2 adjacency, so a routed subnet yields no MACs this way.
+//   - pinned adjacent target: the local segment is simply empty.
+func zeroHostNotice(egress EgressOptions, set egressSet) *scanner.ScanError {
+	if !egress.pinConfigured() {
+		return nil
+	}
+	targets := strings.Join(set.targets, ", ")
+	var msg string
+	switch {
+	case set.pinned && setHasRouted(set.targets, egress.SourceNet):
+		msg = fmt.Sprintf("No live hosts discovered for %s. The scanner pins egress to %s "+
+			"(AGENT_SCAN_PIN_MODE=always), but the target is routed (outside the source subnet %s), so probes "+
+			"leave the wrong interface and replies are lost. Set AGENT_SCAN_PIN_MODE=auto, use bridge mode for "+
+			"routed scans, or place a scanner on the target VLAN.",
+			targets, pinSourceLabel(egress), ipNetString(egress.SourceNet))
+	case !set.pinned:
+		msg = fmt.Sprintf("No live hosts discovered for %s over the default route (unpinned). MAC discovery needs "+
+			"layer-2 adjacency, so a routed subnet yields no MACs this way — scan its gateway with "+
+			"arp_table/snmp_inventory, or place a scanner on that VLAN.", targets)
+	default:
+		msg = fmt.Sprintf("No live hosts discovered for %s on the pinned source segment %s.",
+			targets, ipNetString(egress.SourceNet))
+	}
+	return &scanner.ScanError{Code: scanner.CodeScanIgnored, Message: msg}
+}
+
+// setHasRouted reports whether any target in the set is not L2-adjacent to the
+// source subnet (so pinning it would disagree with the kernel route).
+func setHasRouted(targets []string, srcNet *net.IPNet) bool {
+	for _, t := range targets {
+		if classifyAdjacency(t, srcNet) != adjacencyLocal {
+			return true
+		}
+	}
+	return false
+}
+
+// pinSourceLabel renders the configured pin source for a notice ("192.168.0.9 on
+// eth0", or just the IP/interface when only one is known).
+func pinSourceLabel(e EgressOptions) string {
+	switch {
+	case e.SourceIP != "" && e.Interface != "":
+		return fmt.Sprintf("%s on %s", e.SourceIP, e.Interface)
+	case e.SourceIP != "":
+		return e.SourceIP
+	default:
+		return e.Interface
+	}
+}
+
+// discoverSet runs the staged nmap passes (host discovery, then service/OS on the
+// live hosts) over one partition of targets with a specific egress pin, returning
+// the raw stage-1 and stage-2 observations unmerged — the caller merges across
+// sets. A set with nothing alive short-circuits after stage 1; the host-discovery
+// scan type stops after stage 1 unconditionally.
+func (n *NmapDiscoverer) discoverSet(ctx context.Context, job scanner.ScanJob, targets []string, egress EgressOptions) ([]scanner.Observation, []scanner.ScanError, error) {
+	setJob := job
+	setJob.Targets = targets
+
 	// Stage 1: who is alive?
-	alive, errs, err := n.runNmap(ctx, hostDiscoveryArgs(job, n.egress))
+	alive, errs, err := n.runNmap(ctx, hostDiscoveryArgs(setJob, egress))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -128,7 +289,7 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 
 	// Stage 2: port + service/OS detection on the live hosts only. nmap scans the
 	// mode's ports and version-probes only the ones it finds open.
-	scanArgs, err := serviceScanArgs(job, n.egress, observedIPs(alive))
+	scanArgs, err := serviceScanArgs(setJob, egress, observedIPs(alive))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,8 +298,130 @@ func (n *NmapDiscoverer) Discover(ctx context.Context, job scanner.ScanJob) ([]s
 		return nil, nil, err
 	}
 
-	merged := mergeObservations(concatObservations(alive, scanned))
-	return merged, append(errs, scanErrs...), nil
+	return concatObservations(alive, scanned), append(errs, scanErrs...), nil
+}
+
+// egressSet is one partition of a job's targets and the egress pin to apply to
+// them: the pinned set carries the source pin, the unpinned set has it stripped.
+// pinned records which it is, so a zero-host result can explain itself (a pinned
+// routed target is a mismatch; an unpinned routed target is an expected no-MAC).
+type egressSet struct {
+	targets []string
+	egress  EgressOptions
+	pinned  bool
+}
+
+// egressPlan is the routing-aware partition of a job's targets into pinned and
+// unpinned sets, plus any notices (e.g. a CIDR that straddles the source subnet).
+type egressPlan struct {
+	sets    []egressSet
+	notices []scanner.ScanError
+}
+
+// planEgress partitions targets into the sets to scan, according to the pin mode,
+// and reports straddle notices. The classification is pure containment math — it
+// never touches real interfaces or the route table — so it is hermetically
+// unit-tested. Every target lands in exactly one set.
+//
+//   - No pin configured, or mode off: a single unpinned set (nmap chooses egress).
+//   - Mode always: a single pinned set (the pre-#37 unconditional pin).
+//   - Mode auto: targets inside the source subnet are pinned; routed targets are
+//     unpinned; a CIDR that straddles the boundary is scanned unpinned with a notice.
+func planEgress(egress EgressOptions, targets []string) egressPlan {
+	mode := egress.effectivePinMode()
+
+	if !egress.pinConfigured() || mode == PinOff {
+		return egressPlan{sets: []egressSet{{targets: targets, egress: egress.withoutPin(), pinned: false}}}
+	}
+	if mode == PinAlways {
+		return egressPlan{sets: []egressSet{{targets: targets, egress: egress, pinned: true}}}
+	}
+
+	// auto: pin only the L2-adjacent targets.
+	var pinned, unpinned []string
+	var notices []scanner.ScanError
+	for _, t := range targets {
+		switch classifyAdjacency(t, egress.SourceNet) {
+		case adjacencyLocal:
+			pinned = append(pinned, t)
+		case adjacencyStraddle:
+			unpinned = append(unpinned, t)
+			notices = append(notices, scanner.ScanError{
+				Code:   scanner.CodeScanIgnored,
+				Target: t,
+				Message: fmt.Sprintf("Target %s straddles the scan source subnet %s; scanning it over the default route (unpinned). "+
+					"Split the in-subnet portion into its own target to pin it.", t, ipNetString(egress.SourceNet)),
+			})
+		default: // adjacencyRouted
+			unpinned = append(unpinned, t)
+		}
+	}
+
+	plan := egressPlan{notices: notices}
+	if len(pinned) > 0 {
+		plan.sets = append(plan.sets, egressSet{targets: pinned, egress: egress, pinned: true})
+	}
+	if len(unpinned) > 0 {
+		plan.sets = append(plan.sets, egressSet{targets: unpinned, egress: egress.withoutPin(), pinned: false})
+	}
+	return plan
+}
+
+// targetAdjacency describes how a scan target relates to the scan source
+// interface's own subnet, which decides whether egress is pinned for it in auto
+// mode.
+type targetAdjacency int
+
+const (
+	adjacencyLocal    targetAdjacency = iota // fully inside the source subnet (L2-adjacent → pin)
+	adjacencyRouted                          // shares no address with the source subnet (routed → default route)
+	adjacencyStraddle                        // a CIDR that encloses the source subnet plus routed space (→ notice)
+)
+
+// classifyAdjacency reports how token (a bare IPv4 address or a CIDR) relates to
+// srcNet, the scan source interface's subnet. A nil srcNet means the source
+// subnet is unknown, so nothing can be proven L2-adjacent and every target is
+// treated as routed. Pure containment — no real interfaces, no route table.
+func classifyAdjacency(token string, srcNet *net.IPNet) targetAdjacency {
+	if srcNet == nil {
+		return adjacencyRouted
+	}
+	if ip := net.ParseIP(token); ip != nil {
+		if srcNet.Contains(ip) {
+			return adjacencyLocal
+		}
+		return adjacencyRouted
+	}
+	if _, tnet, err := net.ParseCIDR(token); err == nil {
+		return classifyNets(srcNet, tnet)
+	}
+	// Unparseable (should not happen after allowlist validation): do not pin.
+	return adjacencyRouted
+}
+
+// classifyNets relates a target CIDR to the source subnet. Two CIDRs never
+// partially overlap — they are either nested or disjoint — so the target is
+// either contained by the source subnet (local), encloses it (straddle: part
+// local, part routed), or disjoint (routed).
+func classifyNets(srcNet, tnet *net.IPNet) targetAdjacency {
+	srcOnes, _ := srcNet.Mask.Size()
+	tOnes, _ := tnet.Mask.Size()
+	switch {
+	case srcNet.Contains(tnet.IP) && srcOnes <= tOnes:
+		return adjacencyLocal // tnet ⊆ srcNet
+	case tnet.Contains(srcNet.IP) && tOnes < srcOnes:
+		return adjacencyStraddle // srcNet ⊊ tnet
+	default:
+		return adjacencyRouted // disjoint
+	}
+}
+
+// ipNetString renders a *net.IPNet for a message, tolerating nil.
+func ipNetString(n *net.IPNet) string {
+	if n == nil {
+		return "(unknown)"
+	}
+	return n.String()
 }
 
 // runNmap executes one nmap invocation and parses its XML. nmap exits non-zero on
