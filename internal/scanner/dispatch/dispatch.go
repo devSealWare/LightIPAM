@@ -6,9 +6,13 @@ package dispatch
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 
@@ -64,7 +68,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, endpointURL string, job scann
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return scanner.ScanResult{}, fmt.Errorf("contact agent: %w", err)
+		return scanner.ScanResult{}, classifyDialError(err)
 	}
 	defer resp.Body.Close()
 
@@ -99,7 +103,7 @@ func (d *Dispatcher) FetchRegistration(ctx context.Context, endpointURL string) 
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return scanner.AgentRegistration{}, fmt.Errorf("contact agent: %w", err)
+		return scanner.AgentRegistration{}, classifyDialError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -125,7 +129,7 @@ func (d *Dispatcher) HealthCheck(ctx context.Context, endpointURL string) (strin
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("contact agent: %w", err)
+		return "", classifyDialError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -138,4 +142,62 @@ func (d *Dispatcher) HealthCheck(ctx context.Context, endpointURL string) (strin
 		return "", fmt.Errorf("decode agent health: %w", err)
 	}
 	return body.ProtocolVersion, nil
+}
+
+// classifyDialError maps a transport error from contacting an agent to an
+// actionable category, so an operator can tell the failure modes apart instead
+// of reading one opaque "contact agent" wrapper:
+//
+//   - DNS (the agent name does not resolve): the scanner-agent container is not
+//     running or not on the Compose network — the confusing "lookup scanner-agent
+//     ... no such host" symptom from the field report.
+//   - TLS / certificate: reached, but the mTLS handshake or cert validation failed.
+//   - TCP (refused / unreachable / reset): resolved, but the port did not accept
+//     the connection.
+//
+// The original error is always wrapped (%w) so the underlying detail is preserved
+// for logs. errors.As walks the *url.Error the HTTP client returns, so the inner
+// net/tls/x509 type is found regardless of wrapping. DNS is checked before the
+// generic *net.OpError because a DNS failure is itself wrapped in an OpError.
+func classifyDialError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return fmt.Errorf("scanner-agent is not resolvable (%q) — check the scanner-agent container is running "+
+			"and attached to the Compose network (docker compose --profile scanner ps): %w", dnsErr.Name, err)
+	}
+
+	if isTLSError(err) {
+		return fmt.Errorf("scanner-agent was reached, but mTLS/certificate validation failed — check the app and "+
+			"agent share the managed CA and the certs are current: %w", err)
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return fmt.Errorf("scanner-agent host resolved, but the connection failed — the agent's port may be "+
+			"refused or unreachable (is the agent listening, and is a firewall in the way?): %w", err)
+	}
+
+	// Unknown transport error: keep the original wording so nothing is lost.
+	return fmt.Errorf("contact agent: %w", err)
+}
+
+// isTLSError reports whether err is (or wraps) a TLS handshake or certificate
+// validation failure.
+func isTLSError(err error) bool {
+	var (
+		certVerify  *tls.CertificateVerificationError
+		recordErr   tls.RecordHeaderError
+		certInvalid x509.CertificateInvalidError
+		unknownAuth x509.UnknownAuthorityError
+		hostErr     x509.HostnameError
+	)
+	return errors.As(err, &certVerify) ||
+		errors.As(err, &recordErr) ||
+		errors.As(err, &certInvalid) ||
+		errors.As(err, &unknownAuth) ||
+		errors.As(err, &hostErr)
 }
