@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44" role="img" aria-label="LightIPAM">
+  <title>LightIPAM</title>
+  <!-- Background -->
+  <rect width="44" height="44" rx="9.68" fill="#0f172a"/>
+  <!-- /24 label -->
+  <text x="22" y="22" text-anchor="middle" dominant-baseline="central"
+        font-family="'Courier New', Courier, monospace" font-size="14.08"
+        font-weight="700" fill="#e2e8f0">/24</text>
+  <!-- Divider -->
+  <line x1="7.92" y1="30.8" x2="36.08" y2="30.8" stroke="#334155" stroke-width="0.88"/>
+  <!-- CIDR sub-label -->
+  <text x="22" y="38" text-anchor="middle" dominant-baseline="central"
+        font-family="'Courier New', Courier, monospace" font-size="5.72"
+        fill="#64748b">CIDR</text>
+</svg>
