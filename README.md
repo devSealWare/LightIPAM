@@ -1,9 +1,14 @@
-# Light IPAM
+<p align="left">
+  <img src=".github/assets/lightipam-lockup-light.svg#gh-light-mode-only" alt="LightIPAM" width="260">
+  <img src=".github/assets/lightipam-lockup-dark.svg#gh-dark-mode-only" alt="LightIPAM" width="260">
+</p>
+
+# LightIPAM
 
 [![Release](https://img.shields.io/github/v/release/devSealWare/LightIPAM?sort=semver)](https://github.com/devSealWare/LightIPAM/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Light IPAM is a lightweight IP address management system with a clean web UI and
+LightIPAM is a lightweight IP address management system with a clean web UI and
 optional, tightly-scoped active network discovery. It targets small-business
 networks first while keeping its architecture credible for larger environments.
 
@@ -226,10 +231,15 @@ phase is open. See the roadmap for details.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security Model](docs/SECURITY.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Branding](docs/BRANDING.md)
 - [Contributing](CONTRIBUTING.md)
 - [Scanner Protocol](docs/SCANNER_PROTOCOL.md) · [Scanner Agent](docs/SCANNER_AGENT.md) · [Scanner Discovery](docs/SCANNER_DISCOVERY.md)
 - Architecture decisions: [docs/adr](docs/adr)
 
+The GitHub social preview image is committed at
+`.github/assets/github-social-preview.png`; GitHub will not use it automatically.
+A maintainer must set it manually in repository Settings -> Social preview.
+
 ## License
 
-Light IPAM is released under the [Apache License 2.0](LICENSE).
+LightIPAM is released under the [Apache License 2.0](LICENSE).

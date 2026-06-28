@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="LightIPAM — Lightweight IP address management">
+  <title>LightIPAM — Lightweight IP address management</title>
+  <rect width="1280" height="640" fill="#0f172a"/>
+  <!-- Large mark -->
+  <rect x="80" y="210" width="220" height="220" rx="48.4" fill="#1e293b"/>
+  <text x="190" y="320" text-anchor="middle" dominant-baseline="central"
+        font-family="'Courier New', Courier, monospace" font-size="70"
+        font-weight="700" fill="#e2e8f0">/24</text>
+  <line x1="120" y1="385" x2="260" y2="385" stroke="#334155" stroke-width="4"/>
+  <text x="190" y="412" text-anchor="middle" dominant-baseline="central"
+        font-family="'Courier New', Courier, monospace" font-size="28"
+        fill="#64748b">CIDR</text>
+  <!-- Wordmark -->
+  <text x="340" y="282" font-family="system-ui, Arial, sans-serif" font-size="48"
+        font-weight="400" fill="#64748b" letter-spacing="16">LIGHT</text>
+  <text x="338" y="372" font-family="system-ui, Arial, sans-serif" font-size="110"
+        font-weight="700" fill="#f1f5f9" letter-spacing="-3">IPAM</text>
+  <!-- Tagline -->
+  <text x="340" y="430" font-family="'Courier New', Courier, monospace" font-size="24"
+        fill="#475569">Lightweight IP address management</text>
+</svg>

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -834,5 +835,27 @@ func TestAccountAPITokensRender(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("account tokens section missing %q", want)
 		}
+	}
+}
+
+func TestBrandStaticAssets(t *testing.T) {
+	staticReq := httptest.NewRequest(http.MethodGet, "/brand/mark.svg", nil)
+	staticRec := httptest.NewRecorder()
+	StaticHandler().ServeHTTP(staticRec, staticReq)
+	if staticRec.Code != http.StatusOK {
+		t.Fatalf("brand mark status = %d, want %d", staticRec.Code, http.StatusOK)
+	}
+	if !strings.Contains(staticRec.Body.String(), "<svg") {
+		t.Fatal("brand mark response did not contain SVG")
+	}
+
+	manifestReq := httptest.NewRequest(http.MethodGet, "/site.webmanifest", nil)
+	manifestRec := httptest.NewRecorder()
+	SiteManifest(manifestRec, manifestReq)
+	if manifestRec.Code != http.StatusOK {
+		t.Fatalf("manifest status = %d, want %d", manifestRec.Code, http.StatusOK)
+	}
+	if !strings.Contains(manifestRec.Body.String(), `"name": "LightIPAM"`) {
+		t.Fatal("manifest response did not contain LightIPAM metadata")
 	}
 }

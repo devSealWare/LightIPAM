@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"strings"
 	"time"
@@ -13,35 +14,35 @@ import (
 	"github.com/devSealWare/LightIPAM/internal/store"
 )
 
-//go:embed templates/*.html static/*.css static/*.js
+//go:embed templates/*.html static
 var assets embed.FS
 
 type PageData struct {
-	Title             string
-	Error             string
-	CSRF              string
-	User              store.User
-	Stats             store.DashboardStats
-	Sites             []store.Site
-	Subnets           []store.Subnet
-	Subnet            store.Subnet
-	Addresses         []store.IPAddress
-	Address           store.IPAddress
-	AddressStates     []string
-	Devices           []store.Device
-	DeviceGroups      []store.DeviceGroup
-	Device            store.Device
-	MACAddresses      []store.MACAddress
-	AuditLogs         []store.AuditLog
-	AuditActions      []string
-	AuditSubjects     []string
-	AuditActors       []store.User
-	ScanAgents        []store.ScanAgent
-	ScanAgent         store.ScanAgent
+	Title         string
+	Error         string
+	CSRF          string
+	User          store.User
+	Stats         store.DashboardStats
+	Sites         []store.Site
+	Subnets       []store.Subnet
+	Subnet        store.Subnet
+	Addresses     []store.IPAddress
+	Address       store.IPAddress
+	AddressStates []string
+	Devices       []store.Device
+	DeviceGroups  []store.DeviceGroup
+	Device        store.Device
+	MACAddresses  []store.MACAddress
+	AuditLogs     []store.AuditLog
+	AuditActions  []string
+	AuditSubjects []string
+	AuditActors   []store.User
+	ScanAgents    []store.ScanAgent
+	ScanAgent     store.ScanAgent
 	// AgentDiagnostics, when set, renders the agent's network self-view (source/
 	// route/interface, pin mode, nmap version, capabilities, warnings) on the
 	// agent detail page after "Run diagnostics" (ADR 0027 §3).
-	AgentDiagnostics *scanner.AgentDiagnostics
+	AgentDiagnostics  *scanner.AgentDiagnostics
 	ScanJobs          []store.ScanJob
 	ScanJob           store.ScanJob
 	ScanObservations  []scanner.Observation
@@ -289,6 +290,29 @@ func entityTypeLabel(entityType string) string {
 func StaticCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	http.ServeFileFS(w, r, assets, "static/app.css")
+}
+
+func StaticHandler() http.Handler {
+	staticFS, err := fs.Sub(assets, "static")
+	if err != nil {
+		return http.NotFoundHandler()
+	}
+	return http.FileServerFS(staticFS)
+}
+
+func Favicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/x-icon")
+	http.ServeFileFS(w, r, assets, "static/favicon.ico")
+}
+
+func AppleTouchIcon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	http.ServeFileFS(w, r, assets, "static/apple-touch-icon.png")
+}
+
+func SiteManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+	http.ServeFileFS(w, r, assets, "static/site.webmanifest")
 }
 
 func StaticJS(w http.ResponseWriter, r *http.Request) {
