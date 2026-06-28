@@ -230,6 +230,16 @@ unprivileged (zero capabilities, no nmap).
 No issue is in progress. **Phases 1-6 are complete** (see `docs/ROADMAP.md`), so the
 next phase is open — confirm direction with the user. Remaining candidate work:
 
+- **Routing-aware scanner egress + scan diagnostics (planned, ADR 0027).** A macvlan
+  scanner pins every nmap probe to its macvlan source IP, so pointing it at a *routed*
+  subnet silently finds zero hosts (pin vs. route mismatch). Plan: `AGENT_SCAN_PIN_MODE`
+  (default `auto`) pins only L2-adjacent targets and lets routed ones use the default
+  route — one agent handles both with no config change; plus self-explaining zero-host
+  notices, an agent `/diagnostics` endpoint on `/agents/{id}`, classified app→agent
+  dispatch errors, a `--healthcheck` subcommand + Compose healthcheck, and a
+  bridge-vs-macvlan decision matrix / troubleshooting docs. The no-code docs safety net
+  is already in `docs/SCANNER_AGENT.md`; the rest is sequenced in ADR 0027. App stays
+  unprivileged, no client JS, no migration.
 - **Terraform provider** against the now-stable `/api/v1` (the `lightipam-cli` is the
   reference client; the user chose a CLI first for ADR 0024).
 - **Online agent-pull cert enrollment** — the one explicitly-deferred Phase 5 item:

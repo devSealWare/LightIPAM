@@ -46,6 +46,15 @@
 # macvlan interface (and vice versa). That is intentional and harmless here —
 # the host/app reach the agent over the bridge, and the macvlan is used only for
 # the agent's outbound scans of the LAN.
+#
+# IMPORTANT — macvlan is for the subnet the agent is L2-connected to. This overlay
+# pins EVERY nmap probe to the macvlan interface (AGENT_SCAN_SOURCE_IP below). If you
+# scan a DIFFERENT, ROUTED subnet (reached through a firewall/router, not on the
+# macvlan segment), the source pin and the kernel route disagree, host discovery finds
+# zero live hosts, and the scan "succeeds" with no observations. For routed subnets use
+# plain bridge mode (the base `--profile scanner` stack, no overlay); MACs then come
+# only from a gateway SNMP/ARP-table scan (arp_table). A routing-aware default that lets
+# one agent do both automatically is planned — see docs/adr/0027-routing-aware-scanner-egress.md.
 
 services:
   scanner-agent:
