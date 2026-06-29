@@ -311,22 +311,31 @@ import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
   importing everything. App-side only, no migration, no new privilege; reuses the
   existing `CreateSubnet` + `ImportDiscovery` paths and their audit events.
 
-## Planned
+## Post-1.0 hardening (shipped in v1.1.0)
 
-- **Routing-aware scanner egress + scan diagnostics (planned, ADR 0027).** A field
+- **Routing-aware scanner egress + scan diagnostics (done, ADR 0027).** A field
   report showed that a macvlan scanner (which pins every nmap probe to the macvlan
   source IP) silently finds **zero hosts** when pointed at a *routed* subnet, because
   the source pin and the kernel route disagree — the scan returns `succeeded` with no
-  observations. The plan makes egress **routing-aware by default**: a new
-  `AGENT_SCAN_PIN_MODE` (default `auto`) pins a target only when it is L2-adjacent to
-  the scan source interface and lets routed targets follow the default route, so one
-  macvlan agent handles same-subnet *and* routed scans **with no operator config
-  change** (`always` restores the old unconditional pin; `off` disables it). Alongside:
-  self-explaining zero-host/mismatch notices, an agent `GET /diagnostics` view surfaced
-  on `/agents/{id}`, classified app→agent dispatch errors (DNS / TCP / TLS / HTTP — the
+  observations. Egress is now **routing-aware by default**: `AGENT_SCAN_PIN_MODE`
+  (default `auto`) pins a target only when it is L2-adjacent to the scan source
+  interface and lets routed targets follow the default route, so one macvlan agent
+  handles same-subnet *and* routed scans **with no operator config change** (`always`
+  restores the old unconditional pin; `off` disables it). Alongside: self-explaining
+  zero-host/mismatch notices, an agent `GET /diagnostics` view surfaced on
+  `/agents/{id}`, classified app→agent dispatch errors (DNS / TCP / TLS / HTTP — the
   confusing `lookup scanner-agent ... no such host` becomes "container not running"), a
   `scanner-agent --healthcheck` + Compose healthcheck, and docs (bridge-vs-macvlan
-  decision matrix, troubleshooting, a one-scanner-per-VLAN example). The no-code docs
-  safety net (macvlan routed-subnet warning, decision matrix, troubleshooting) ships
-  with the ADR; the behavioral changes are sequenced in ADR 0027. App stays unprivileged,
-  no client JS, no new mandatory dependency, no migration.
+  decision matrix, troubleshooting, a one-scanner-per-VLAN example). App stays
+  unprivileged, no client JS, no new mandatory dependency, no migration.
+- **Schedule scope validation + last-run outcome (done, ADR 0028).** A schedule saved
+  with a configuration the agent rejects at dispatch (e.g. a mistyped CIDR) used to fail
+  silently on every tick. Scan scope is now validated at save time on both the scan and
+  schedule forms (matching the agent's dispatch rules and allowlist containment), and
+  each schedule records its most recent run outcome (succeeded / failed / rejected) and
+  failure reason in a **Last run** column (migration 21, additive). App-side only, no
+  new privilege, no client JS.
+
+## Planned
+
+- The next phase is open — confirm direction with the user before starting.

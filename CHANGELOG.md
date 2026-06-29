@@ -8,6 +8,53 @@ Starting at v1.0.0, the JSON API (`/api/v1`) and the scanner protocol (`v1`) are
 treated as stable surfaces: a breaking change to either, or a destructive database
 migration, requires a major-version bump.
 
+## [1.1.0] - 2026-06-29
+
+A backward-compatible release: no breaking `/api/v1` or scanner-protocol changes,
+and the one new database migration (21) is additive. The headline is routing-aware
+scanner egress, which fixes a macvlan agent silently finding zero hosts on routed
+subnets.
+
+### Added
+
+- Routing-aware scanner egress: `AGENT_SCAN_PIN_MODE` (default `auto`) pins nmap
+  probes to the macvlan source address only for L2-adjacent targets and lets routed
+  targets follow the default route, so a single macvlan agent handles both adjacent
+  and routed subnets with no per-scan configuration (`always` = the old unconditional
+  pin, `off` = never pin) (ADR 0027).
+- Agent network diagnostics: a `GET /diagnostics` endpoint and an `/agents/{id}`
+  detail panel surface the agent's interfaces, scan source/route, pin mode, nmap
+  version, and capabilities — plus any pin/route mismatch — without a `docker exec`
+  (ADR 0027).
+- A `scanner-agent --healthcheck` subcommand and a Compose healthcheck for the
+  scanner-agent service (ADR 0027).
+- Save-time scan-scope validation on the scan and schedule forms: an invalid IPv4
+  CIDR/target, or a schedule whose allowed CIDRs fall outside the chosen agent's
+  allowlist, is now rejected inline instead of failing silently on every scheduler
+  tick (ADR 0028).
+- A "Last run" column on the schedules page showing each schedule's most recent
+  outcome (succeeded / failed / rejected) and failure reason (migration 21,
+  ADR 0028).
+- A device service-count column on the Devices table and per-subnet utilization on
+  the dashboard.
+- Light IPAM brand assets: logo lockups, favicons, an Apple touch icon, and a web
+  app manifest.
+
+### Changed
+
+- Zero-host and pin/route-mismatch scans now return self-explaining notices, and
+  app-to-agent dispatch failures are classified by layer (DNS/TCP/TLS/HTTP) — for
+  example, a missing agent container reports "container not running" instead of a
+  raw `lookup scanner-agent … no such host` (ADR 0027).
+
+### Fixed
+
+- A macvlan scanner agent no longer silently returns zero hosts when scanning a
+  routed subnet (ADR 0027).
+- A scan schedule saved with a configuration the agent rejects at dispatch (e.g. a
+  mistyped CIDR) no longer fails silently on every tick; it is caught at save time
+  and its last-run outcome is surfaced on the schedules page (ADR 0028).
+
 ## [1.0.0] - 2026-06-23
 
 First stable release. Light IPAM is a lightweight IP address management system with
@@ -80,4 +127,5 @@ separate, optional scanner agent.
   into the binaries and reported on `/healthz`, in the startup log, and via
   `--version`.
 
+[1.1.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.1.0
 [1.0.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.0.0

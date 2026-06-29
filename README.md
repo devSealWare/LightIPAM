@@ -141,8 +141,8 @@ Open `http://localhost:8080` and create the first admin from the bootstrap page.
 GitHub Container Registry, so you can run a pinned version without building locally:
 
 ```sh
-docker pull ghcr.io/devsealware/lightipam:1.0.0          # web app
-docker pull ghcr.io/devsealware/lightipam-scanner:1.0.0  # scanner agent
+docker pull ghcr.io/devsealware/lightipam:1.1.0          # web app
+docker pull ghcr.io/devsealware/lightipam-scanner:1.1.0  # scanner agent
 ```
 
 The default `compose.yaml` builds from source; point its `image:` at these tags (or
@@ -224,8 +224,9 @@ an app-managed CA with rotation, backup/restore, and a runtime-editable Settings
 panel (ADRs 0017–0018). **Phase 6 (Advanced Automation)** added policy/health checks
 (ADR 0020), scheduled scan windows (ADR 0021), change webhooks (ADR 0022),
 NetBox-compatible import/export (ADR 0023), and the machine API + CLI (ADR 0024).
-**v1.0.0 is the first stable release** — see the [changelog](CHANGELOG.md). The next
-phase is open. See the roadmap for details.
+**v1.0.0 was the first stable release; v1.1.0 adds routing-aware scanner egress and
+agent diagnostics (ADR 0027) plus schedule scope validation (ADR 0028)** — see the
+[changelog](CHANGELOG.md). The next phase is open. See the roadmap for details.
 
 - [Changelog](CHANGELOG.md)
 - [Architecture](docs/ARCHITECTURE.md)
