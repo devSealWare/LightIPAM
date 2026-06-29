@@ -511,6 +511,23 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id);
 `,
 	},
+	{
+		version: 21,
+		sql: `
+-- Scan-schedule last-run outcome. A schedule could be saved with a configuration
+-- that the agent rejects at dispatch (e.g. a mistyped CIDR, or allowed CIDRs not
+-- contained by the agent's allowlist) and then fail silently on every scheduler
+-- tick, visible only in the audit log. These columns record the most recent
+-- attempt's outcome so /schedules can surface a failed/rejected run and its reason.
+-- last_run_status: '' (never run), 'running', 'succeeded', 'failed', or 'rejected'
+-- (rejected = never enqueued). last_run_error: the headline failure reason.
+-- last_job_id: the scan_jobs row the last run produced ('' for a rejection), so the
+-- UI can link to the scan detail.
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS last_run_status text NOT NULL DEFAULT '';
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS last_run_error text NOT NULL DEFAULT '';
+ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS last_job_id text;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

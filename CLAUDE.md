@@ -141,6 +141,21 @@ One discovery-UX follow-up has since merged on top of Phase 6: **subnet auto-cre
 import + "Import all"** (ADR 0026) — see the Current State bullet and the matching
 section below. App-side only, no migration.
 
+**Schedule reliability hardening (merged, ADR 0028).** A field deployment showed scheduled
+scans silently stopping after a mistyped CIDR (`192.168.5.0.24` for `192.168.5.0/24`) was
+saved and then rejected on every scheduler tick — visible only as repeating
+`scan.schedule.rejected` audit entries. Three layered fixes: (1) **save-time scope
+validation** — `validateScanScope` (pure, unit-tested) rejects invalid IPv4 CIDRs/targets
+inline on both the scan and schedule forms with friendly messages, the same rules the agent
+enforces at dispatch; (2) **agent-allowlist containment at save time** — `Service.ValidateScope`
+/ `App.validateScheduleAgentScope` rejects a schedule whose allowed CIDRs fall outside the
+chosen agent's allowlist (uses `ValidateAgentScope`, so a pending agent is allowed); and (3)
+a **last-run outcome** on each schedule — **migration 21** adds `last_run_status`/
+`last_run_error`/`last_job_id`; the orchestrator records `running`→`succeeded`/`failed`
+(via `recordScheduleRun` in `run`) and `rejected` (in `runSchedule`), and `/schedules` shows
+a **Last run** column (status badge linking to the scan, failure reason beneath). App-side
+only, no new privilege, no client JS. See ADR 0028.
+
 **Planned next (not started): routing-aware scanner egress + scan diagnostics (ADR
 0027).** A field deployment on Alpine showed a macvlan scanner silently finding **zero
 hosts** when scanning a *routed* subnet: the macvlan overlay pins every nmap probe to the

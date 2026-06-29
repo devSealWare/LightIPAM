@@ -182,6 +182,18 @@ func TestRenderTemplates(t *testing.T) {
 			Mode:            "light_active",
 			IntervalSeconds: 3600,
 			Enabled:         true,
+			LastRunStatus:   "succeeded",
+			LastJobID:       "job-1",
+		}, {
+			ID:              "sched-2",
+			Name:            "Broken sweep",
+			AgentName:       "local-scanner-agent",
+			ScanType:        "combined",
+			Mode:            "deep_active",
+			IntervalSeconds: 3600,
+			Enabled:         true,
+			LastRunStatus:   "rejected",
+			LastRunError:    `job allowlist: parse allowed CIDR "192.168.5.0.24": no '/'`,
 		}},
 		ScanSchedule: store.ScanSchedule{
 			ID:              "sched-1",

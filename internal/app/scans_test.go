@@ -39,6 +39,38 @@ func TestParseClockMinutes(t *testing.T) {
 	}
 }
 
+func TestValidateScanScope(t *testing.T) {
+	cases := []struct {
+		name    string
+		allowed []string
+		targets []string
+		ok      bool
+	}{
+		{"valid cidr targets", []string{"192.168.5.0/24"}, []string{"192.168.5.0/24"}, true},
+		{"valid host target in cidr", []string{"192.168.5.0/24"}, []string{"192.168.5.10"}, true},
+		{"multiple allowed and targets", []string{"192.168.1.0/24", "10.0.0.0/8"}, []string{"192.168.1.0/24", "10.1.2.3"}, true},
+		// The exact mistake from this bug report: "." where a "/" belongs.
+		{"dotted-mask allowed cidr", []string{"192.168.5.0.24"}, []string{"192.168.5.0/24"}, false},
+		{"dotted-mask target", []string{"192.168.5.0/24"}, []string{"192.168.5.0.24"}, false},
+		{"bare ip as allowed cidr", []string{"192.168.5.0"}, []string{"192.168.5.10"}, false},
+		{"target outside allowlist", []string{"192.168.5.0/24"}, []string{"192.168.6.10"}, false},
+		{"cidr target broader than allowlist", []string{"192.168.5.0/24"}, []string{"192.168.0.0/16"}, false},
+		{"ipv6 allowed cidr rejected", []string{"2001:db8::/32"}, []string{"2001:db8::1"}, false},
+		{"garbage target", []string{"192.168.5.0/24"}, []string{"not-an-ip"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateScanScope(tc.allowed, tc.targets)
+			if tc.ok && err != nil {
+				t.Fatalf("validateScanScope(%v, %v) = %v; want nil", tc.allowed, tc.targets, err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatalf("validateScanScope(%v, %v) = nil; want error", tc.allowed, tc.targets)
+			}
+		})
+	}
+}
+
 func TestParseScheduleWindow(t *testing.T) {
 	t.Run("empty is no window", func(t *testing.T) {
 		start, end, days, tz, err := parseScheduleWindow(url.Values{})

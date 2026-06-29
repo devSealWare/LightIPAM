@@ -104,9 +104,17 @@ type ScanSchedule struct {
 	WindowDays     []int
 	WindowTZ       string
 	LastRunAt      *time.Time
-	NextRunAt      time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// LastRunStatus is the outcome of the most recent attempt: "" (never run),
+	// "running", "succeeded", "failed", or "rejected" (the job was never enqueued —
+	// e.g. an invalid CIDR or an allowlist outside the agent's scope). LastRunError
+	// carries the headline reason on a failure/rejection; LastJobID links to the
+	// scan_jobs row the run produced ("" for a rejection).
+	LastRunStatus string
+	LastRunError  string
+	LastJobID     string
+	NextRunAt     time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // ScanScheduleInput holds editable schedule fields.
@@ -427,12 +435,12 @@ func (s *Store) GetScanSchedule(ctx context.Context, id string) (ScanSchedule, e
 	var sc ScanSchedule
 	if err := s.db.QueryRow(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.last_run_status, sc.last_run_error, COALESCE(sc.last_job_id, ''), sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 WHERE sc.id = $1`, id).Scan(
 		&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-		&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+		&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.LastRunStatus, &sc.LastRunError, &sc.LastJobID, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return ScanSchedule{}, ErrNotFound
@@ -445,7 +453,7 @@ WHERE sc.id = $1`, id).Scan(
 func (s *Store) ListScanSchedules(ctx context.Context) ([]ScanSchedule, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.last_run_status, sc.last_run_error, COALESCE(sc.last_job_id, ''), sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 ORDER BY sc.name`)
@@ -459,7 +467,7 @@ ORDER BY sc.name`)
 		var sc ScanSchedule
 		if err := rows.Scan(
 			&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.LastRunStatus, &sc.LastRunError, &sc.LastJobID, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan scan schedule: %w", err)
 		}
@@ -483,7 +491,7 @@ func (s *Store) DeleteScanSchedule(ctx context.Context, id string) error {
 func (s *Store) ListDueScanSchedules(ctx context.Context) ([]ScanSchedule, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT sc.id, sc.name, sc.agent_id, COALESCE(a.name, ''), sc.scan_type, sc.mode, sc.allowed_cidrs, sc.targets,
-	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.next_run_at, sc.created_at, sc.updated_at
+	sc.timeout_seconds, sc.interval_seconds, sc.enabled, sc.window_start_min, sc.window_end_min, sc.window_days, sc.window_tz, sc.last_run_at, sc.last_run_status, sc.last_run_error, COALESCE(sc.last_job_id, ''), sc.next_run_at, sc.created_at, sc.updated_at
 FROM scan_schedules sc
 LEFT JOIN scan_agents a ON a.id = sc.agent_id
 WHERE sc.enabled AND sc.next_run_at <= now()
@@ -498,7 +506,7 @@ ORDER BY sc.next_run_at`)
 		var sc ScanSchedule
 		if err := rows.Scan(
 			&sc.ID, &sc.Name, &sc.AgentID, &sc.AgentName, &sc.ScanType, &sc.Mode, &sc.AllowedCIDRs, &sc.Targets,
-			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
+			&sc.TimeoutSeconds, &sc.IntervalSeconds, &sc.Enabled, &sc.WindowStartMin, &sc.WindowEndMin, &sc.WindowDays, &sc.WindowTZ, &sc.LastRunAt, &sc.LastRunStatus, &sc.LastRunError, &sc.LastJobID, &sc.NextRunAt, &sc.CreatedAt, &sc.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan due scan schedule: %w", err)
 		}
@@ -587,4 +595,30 @@ WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("mark scan schedule ran: %w", err)
 	}
 	return nil
+}
+
+// SetScanScheduleLastRun records the outcome of a schedule's most recent attempt
+// (status, headline error, and the produced job id, if any) and stamps last_run_at.
+// jobID may be empty for a rejection that never created a job. It is separate from
+// MarkScanScheduleRan, which advances next_run_at: a schedule fires (advancing its
+// next run) and the eventual outcome is written here when the dispatch resolves.
+func (s *Store) SetScanScheduleLastRun(ctx context.Context, id, status, errMsg, jobID string) error {
+	var jobIDPtr *string
+	if jobID != "" {
+		jobIDPtr = &jobID
+	}
+	if _, err := s.db.Exec(ctx, `
+UPDATE scan_schedules
+SET last_run_at = now(), last_run_status = $2, last_run_error = $3, last_job_id = $4, updated_at = now()
+WHERE id = $1`, id, status, errMsg, jobIDPtr); err != nil {
+		return fmt.Errorf("set scan schedule last run: %w", err)
+	}
+	return nil
+}
+
+// LastRunFailed reports whether the schedule's most recent attempt did not succeed —
+// either the scan ran and failed, or it was rejected before dispatch (an invalid or
+// out-of-scope configuration). The UI uses this to flag a broken schedule.
+func (s ScanSchedule) LastRunFailed() bool {
+	return s.LastRunStatus == "failed" || s.LastRunStatus == "rejected"
 }
