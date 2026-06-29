@@ -62,6 +62,21 @@ func (s *Service) TriggerManual(ctx context.Context, input store.ScanJobInput) (
 	return s.enqueue(ctx, agent, input, input.RequestedBy)
 }
 
+// ValidateScope checks that a prospective job's targets and allowlist are well-formed
+// and fully contained by the registered agent's own allowlist, without creating or
+// dispatching anything. The schedule form calls it at save time so an out-of-scope
+// configuration is rejected inline instead of failing on every scheduler tick. It
+// deliberately uses ValidateAgentScope (allowlist containment + job structure) rather
+// than the full ValidateJobForAgent, so a schedule may target an agent that is still
+// pending approval — only the allowlist relationship is enforced here.
+func (s *Service) ValidateScope(ctx context.Context, input store.ScanJobInput) error {
+	agent, err := s.store.GetScanAgent(ctx, input.AgentID)
+	if err != nil {
+		return err
+	}
+	return scanner.ValidateAgentScope(scannerJob("preview", input), agent.AllowedCIDRs)
+}
+
 func (s *Service) enqueue(ctx context.Context, agent store.ScanAgent, input store.ScanJobInput, actor *string) (store.ScanJob, error) {
 	if err := scanner.ValidateJobForAgent(scannerJob("preview", input), registrationFromAgent(agent)); err != nil {
 		return store.ScanJob{}, err
@@ -82,11 +97,13 @@ func (s *Service) run(ctx context.Context, agent store.ScanAgent, job store.Scan
 	if err := s.store.UpdateScanJobResult(ctx, job.ID, store.ScanJobResult{Status: "running", StartedAt: &started}); err != nil {
 		s.logger.Error("mark scan job running", "job_id", job.ID, "error", err)
 	}
+	s.recordScheduleRun(ctx, job, "running", "")
 
 	result := s.dispatch(ctx, agent, job, started)
 	if err := s.store.UpdateScanJobResult(ctx, job.ID, result); err != nil {
 		s.logger.Error("record scan job result", "job_id", job.ID, "error", err)
 	}
+	s.recordScheduleRun(ctx, job, result.Status, result.Error)
 
 	action := "scan.job.completed"
 	if result.Status != "succeeded" {
@@ -95,6 +112,18 @@ func (s *Service) run(ctx context.Context, agent store.ScanAgent, job store.Scan
 		s.logger.Error("touch scan agent", "agent_id", agent.ID, "error", err)
 	}
 	s.audit(ctx, actor, action, job.ID, result.Status)
+}
+
+// recordScheduleRun writes a scheduled job's outcome back onto its schedule so the
+// /schedules page can surface the last run's status and reason. It is a no-op for a
+// manually triggered job (no schedule id).
+func (s *Service) recordScheduleRun(ctx context.Context, job store.ScanJob, status, errMsg string) {
+	if job.ScheduleID == "" {
+		return
+	}
+	if err := s.store.SetScanScheduleLastRun(ctx, job.ScheduleID, status, errMsg, job.ID); err != nil {
+		s.logger.Error("record schedule last run", "schedule_id", job.ScheduleID, "error", err)
+	}
 }
 
 func (s *Service) dispatch(ctx context.Context, agent store.ScanAgent, job store.ScanJob, started time.Time) store.ScanJobResult {
@@ -314,6 +343,11 @@ func (s *Service) runSchedule(ctx context.Context, schedule store.ScanSchedule) 
 	if _, err := s.enqueue(ctx, agent, input, nil); err != nil {
 		s.logger.Warn("scheduled scan rejected", "schedule_id", schedule.ID, "error", err)
 		s.audit(ctx, nil, "scan.schedule.rejected", schedule.ID, err.Error())
+		// Surface the rejection on the schedule itself (no job was created), so the
+		// operator sees it on /schedules instead of only in the audit log.
+		if err := s.store.SetScanScheduleLastRun(ctx, schedule.ID, "rejected", err.Error(), ""); err != nil {
+			s.logger.Error("record schedule rejection", "schedule_id", schedule.ID, "error", err)
+		}
 	}
 }
 

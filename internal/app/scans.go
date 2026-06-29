@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strconv"
@@ -117,6 +119,73 @@ func parseList(value string) []string {
 func contains(values []string, target string) bool {
 	for _, v := range values {
 		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+// validateScanScope enforces, at form-save time, the same address rules the agent
+// applies at dispatch (scanner.ValidateJobTargets): every allowed entry must be a
+// valid IPv4 CIDR and every target a valid IPv4 address or CIDR contained by the
+// allowlist. It exists so an invalid manual scan or schedule is rejected inline
+// with a friendly, field-specific message instead of being persisted and then
+// silently rejected on every scheduler tick — the cause of the repeated
+// scan.schedule.rejected audit entries from a mistyped CIDR like "192.168.5.0.24".
+// Pure and unit-tested, mirroring parseScheduleWindow / parseBulkRequest. The
+// scanner-level ValidateJobForAgent in enqueue remains the authoritative gate (it
+// additionally checks the job allowlist is within the agent's), so these rules are
+// kept equivalent by construction (same netip primitives) to avoid drift.
+func validateScanScope(allowed, targets []string) error {
+	prefixes := make([]netip.Prefix, 0, len(allowed))
+	for _, c := range allowed {
+		p, err := netip.ParsePrefix(c)
+		if err != nil {
+			return fmt.Errorf("Allowed CIDR %q is not valid — use a network and prefix length like 192.168.5.0/24.", c)
+		}
+		if !p.Addr().Is4() {
+			return fmt.Errorf("Allowed CIDR %q must be IPv4.", c)
+		}
+		prefixes = append(prefixes, p.Masked())
+	}
+	for _, t := range targets {
+		if err := validateScanTarget(t, prefixes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateScanTarget mirrors scanner.validateTarget but returns friendly messages:
+// a target is a valid IPv4 address or CIDR and must fall within the allowlist.
+func validateScanTarget(target string, allowed []netip.Prefix) error {
+	if p, err := netip.ParsePrefix(target); err == nil {
+		if !p.Addr().Is4() {
+			return fmt.Errorf("Target %q must be IPv4.", target)
+		}
+		if !prefixWithinAny(p.Masked(), allowed) {
+			return fmt.Errorf("Target %q is outside the allowed CIDRs.", target)
+		}
+		return nil
+	}
+	addr, err := netip.ParseAddr(target)
+	if err != nil {
+		return fmt.Errorf("Target %q is not a valid IPv4 address or CIDR — use something like 192.168.5.10 or 192.168.5.0/24.", target)
+	}
+	if !addr.Is4() {
+		return fmt.Errorf("Target %q must be IPv4.", target)
+	}
+	for _, a := range allowed {
+		if a.Contains(addr) {
+			return nil
+		}
+	}
+	return fmt.Errorf("Target %q is outside the allowed CIDRs.", target)
+}
+
+func prefixWithinAny(target netip.Prefix, allowed []netip.Prefix) bool {
+	for _, a := range allowed {
+		if a.Contains(target.Addr()) && a.Bits() <= target.Bits() {
 			return true
 		}
 	}
@@ -272,6 +341,9 @@ func scanInputFromForm(form map[string]string) (store.ScanJobInput, error) {
 	targets := parseList(form["targets"])
 	if len(targets) == 0 {
 		return store.ScanJobInput{}, errors.New("Enter at least one target.")
+	}
+	if err := validateScanScope(allowed, targets); err != nil {
+		return store.ScanJobInput{}, err
 	}
 	timeout := defaultTimeoutForType(form["scan_type"])
 	if form["timeout"] != "" {
@@ -670,6 +742,31 @@ func (a *App) scheduleNew(w http.ResponseWriter, r *http.Request) {
 	a.renderScheduleForm(w, r, session, "New Schedule", store.ScanSchedule{}, nil, "")
 }
 
+// validateScheduleAgentScope rejects a schedule whose allowed CIDRs are not fully
+// contained by the chosen agent's own allowlist, at save time — so the configuration
+// can't be persisted and then rejected on every scheduler tick (the failure mode that
+// only showed up as repeated scan.schedule.rejected audit entries). Syntax and
+// target-within-allowlist are already checked by validateScanScope in
+// scheduleInputFromRequest; this adds the job-allowlist ⊆ agent-allowlist check that
+// needs the agent loaded. A nil scans service (dispatch disabled) skips the check.
+func (a *App) validateScheduleAgentScope(ctx context.Context, input store.ScanScheduleInput) error {
+	if a.scans == nil {
+		return nil
+	}
+	err := a.scans.ValidateScope(ctx, store.ScanJobInput{
+		AgentID:        input.AgentID,
+		ScanType:       input.ScanType,
+		Mode:           input.Mode,
+		AllowedCIDRs:   input.AllowedCIDRs,
+		Targets:        input.Targets,
+		TimeoutSeconds: input.TimeoutSeconds,
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return errors.New("Select a registered agent.")
+	}
+	return err
+}
+
 func (a *App) scheduleCreate(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.requireSession(w, r)
 	if !ok {
@@ -681,6 +778,10 @@ func (a *App) scheduleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	input, form, err := scheduleInputFromRequest(r)
 	if err != nil {
+		a.renderScheduleForm(w, r, session, "New Schedule", store.ScanSchedule{}, form, err.Error())
+		return
+	}
+	if err := a.validateScheduleAgentScope(r.Context(), input); err != nil {
 		a.renderScheduleForm(w, r, session, "New Schedule", store.ScanSchedule{}, form, err.Error())
 		return
 	}
@@ -713,6 +814,10 @@ func (a *App) scheduleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	input, form, err := scheduleInputFromRequest(r)
 	if err != nil {
+		a.renderScheduleForm(w, r, session, "Edit Schedule", schedule, form, err.Error())
+		return
+	}
+	if err := a.validateScheduleAgentScope(r.Context(), input); err != nil {
 		a.renderScheduleForm(w, r, session, "Edit Schedule", schedule, form, err.Error())
 		return
 	}
@@ -835,6 +940,9 @@ func scheduleInputFromRequest(r *http.Request) (store.ScanScheduleInput, map[str
 	targets := parseList(form["targets"])
 	if len(targets) == 0 {
 		return store.ScanScheduleInput{}, form, errors.New("Enter at least one target.")
+	}
+	if err := validateScanScope(allowed, targets); err != nil {
+		return store.ScanScheduleInput{}, form, err
 	}
 	interval, err := strconv.Atoi(form["interval"])
 	if err != nil || interval < 60 {

@@ -73,3 +73,21 @@ func TestScanScheduleHasWindow(t *testing.T) {
 		t.Error("time restriction should count as a window")
 	}
 }
+
+func TestScanScheduleLastRunFailed(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"", false},
+		{"running", false},
+		{"succeeded", false},
+		{"failed", true},
+		{"rejected", true},
+	}
+	for _, tc := range cases {
+		if got := (ScanSchedule{LastRunStatus: tc.status}).LastRunFailed(); got != tc.want {
+			t.Errorf("LastRunFailed(%q) = %v; want %v", tc.status, got, tc.want)
+		}
+	}
+}
