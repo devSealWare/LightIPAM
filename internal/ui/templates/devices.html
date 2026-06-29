@@ -24,6 +24,9 @@
                 <input type="checkbox" data-col-toggle value="private_macs" checked class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"><span>Private MACs</span>
               </label>
               <label class="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                <input type="checkbox" data-col-toggle value="services" checked class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"><span>Services</span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
                 <input type="checkbox" data-col-toggle value="tags" checked class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"><span>Tags</span>
               </label>
             </div>
@@ -65,11 +68,11 @@
         </div>
         <span class="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">{{ len .Devices }} device{{ if ne (len .Devices) 1 }}s{{ end }}</span>
       </div>
-      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_1fr] items-center gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-        <span data-col="select" data-weight="auto"></span><span data-col="name" data-weight="1.2fr">Name</span><span data-col="ip" data-weight="1fr">IP address</span><span data-col="macs" data-weight="0.5fr">MACs</span><span data-col="private_macs" data-weight="0.7fr">Private MACs</span><span data-col="tags" data-weight="1fr">Tags</span>
+      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_0.6fr_1fr] items-center gap-4 border-b border-zinc-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span data-col="select" data-weight="auto"></span><span data-col="name" data-weight="1.2fr">Name</span><span data-col="ip" data-weight="1fr">IP address</span><span data-col="macs" data-weight="0.5fr">MACs</span><span data-col="private_macs" data-weight="0.7fr">Private MACs</span><span data-col="services" data-weight="0.6fr">Services</span><span data-col="tags" data-weight="1fr">Tags</span>
       </div>
       {{ range .Devices }}
-      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80">
+      <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_0.6fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80">
         <span data-col="select" class="flex items-center"><input type="checkbox" name="ids" value="{{ .ID }}" data-bulk-checkbox aria-label="Select {{ .Name }}" class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"></span>
         <span data-col="name" class="min-w-0">
           <a class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .ID }}">{{ .Name }}</a>
@@ -80,6 +83,7 @@
         </span>
         <span data-col="macs" class="text-zinc-600 dark:text-zinc-300">{{ .MACCount }}</span>
         <span data-col="private_macs" class="text-zinc-600 dark:text-zinc-300">{{ .PrivateMACCount }}</span>
+        <span data-col="services" class="text-zinc-600 dark:text-zinc-300">{{ len .Services }}</span>
         <span data-col="tags" class="flex flex-wrap gap-1">{{ range .Tags }}<span class="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{{ . }}</span>{{ else }}<span class="text-zinc-400">-</span>{{ end }}</span>
       </div>
       {{ end }}
