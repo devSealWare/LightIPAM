@@ -292,7 +292,7 @@ func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 	cfg := agent.SNMPConfig{
 		Version:   agent.SNMPVersion(getenv("AGENT_SNMP_VERSION", "2c")),
 		Community: getenv("AGENT_SNMP_COMMUNITY", "public"),
-		Port:      uint16(atoiDefault(os.Getenv("AGENT_SNMP_PORT"), 161)),
+		Port:      atoiPort(os.Getenv("AGENT_SNMP_PORT"), 161),
 		Timeout:   time.Duration(atoiDefault(os.Getenv("AGENT_SNMP_TIMEOUT"), 5)) * time.Second,
 		Retries:   atoiDefault(os.Getenv("AGENT_SNMP_RETRIES"), 1),
 	}
@@ -309,8 +309,8 @@ func resolveSNMP(logger *slog.Logger) *agent.SNMPDiscoverer {
 // per-probe timeout are tunable but rarely need changing.
 func resolveNames(logger *slog.Logger) *agent.NameDiscoverer {
 	cfg := agent.NameConfig{
-		NetBIOSPort: uint16(atoiDefault(os.Getenv("AGENT_NETBIOS_PORT"), 137)),
-		MDNSPort:    uint16(atoiDefault(os.Getenv("AGENT_MDNS_PORT"), 5353)),
+		NetBIOSPort: atoiPort(os.Getenv("AGENT_NETBIOS_PORT"), 137),
+		MDNSPort:    atoiPort(os.Getenv("AGENT_MDNS_PORT"), 5353),
 		Timeout:     time.Duration(atoiDefault(os.Getenv("AGENT_NAME_TIMEOUT"), 2)) * time.Second,
 	}
 	logger.Info("name discovery enabled (NetBIOS + mDNS)",
@@ -374,6 +374,19 @@ func atoiDefault(s string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// atoiPort parses s as a TCP/UDP port and returns it as a uint16. It returns
+// uint16(fallback) when s is empty, non-numeric, or outside the valid port range
+// 1–65535, so a mistyped AGENT_*_PORT falls back to the documented default rather
+// than silently wrapping through the narrowing conversion (e.g. 65537 → 1). The
+// fallback is always a small in-range constant at the call sites.
+func atoiPort(s string, fallback int) uint16 {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 1 || n > 65535 {
+		return uint16(fallback)
+	}
+	return uint16(n)
 }
 
 // interfaceForIP returns the name of the local interface that owns ip and that
