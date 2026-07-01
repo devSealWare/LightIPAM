@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,20 @@ func VerifyPassword(encoded, password string) bool {
 	}
 	parallelism, err := parseParam(params[2], "p")
 	if err != nil {
+		return false
+	}
+
+	// Bound each parameter to the width its narrowing conversion below can hold
+	// (m/t → uint32, p → uint8), so a malformed or hostile encoded hash with an
+	// out-of-range value fails closed here instead of silently wrapping. The checks
+	// are kept local to the conversions so the bound is provable at the cast site.
+	if memory <= 0 || memory > math.MaxUint32 {
+		return false
+	}
+	if iterations <= 0 || iterations > math.MaxUint32 {
+		return false
+	}
+	if parallelism <= 0 || parallelism > math.MaxUint8 {
 		return false
 	}
 
