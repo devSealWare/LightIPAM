@@ -2,9 +2,12 @@
 
 Light IPAM is a Go / PostgreSQL / Tailwind / Docker Compose IPAM application with
 an optional, isolated network-discovery scanner agent. This guide captures the
-working agreement; for deeper context read [README.md](README.md),
-[AGENTS.md](AGENTS.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the
-`docs/SCANNER_*` files.
+working agreement. [AGENTS.md](AGENTS.md) is the canonical contract for humans and
+AI agents alike (invariants, workflow, PR rules); for deeper context also read
+[README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), the
+`docs/SCANNER_*` files, and the agent guides under [docs/agent/](docs/agent).
+New issues go through the structured forms (bug, feature, scanner/networking, ADR,
+release).
 
 ## Non-negotiable rules
 
@@ -33,14 +36,18 @@ working agreement; for deeper context read [README.md](README.md),
 
 For an architectural decision, add a numbered ADR under
 [docs/adr](docs/adr) (next number, copy the existing format) and link it from the
-PR. Update the docs that describe the area you changed — at minimum the "Next"
-sections of [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md), plus
-[README.md](README.md), [docs/ROADMAP.md](docs/ROADMAP.md), and the relevant
-`docs/SCANNER_*`.
+PR. Update the docs that describe the area you changed — at minimum
+[docs/agent/PROJECT_STATE.md](docs/agent/PROJECT_STATE.md) (the agent-facing "where
+are we now?" snapshot), plus [README.md](README.md),
+[docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) if it shipped, and
+the relevant `docs/SCANNER_*`. The `lightipam-doc-sync` skill checks these stay
+consistent.
 
 ## Verification
 
-Run before opening a PR:
+Run before opening a PR (or run `./scripts/verify.sh`, which does the first four; add
+`--docker` for the image builds). See [docs/agent/VALIDATION.md](docs/agent/VALIDATION.md)
+for the tiered detail and troubleshooting; CI runs the same checks.
 
 ```sh
 npm run build:css                       # regenerate the committed Tailwind CSS

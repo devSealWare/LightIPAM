@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in LightIPAM behaves incorrectly.
+title: "bug: <short summary>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For discovery/scanning problems, use the
+        **Scanner / networking issue** form instead — it collects the topology
+        details needed to diagnose those.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What went wrong, and what you expected instead.
+      placeholder: "Expected X, got Y."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence (or input) that triggers it.
+      placeholder: |
+        1. Go to ...
+        2. Do ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Release tag (e.g. v1.1.0), image tag, or git SHA.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Manual IPAM (subnets / addresses / devices)
+        - Auth / sessions / MFA / OIDC
+        - Settings / policy / webhooks
+        - Machine API (/api/v1) or CLI
+        - Discovery review / import
+        - UI / rendering
+        - Deployment / Docker Compose
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: App or DB logs, error messages, or `docker compose logs` excerpts.
+      render: text
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is fixed? A behavior/test that should pass.
+      placeholder: "A regression test reproduces it, then passes; the UI shows ..."
+    validations:
+      required: true
