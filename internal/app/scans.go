@@ -424,9 +424,9 @@ func (a *App) agentDiscover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid form token", http.StatusForbidden)
 		return
 	}
-	endpoint := strings.TrimSpace(r.FormValue("endpoint_url"))
-	if endpoint == "" || !strings.HasPrefix(endpoint, "https://") {
-		a.redirectAgents(w, r, "Enter an https:// endpoint URL to discover an agent.")
+	endpoint, err := scanner.ValidateAgentEndpoint(r.FormValue("endpoint_url"))
+	if err != nil {
+		a.redirectAgents(w, r, err.Error())
 		return
 	}
 	if a.scans == nil {
@@ -640,9 +640,11 @@ func agentInputFromRequest(r *http.Request) (store.ScanAgentInput, map[string]st
 	if form["name"] == "" {
 		return store.ScanAgentInput{}, form, errors.New("Agent name is required.")
 	}
-	if form["endpoint_url"] == "" || !strings.HasPrefix(form["endpoint_url"], "https://") {
-		return store.ScanAgentInput{}, form, errors.New("Enter an https:// endpoint URL for the agent.")
+	endpoint, err := scanner.ValidateAgentEndpoint(form["endpoint_url"])
+	if err != nil {
+		return store.ScanAgentInput{}, form, err
 	}
+	form["endpoint_url"] = endpoint
 	status := form["status"]
 	if status == "" {
 		status = "pending"

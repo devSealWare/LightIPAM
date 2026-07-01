@@ -45,7 +45,23 @@ func startAgent(t *testing.T) (string, *Dispatcher) {
 	if err != nil {
 		t.Fatalf("new dispatcher: %v", err)
 	}
-	return srv.URL, d
+	// The dispatcher's SSRF guard rejects literal loopback IPs, so address the
+	// httptest server (which listens on 127.0.0.1) by the "localhost" hostname it
+	// is not resolved against. The agent server cert carries a "localhost" SAN.
+	return localhostURL(t, srv.URL), d
+}
+
+// localhostURL rewrites a test server URL's loopback host to "localhost",
+// preserving the port, so requests reach the loopback listener without tripping
+// the dispatcher's literal-loopback-IP rejection.
+func localhostURL(t *testing.T, raw string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse test server URL %q: %v", raw, err)
+	}
+	u.Host = net.JoinHostPort("localhost", u.Port())
+	return u.String()
 }
 
 func job() scanner.ScanJob {
@@ -113,7 +129,10 @@ func TestDiagnostics(t *testing.T) {
 
 func TestDispatchUnreachableAgent(t *testing.T) {
 	_, d := startAgent(t)
-	_, err := d.Dispatch(context.Background(), "https://127.0.0.1:1", job())
+	// "localhost:1" passes the endpoint guard (a hostname is not resolved) and
+	// resolves to a closed loopback port, so the dial is refused — exercising the
+	// TCP-failure classification rather than the SSRF rejection.
+	_, err := d.Dispatch(context.Background(), "https://localhost:1", job())
 	if err == nil {
 		t.Fatal("expected error contacting unreachable agent")
 	}
