@@ -45,6 +45,24 @@ func New(clientCertPEM, clientKeyPEM, caPEM []byte) (*Dispatcher, error) {
 // Enabled reports whether dispatch is configured.
 func (d *Dispatcher) Enabled() bool { return d != nil && d.client != nil }
 
+// newAgentRequest builds an mTLS request to the agent at endpointURL+suffix. It
+// re-validates the operator-supplied endpoint through scanner.ValidateAgentEndpoint
+// before constructing the request, so the outbound connection cannot be pointed at
+// a loopback/link-local/metadata target even if a malformed endpoint reached the
+// store — defense in depth behind the app's save-time validation. Routing all four
+// dispatcher methods through here keeps the client.Do sink sanitized in one place.
+func newAgentRequest(ctx context.Context, method, endpointURL, suffix string, body io.Reader) (*http.Request, error) {
+	normalized, err := scanner.ValidateAgentEndpoint(endpointURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(normalized, "/")+suffix, body)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	return req, nil
+}
+
 // Dispatch sends job to the agent's endpoint and returns the reported result.
 // An error is returned for transport/TLS failures or non-JSON responses; an
 // agent that rejects a job still returns a ScanResult (with a rejected status)
@@ -59,10 +77,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, endpointURL string, job scann
 		return scanner.ScanResult{}, fmt.Errorf("marshal job: %w", err)
 	}
 
-	url := strings.TrimRight(endpointURL, "/") + "/jobs"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := newAgentRequest(ctx, http.MethodPost, endpointURL, "/jobs", bytes.NewReader(body))
 	if err != nil {
-		return scanner.ScanResult{}, fmt.Errorf("build request: %w", err)
+		return scanner.ScanResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -96,10 +113,9 @@ func (d *Dispatcher) FetchRegistration(ctx context.Context, endpointURL string) 
 	if !d.Enabled() {
 		return scanner.AgentRegistration{}, fmt.Errorf("dispatcher is not configured")
 	}
-	url := strings.TrimRight(endpointURL, "/") + "/register"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := newAgentRequest(ctx, http.MethodGet, endpointURL, "/register", nil)
 	if err != nil {
-		return scanner.AgentRegistration{}, fmt.Errorf("build request: %w", err)
+		return scanner.AgentRegistration{}, err
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -122,10 +138,9 @@ func (d *Dispatcher) HealthCheck(ctx context.Context, endpointURL string) (strin
 	if !d.Enabled() {
 		return "", fmt.Errorf("dispatcher is not configured")
 	}
-	url := strings.TrimRight(endpointURL, "/") + "/healthz"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := newAgentRequest(ctx, http.MethodGet, endpointURL, "/healthz", nil)
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return "", err
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -151,10 +166,9 @@ func (d *Dispatcher) Diagnostics(ctx context.Context, endpointURL string) (scann
 	if !d.Enabled() {
 		return scanner.AgentDiagnostics{}, fmt.Errorf("dispatcher is not configured")
 	}
-	url := strings.TrimRight(endpointURL, "/") + "/diagnostics"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := newAgentRequest(ctx, http.MethodGet, endpointURL, "/diagnostics", nil)
 	if err != nil {
-		return scanner.AgentDiagnostics{}, fmt.Errorf("build request: %w", err)
+		return scanner.AgentDiagnostics{}, err
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
