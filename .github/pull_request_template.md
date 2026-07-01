@@ -1,19 +1,24 @@
 <!--
-Thanks for contributing to Light IPAM. Keep PRs focused and reviewable.
-See CONTRIBUTING.md for the full working agreement.
+Thanks for contributing to LightIPAM. Keep PRs focused and reviewable — one task per
+branch, no drive-by refactors. See CONTRIBUTING.md and AGENTS.md for the working
+agreement, and docs/agent/CODE_REVIEW.md for what review will check.
 -->
 
-## What
+## Summary
 
-<!-- A short description of the change and why it's needed. Link any issue/ADR. -->
+<!-- What this changes and why. Link the issue/ADR. -->
 
-## How
+## Scope
 
-<!-- Notable implementation choices, trade-offs, and anything a reviewer should look at first. -->
+<!-- The surfaces this PR touches (packages/files/areas). -->
 
-## Verification
+## Non-goals
 
-<!-- Tick what you actually ran. -->
+<!-- What this deliberately does NOT change, to keep scope honest. -->
+
+## Validation
+
+<!-- Tick what you actually ran (docs/agent/VALIDATION.md). Don't tick what you didn't. -->
 
 - [ ] `npm run build:css`
 - [ ] `go build ./... && go vet ./...`
@@ -21,14 +26,24 @@ See CONTRIBUTING.md for the full working agreement.
 - [ ] `gofmt -l internal cmd` is clean
 - [ ] `docker compose build` (and `docker compose --profile scanner build` if the agent changed)
 
-## Checklist
+## Docs updated
 
-- [ ] The **web app stays unprivileged** — no raw sockets, nmap, packet capture,
-      or trunked scanning added to the app container. All active/privileged
-      discovery lives in the scanner agent. (See [docs/SECURITY.md](../docs/SECURITY.md).)
-- [ ] Strict CSP preserved — no inline JS/CSS; any new script is same-origin and
-      embedded under `internal/ui/static`.
-- [ ] No new heavy framework; new behavior favors the Go stdlib and existing patterns.
-- [ ] Docs updated to match (CLAUDE.md / AGENTS.md "Next", README, ROADMAP, an ADR
-      for an architectural decision, and the relevant `docs/SCANNER_*`).
-- [ ] A new external dependency is called out explicitly in the description.
+<!-- Which docs changed (README, docs/SCANNER_*, ADR, CHANGELOG, docs/agent/PROJECT_STATE.md),
+     or "none — no behavior/status change". -->
+
+## Security / scanner boundary checklist
+
+- [ ] The web app remains unprivileged.
+- [ ] No raw sockets, nmap, packet capture, or network capability were added to the app.
+- [ ] Scanner-agent privilege boundaries are unchanged or explicitly justified.
+- [ ] App-side and agent-side scan allowlist checks remain intact where relevant.
+- [ ] Strict CSP preserved — no inline JS/CSS; generated CSS came from the Tailwind source.
+- [ ] No unrelated refactors or dependency additions.
+
+## Screenshots / logs
+
+<!-- For UI changes, before/after. For scanner changes, relevant scan output. -->
+
+## Follow-up issues
+
+<!-- Anything worth doing that is out of scope for this PR. -->

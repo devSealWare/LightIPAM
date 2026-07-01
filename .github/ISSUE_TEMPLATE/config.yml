@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contributing guide & agent contract
+    url: https://github.com/devSealWare/LightIPAM/blob/main/CONTRIBUTING.md
+    about: How to work in this repo — start here (see AGENTS.md for the agent contract).
+  - name: Security policy
+    url: https://github.com/devSealWare/LightIPAM/blob/main/docs/SECURITY.md
+    about: Report a security vulnerability privately — do not open a public issue.
+  - name: Roadmap & changelog
+    url: https://github.com/devSealWare/LightIPAM/blob/main/docs/ROADMAP.md
+    about: Check what is planned or already shipped before filing.

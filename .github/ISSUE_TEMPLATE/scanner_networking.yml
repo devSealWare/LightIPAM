@@ -1,0 +1,107 @@
+name: Scanner / networking issue
+description: A discovery/scan problem — wrong, missing, or empty results, or agent connectivity.
+title: "scanner: <short summary>"
+labels: ["scanner", "networking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Discovery problems are almost always about **topology and egress**, so please
+        fill this in fully — it is what an agent needs to diagnose the issue without a
+        back-and-forth. See `docs/SCANNER_AGENT.md` (bridge-vs-macvlan decision matrix
+        and troubleshooting) first; many zero-result cases are covered there.
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Expected vs actual observations
+      description: What hosts/services/MACs did you expect, and what did the scan actually record?
+      placeholder: "Expected ~40 hosts on 10.20.0.0/24; job reported succeeded with 0 observations."
+    validations:
+      required: true
+  - type: dropdown
+    id: scan-type
+    attributes:
+      label: Scan type
+      options:
+        - combined (default)
+        - nmap host discovery
+        - nmap service / OS detection
+        - arp_table (SNMP)
+        - snmp_inventory (SNMP)
+        - lldp_cdp (SNMP)
+        - name_lookup (NetBIOS/mDNS)
+        - dns_lookup
+        - dhcp_leases
+    validations:
+      required: true
+  - type: dropdown
+    id: network-mode
+    attributes:
+      label: Agent container network mode
+      options:
+        - bridge (default Compose network)
+        - macvlan
+        - host networking
+        - other / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: adjacency
+    attributes:
+      label: Target adjacency
+      description: Is the target subnet on the agent's own L2 segment, or reached through a router?
+      options:
+        - L2-adjacent (same VLAN/segment as the agent)
+        - Routed (a router hop away from the agent)
+        - Mixed / not sure
+    validations:
+      required: true
+  - type: input
+    id: target-cidrs
+    attributes:
+      label: Target CIDRs
+      description: The scan target(s) exactly as entered.
+      placeholder: "10.20.0.0/24"
+    validations:
+      required: true
+  - type: input
+    id: allowed-cidrs
+    attributes:
+      label: Agent AGENT_ALLOWED_CIDRS
+      description: The agent's allowlist. Targets must fall inside it.
+      placeholder: "192.168.0.0/16,10.0.0.0/8"
+    validations:
+      required: true
+  - type: input
+    id: pin-mode
+    attributes:
+      label: AGENT_SCAN_PIN_MODE
+      description: auto (default) / always / off, plus AGENT_SCAN_SOURCE_IP or AGENT_SCAN_INTERFACE if set.
+      placeholder: "auto"
+  - type: textarea
+    id: deployment
+    attributes:
+      label: Deployment details
+      description: >
+        How app + agent are deployed (single host, Compose profile, image tags), the
+        agent's interfaces/IPs, gateway, and any SNMP/DHCP specifics (v2c community set?
+        lease file mounted?). Redact secrets.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Agent diagnostics and logs
+      description: >
+        The `/agents/{id}` diagnostics panel (interfaces, scan source/route, pin mode,
+        nmap version, any pin/route mismatch) and relevant agent/app logs.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What result would mean this is resolved?
+      placeholder: "A combined scan of 10.20.0.0/24 records the live hosts with MACs and services."
+    validations:
+      required: true

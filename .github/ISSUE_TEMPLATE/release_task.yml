@@ -1,0 +1,44 @@
+name: Release task
+description: Track cutting a tagged LightIPAM release.
+title: "release: vX.Y.Z"
+labels: ["release"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Releases are cut by pushing a SemVer `v*` tag, which triggers `release.yml`
+        to test and publish multi-arch `app` + `scanner` images to GHCR. Use the
+        `lightipam-release-prep` skill to prepare the PR that precedes the tag.
+  - type: input
+    id: version
+    attributes:
+      label: Target version
+      placeholder: "v1.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: bump
+    attributes:
+      label: SemVer bump
+      options:
+        - patch (fixes only)
+        - minor (backward-compatible feature)
+        - major (breaking /api/v1, scanner protocol, or destructive migration)
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Release checklist
+      options:
+        - label: CHANGELOG.md updated (version + date; Added/Changed/Fixed; compare link).
+        - label: Version references bumped (package.json, README image tags/pull examples).
+        - label: docs/agent/PROJECT_STATE.md and docs/ROADMAP.md match what shipped.
+        - label: App/scanner image naming consistent with release.yml.
+        - label: "Builds validated: docker compose build and docker compose --profile scanner build."
+        - label: No product code changes in the release PR (metadata/docs only).
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything release-specific — migration notes, deprecations, or upgrade steps.

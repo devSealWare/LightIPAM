@@ -233,7 +233,9 @@ agent diagnostics (ADR 0027) plus schedule scope validation (ADR 0028)** — see
 - [Security Model](docs/SECURITY.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Branding](docs/BRANDING.md)
-- [Contributing](CONTRIBUTING.md)
+- [Contributing](CONTRIBUTING.md) · [Agent contract (AGENTS.md)](AGENTS.md) — canonical
+  guide for AI coding agents and the invariants humans follow too; task workflows live
+  in [docs/agent/](docs/agent).
 - [Scanner Protocol](docs/SCANNER_PROTOCOL.md) · [Scanner Agent](docs/SCANNER_AGENT.md) · [Scanner Discovery](docs/SCANNER_DISCOVERY.md)
 - Architecture decisions: [docs/adr](docs/adr)
 

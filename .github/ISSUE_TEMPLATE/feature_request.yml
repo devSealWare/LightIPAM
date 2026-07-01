@@ -1,0 +1,51 @@
+name: Feature request
+description: Propose a new capability or improvement for LightIPAM.
+title: "feat: <short summary>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep proposals scoped. LightIPAM favors small, server-rendered, dependency-light
+        changes; anything crossing an architecture invariant (app privilege, scanner
+        boundary, a new framework/dependency) usually needs an **Architecture decision**
+        issue and maintainer sign-off first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should the change do? Keep it as small as solves the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: What this explicitly should NOT do (keeps scope honest).
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable, verifiable conditions that mean "done".
+      placeholder: |
+        - A viewer can ...
+        - `go test ./...` covers ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariant check
+      description: Confirm the proposal respects the core rules (see AGENTS.md).
+      options:
+        - label: Keeps the web app unprivileged (no scanning/raw sockets/nmap in the app).
+        - label: Keeps discovery in the scanner-agent, if it touches scanning at all.
+        - label: Keeps the UI server-rendered (no inline JS/CSS, no heavy framework).
+        - label: Adds no new dependency, or the dependency is called out and justified.

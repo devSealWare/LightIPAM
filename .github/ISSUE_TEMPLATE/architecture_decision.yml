@@ -1,0 +1,51 @@
+name: Architecture decision (ADR)
+description: Propose a design decision that changes an invariant, adds a dependency, or shapes a stable surface.
+title: "adr: <short summary>"
+labels: ["adr", "architecture"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when a change needs a recorded decision — anything touching an
+        architecture/security invariant, a new dependency or framework, a database
+        migration shape, or a stable surface (`/api/v1`, scanner protocol). The
+        outcome is usually a numbered ADR under `docs/adr/`.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: The problem and the forces at play. Why is a decision needed now?
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: The alternatives, with trade-offs. Include the "do nothing" option.
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Proposed decision
+      description: The option you recommend and the key reason.
+    validations:
+      required: true
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Invariant / surface impact
+      description: Check anything this decision affects (drives review depth).
+      options:
+        - label: Affects the app-unprivileged / scanner-boundary invariant.
+        - label: Adds or changes a dependency or introduces a framework.
+        - label: Adds or changes a database migration.
+        - label: Changes a stable surface (/api/v1 or scanner protocol) — may need a major version bump.
+        - label: Changes the UI/CSP model.
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+      description: What becomes easier or harder, and what follow-up work this implies.
+    validations:
+      required: true
