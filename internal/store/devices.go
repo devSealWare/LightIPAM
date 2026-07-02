@@ -29,6 +29,12 @@ type Device struct {
 	OSDetail        string
 	Services        []DiscoveryService
 	DiscoverySource string
+	// SNMP hardware identity (ADR 0030): the ENTITY-MIB chassis serial and the
+	// vendor sysObjectID, stamped by discovery imports. The serial identifies the
+	// physical unit and backs gold-confidence link suggestions and the opt-in
+	// auto-link; the object id names the vendor/model and is display-only.
+	HWSerial   string
+	HWObjectID string
 	// Primary subnet: the subnet of the device's lowest-numbered IP. Used to
 	// group the Devices list. All three are empty for a device with no address.
 	PrimarySubnetID   string
@@ -76,7 +82,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id)::int,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
-	d.os_family, d.os_detail, d.services::text, d.discovery_source,
+	d.os_family, d.os_detail, d.services::text, d.discovery_source, d.hw_serial, d.hw_object_id,
 	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
 	EXISTS (SELECT 1 FROM devices sib WHERE sib.hardware_group_id = d.hardware_group_id AND sib.id <> d.id),
 	d.created_at, d.updated_at
@@ -160,7 +166,7 @@ SELECT d.id, d.name, d.description,
 	count(DISTINCT m.id)::int,
 	count(DISTINCT m.id) FILTER (WHERE m.is_private)::int,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
-	d.os_family, d.os_detail, d.services::text, d.discovery_source,
+	d.os_family, d.os_detail, d.services::text, d.discovery_source, d.hw_serial, d.hw_object_id,
 	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
 	EXISTS (SELECT 1 FROM devices sib WHERE sib.hardware_group_id = d.hardware_group_id AND sib.id <> d.id),
 	d.created_at, d.updated_at
@@ -377,6 +383,8 @@ func scanDevice(scanner subnetScanner) (Device, error) {
 		&device.OSDetail,
 		&servicesJSON,
 		&device.DiscoverySource,
+		&device.HWSerial,
+		&device.HWObjectID,
 		&device.PrimarySubnetID,
 		&device.PrimarySubnetName,
 		&device.PrimarySubnetCIDR,

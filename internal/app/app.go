@@ -148,6 +148,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /settings/users/{id}/delete", app.userDelete)
 	mux.HandleFunc("GET /settings/policy", app.settingsPolicy)
 	mux.HandleFunc("POST /settings/policy", app.settingsPolicyUpdate)
+	mux.HandleFunc("GET /settings/discovery", app.settingsDiscovery)
+	mux.HandleFunc("POST /settings/discovery", app.settingsDiscoveryUpdate)
 	mux.HandleFunc("GET /settings/custom-fields", app.settingsCustomFields)
 	mux.HandleFunc("POST /settings/custom-fields", app.customFieldCreate)
 	mux.HandleFunc("GET /settings/custom-fields/{id}/delete", app.customFieldDeleteConfirm)

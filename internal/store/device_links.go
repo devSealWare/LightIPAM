@@ -28,23 +28,30 @@ type LinkedDevice struct {
 	MACs      []MACAddress
 }
 
-// DeviceLinkSuggestion is a candidate device that clears the strict
-// same-hardware rule against the device being viewed. Suggestions are never
-// applied automatically — the operator confirms or dismisses each one.
+// DeviceLinkSuggestion is a candidate device that clears the same-hardware rule
+// against the device being viewed. SerialMatch marks a gold-confidence match:
+// both devices report the same SNMP chassis serial (ADR 0030), a per-unit
+// identifier, rather than only the heuristic hostname + OS-family agreement.
+// Suggestions are never applied automatically — the operator confirms or
+// dismisses each one (the separate opt-in auto-link acts on serial matches at
+// import time, not here).
 type DeviceLinkSuggestion struct {
-	DeviceID  string
-	Name      string
-	Hostname  string
-	OSFamily  string
-	Addresses []LinkedAddress
+	DeviceID    string
+	Name        string
+	Hostname    string
+	OSFamily    string
+	SerialMatch bool
+	Addresses   []LinkedAddress
 }
 
-// deviceIdentity is the minimal identity the same-hardware rule is decided on:
-// the one hostname a device's addresses agree on (empty when absent or
-// ambiguous), the discovered OS family, and the subnets its IPs live in.
+// deviceIdentity is the minimal identity the same-hardware rules are decided
+// on: the one hostname a device's addresses agree on (empty when absent or
+// ambiguous), the discovered OS family, the SNMP chassis serial (ADR 0030),
+// and the subnets its IPs live in.
 type deviceIdentity struct {
 	Hostname  string
 	OSFamily  string
+	HWSerial  string
 	SubnetIDs []string
 }
 
@@ -68,14 +75,34 @@ func sameHardwareCandidate(a, b deviceIdentity) bool {
 	if osA == "" || osA != osB {
 		return false
 	}
-	if len(a.SubnetIDs) == 0 || len(b.SubnetIDs) == 0 {
+	return disjointSubnets(a.SubnetIDs, b.SubnetIDs)
+}
+
+// goldHardwareCandidate reports whether two device records carry the same
+// physical-unit identity (ADR 0030): both report the same non-empty SNMP
+// chassis serial — compared exactly after trimming, since a serial names one
+// unit — and their subnet sets are disjoint and non-empty. The subnet guard is
+// kept even at gold confidence: cloned VMs and cheap devices can ship duplicate
+// serials, and two records holding addresses in the same subnet are two hosts.
+func goldHardwareCandidate(a, b deviceIdentity) bool {
+	serialA, serialB := strings.TrimSpace(a.HWSerial), strings.TrimSpace(b.HWSerial)
+	if serialA == "" || serialA != serialB {
 		return false
 	}
-	seen := make(map[string]bool, len(a.SubnetIDs))
-	for _, id := range a.SubnetIDs {
+	return disjointSubnets(a.SubnetIDs, b.SubnetIDs)
+}
+
+// disjointSubnets reports whether both subnet sets are non-empty and share no
+// member — the shape of a true multi-homed device (at most one IP per subnet).
+func disjointSubnets(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return false
+	}
+	seen := make(map[string]bool, len(a))
+	for _, id := range a {
 		seen[id] = true
 	}
-	for _, id := range b.SubnetIDs {
+	for _, id := range b {
 		if seen[id] {
 			return false
 		}
@@ -274,39 +301,49 @@ SELECT id FROM devices WHERE hardware_group_id = $1 AND id <> $2 ORDER BY name, 
 	return linked, nil
 }
 
-// ListDeviceLinkSuggestions returns devices that clear the same-hardware rule
+// ListDeviceLinkSuggestions returns devices that clear a same-hardware rule
 // against the given device, excluding members of its own group and dismissed
-// pairs. The SQL keeps the prefilter cheap (matching hostname + OS family, not
-// dismissed, not same group); the pure predicate makes the final call.
+// pairs. Two rules feed it: the gold-confidence exact chassis-serial match
+// (ADR 0030) and the heuristic hostname + OS-family agreement (ADR 0029). The
+// SQL keeps the prefilter cheap (matching serial, or matching hostname + OS
+// family; not dismissed, not same group); the pure predicates make the final
+// call.
 func (s *Store) ListDeviceLinkSuggestions(ctx context.Context, deviceID string) ([]DeviceLinkSuggestion, error) {
 	target, group, err := s.deviceLinkIdentity(ctx, deviceID)
 	if err != nil {
 		return nil, err
 	}
-	if target.Hostname == "" || target.OSFamily == "" || len(target.SubnetIDs) == 0 {
+	serial := strings.TrimSpace(target.HWSerial)
+	heuristic := target.Hostname != "" && target.OSFamily != ""
+	if (serial == "" && !heuristic) || len(target.SubnetIDs) == 0 {
 		return nil, nil
 	}
 
 	rows, err := s.db.Query(ctx, `
-SELECT d.id, d.name, d.os_family,
+SELECT d.id, d.name, d.os_family, btrim(d.hw_serial),
 	COALESCE(array_agg(DISTINCT lower(btrim(ip.hostname))) FILTER (WHERE btrim(ip.hostname) <> ''), '{}')::text[],
 	COALESCE(array_agg(DISTINCT ip.subnet_id) FILTER (WHERE ip.subnet_id IS NOT NULL), '{}')::text[]
 FROM devices d
 JOIN ip_addresses ip ON ip.device_id = d.id
 WHERE d.id <> $1
-	AND lower(btrim(d.os_family)) = $2
-	AND ($3 = '' OR d.hardware_group_id IS NULL OR d.hardware_group_id <> $3)
-	AND EXISTS (
-		SELECT 1 FROM ip_addresses hn
-		WHERE hn.device_id = d.id AND lower(btrim(hn.hostname)) = $4
+	AND (
+		($5 <> '' AND btrim(d.hw_serial) = $5)
+		OR (
+			$4 <> '' AND lower(btrim(d.os_family)) = $2
+			AND EXISTS (
+				SELECT 1 FROM ip_addresses hn
+				WHERE hn.device_id = d.id AND lower(btrim(hn.hostname)) = $4
+			)
+		)
 	)
+	AND ($3 = '' OR d.hardware_group_id IS NULL OR d.hardware_group_id <> $3)
 	AND NOT EXISTS (
 		SELECT 1 FROM device_link_rejections rej
 		WHERE rej.device_lo = least(d.id, $1) AND rej.device_hi = greatest(d.id, $1)
 	)
 GROUP BY d.id
 ORDER BY d.name, d.id`,
-		deviceID, canonicalIdentity(target.OSFamily), group, canonicalIdentity(target.Hostname))
+		deviceID, canonicalIdentity(target.OSFamily), group, canonicalIdentity(target.Hostname), serial)
 	if err != nil {
 		return nil, fmt.Errorf("list device link suggestions: %w", err)
 	}
@@ -320,7 +357,7 @@ ORDER BY d.name, d.id`,
 	for rows.Next() {
 		var c candidate
 		var hostnames []string
-		if err := rows.Scan(&c.id, &c.name, &c.identity.OSFamily, &hostnames, &c.identity.SubnetIDs); err != nil {
+		if err := rows.Scan(&c.id, &c.name, &c.identity.OSFamily, &c.identity.HWSerial, &hostnames, &c.identity.SubnetIDs); err != nil {
 			return nil, fmt.Errorf("scan device link suggestion: %w", err)
 		}
 		c.identity.Hostname = singleHostname(hostnames)
@@ -332,7 +369,8 @@ ORDER BY d.name, d.id`,
 
 	var suggestions []DeviceLinkSuggestion
 	for _, c := range candidates {
-		if !sameHardwareCandidate(target, c.identity) {
+		gold := goldHardwareCandidate(target, c.identity)
+		if !gold && !sameHardwareCandidate(target, c.identity) {
 			continue
 		}
 		addresses, err := s.listLinkedAddresses(ctx, c.id)
@@ -340,15 +378,95 @@ ORDER BY d.name, d.id`,
 			return nil, err
 		}
 		suggestions = append(suggestions, DeviceLinkSuggestion{
-			DeviceID:  c.id,
-			Name:      c.name,
-			Hostname:  c.identity.Hostname,
-			OSFamily:  c.identity.OSFamily,
-			Addresses: addresses,
+			DeviceID:    c.id,
+			Name:        c.name,
+			Hostname:    c.identity.Hostname,
+			OSFamily:    c.identity.OSFamily,
+			SerialMatch: gold,
+			Addresses:   addresses,
 		})
 	}
 	return suggestions, nil
 }
+
+// AutoLinkDeviceBySerial links a just-imported device to every device carrying
+// the same non-empty chassis serial (ADR 0030), when the operator has enabled
+// serial auto-linking (the device_link_auto_serial app setting; default off).
+// The gold-confidence guards still apply — disjoint subnets, dismissed pairs
+// respected — so it never links what an operator declined or what looks like a
+// same-subnet serial clone. It returns the ids it linked to (nil when disabled,
+// no serial, or no match); callers audit the link.
+func (s *Store) AutoLinkDeviceBySerial(ctx context.Context, deviceID string) ([]string, error) {
+	var enabled string
+	if err := s.db.QueryRow(ctx,
+		"SELECT value FROM app_settings WHERE key = $1", SettingDeviceLinkAutoSerial).Scan(&enabled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("auto-link setting: %w", err)
+	}
+	if enabled != "true" {
+		return nil, nil
+	}
+
+	target, group, err := s.deviceLinkIdentity(ctx, deviceID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	serial := strings.TrimSpace(target.HWSerial)
+	if serial == "" || len(target.SubnetIDs) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.db.Query(ctx, `
+SELECT d.id,
+	COALESCE(array_agg(DISTINCT ip.subnet_id) FILTER (WHERE ip.subnet_id IS NOT NULL), '{}')::text[]
+FROM devices d
+JOIN ip_addresses ip ON ip.device_id = d.id
+WHERE d.id <> $1
+	AND btrim(d.hw_serial) = $2
+	AND ($3 = '' OR d.hardware_group_id IS NULL OR d.hardware_group_id <> $3)
+	AND NOT EXISTS (
+		SELECT 1 FROM device_link_rejections rej
+		WHERE rej.device_lo = least(d.id, $1) AND rej.device_hi = greatest(d.id, $1)
+	)
+GROUP BY d.id
+ORDER BY d.id`, deviceID, serial, group)
+	if err != nil {
+		return nil, fmt.Errorf("auto-link candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var matches []string
+	for rows.Next() {
+		var id string
+		var subnetIDs []string
+		if err := rows.Scan(&id, &subnetIDs); err != nil {
+			return nil, fmt.Errorf("scan auto-link candidate: %w", err)
+		}
+		if disjointSubnets(target.SubnetIDs, subnetIDs) {
+			matches = append(matches, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	if err := s.LinkDevices(ctx, append([]string{deviceID}, matches...)...); err != nil {
+		return nil, err
+	}
+	return matches, nil
+}
+
+// SettingDeviceLinkAutoSerial is the app_settings key for the opt-in serial
+// auto-link (Settings → Discovery). "true" enables it; anything else is off.
+const SettingDeviceLinkAutoSerial = "device_link_auto_serial"
 
 // DismissDeviceLinkSuggestion suppresses the unordered device pair from future
 // suggestions. Dismissing an already-dismissed pair is a no-op.
@@ -376,13 +494,13 @@ func (s *Store) deviceLinkIdentity(ctx context.Context, deviceID string) (device
 	var group string
 	var hostnames []string
 	if err := s.db.QueryRow(ctx, `
-SELECT d.os_family, COALESCE(d.hardware_group_id, ''),
+SELECT d.os_family, COALESCE(d.hardware_group_id, ''), btrim(d.hw_serial),
 	COALESCE(array_agg(DISTINCT lower(btrim(ip.hostname))) FILTER (WHERE btrim(ip.hostname) <> ''), '{}')::text[],
 	COALESCE(array_agg(DISTINCT ip.subnet_id) FILTER (WHERE ip.subnet_id IS NOT NULL), '{}')::text[]
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
 WHERE d.id = $1
-GROUP BY d.id`, deviceID).Scan(&identity.OSFamily, &group, &hostnames, &identity.SubnetIDs); err != nil {
+GROUP BY d.id`, deviceID).Scan(&identity.OSFamily, &group, &identity.HWSerial, &hostnames, &identity.SubnetIDs); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return deviceIdentity{}, "", ErrNotFound
 		}

@@ -346,6 +346,12 @@ func mergeInto(base *scanner.Observation, add scanner.Observation) {
 	if base.VLAN == 0 {
 		base.VLAN = add.VLAN
 	}
+	if base.HWSerial == "" {
+		base.HWSerial = add.HWSerial
+	}
+	if base.HWObjectID == "" {
+		base.HWObjectID = add.HWObjectID
+	}
 	base.Services = mergeServices(base.Services, add.Services)
 	base.Evidence = append(base.Evidence, add.Evidence...)
 	if base.ObservedAt.IsZero() {

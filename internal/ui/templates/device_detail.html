@@ -61,7 +61,7 @@
       </form>
     </section>
 
-    {{ if or .Device.OSFamily .Device.OSDetail .Device.Services }}
+    {{ if or .Device.OSFamily .Device.OSDetail .Device.HWSerial .Device.Services }}
     <section class="glass-panel mt-5 overflow-hidden rounded-[28px]">
       <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
         <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">Discovered inventory</h2>
@@ -74,6 +74,12 @@
           {{ if .Device.OSDetail }}{{ .Device.OSDetail }}{{ else }}{{ .Device.OSFamily }}{{ end }}
           {{ if and .Device.OSDetail .Device.OSFamily }}<span class="text-zinc-400"> ({{ .Device.OSFamily }})</span>{{ end }}
         </span>
+      </div>
+      {{ end }}
+      {{ if .Device.HWSerial }}
+      <div class="grid grid-cols-[140px_1fr] gap-4 border-b border-zinc-100 px-5 py-4 text-sm dark:border-zinc-800">
+        <span class="font-medium text-zinc-500 dark:text-zinc-400">Hardware serial</span>
+        <span class="font-mono text-zinc-900 dark:text-zinc-100">{{ .Device.HWSerial }}</span>
       </div>
       {{ end }}
       {{ if .Device.Services }}
@@ -149,8 +155,13 @@
       {{ range .LinkSuggestions }}
       <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 bg-sky-50/60 px-5 py-4 text-sm last:border-b-0 dark:border-zinc-800 dark:bg-sky-950/20">
         <div class="min-w-0">
+          {{ if .SerialMatch }}
+          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Serial match</span>
+          <p class="mt-2 text-zinc-700 dark:text-zinc-200">Same hardware as <a class="font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .DeviceID }}">{{ .Name }}</a> — identical chassis serial number across subnets.</p>
+          {{ else }}
           <span class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">Suggested match</span>
           <p class="mt-2 text-zinc-700 dark:text-zinc-200">Looks like the same hardware as <a class="font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .DeviceID }}">{{ .Name }}</a> — matching hostname + OS family across subnets.</p>
+          {{ end }}
           <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 dark:text-zinc-300">
             {{ range .Addresses }}
             <span><span class="font-mono text-zinc-900 dark:text-zinc-100">{{ .IP }}</span> <span class="text-zinc-400">· {{ if .SubnetName }}{{ .SubnetName }}{{ else }}{{ .SubnetCIDR }}{{ end }}</span></span>

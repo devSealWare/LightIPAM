@@ -39,16 +39,21 @@ const (
 // IPAM records. It is the review-queue entry between raw scan results and
 // managed addresses/devices.
 type Discovery struct {
-	ID                string
-	JobID             string
-	AgentID           string
-	AgentName         string
-	IP                string
-	MAC               string
-	Vendor            string
-	Hostname          string
-	OSFamily          string
-	OSDetail          string
+	ID        string
+	JobID     string
+	AgentID   string
+	AgentName string
+	IP        string
+	MAC       string
+	Vendor    string
+	Hostname  string
+	OSFamily  string
+	OSDetail  string
+	// HWSerial/HWObjectID: SNMP hardware identity (ADR 0030) — the ENTITY-MIB
+	// chassis serial and vendor sysObjectID. The serial identifies the physical
+	// unit and backs gold-confidence device links; the object id names the model.
+	HWSerial          string
+	HWObjectID        string
 	VLAN              int
 	Services          []DiscoveryService
 	Status            string
@@ -78,16 +83,18 @@ type DiscoveryImportTarget struct {
 
 // DiscoveryInput holds the fields recorded from a single observation.
 type DiscoveryInput struct {
-	JobID    string
-	AgentID  string
-	IP       string
-	MAC      string
-	Vendor   string
-	Hostname string
-	OSFamily string
-	OSDetail string
-	VLAN     int
-	Services []DiscoveryService
+	JobID      string
+	AgentID    string
+	IP         string
+	MAC        string
+	Vendor     string
+	Hostname   string
+	OSFamily   string
+	OSDetail   string
+	HWSerial   string
+	HWObjectID string
+	VLAN       int
+	Services   []DiscoveryService
 }
 
 // DiscoveryUpsert reports the persisted state of an observation: its row id, the
@@ -127,8 +134,8 @@ func (s *Store) UpsertDiscovery(ctx context.Context, input DiscoveryInput) (Disc
 
 	out := DiscoveryUpsert{ReconcileStatus: status}
 	if err := s.db.QueryRow(ctx, `
-INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, vendor, hostname, os_family, os_detail, vlan, services, reconcile_status, conflict, last_seen_at)
-VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, now())
+INSERT INTO scan_discoveries (id, job_id, agent_id, ip, mac, vendor, hostname, os_family, os_detail, hw_serial, hw_object_id, vlan, services, reconcile_status, conflict, last_seen_at)
+VALUES ($1, $2, $3, $4::inet, $5::macaddr, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, now())
 ON CONFLICT (ip) DO UPDATE SET
 	job_id = EXCLUDED.job_id,
 	agent_id = EXCLUDED.agent_id,
@@ -137,6 +144,10 @@ ON CONFLICT (ip) DO UPDATE SET
 	hostname = CASE WHEN EXCLUDED.hostname <> '' THEN EXCLUDED.hostname ELSE scan_discoveries.hostname END,
 	os_family = CASE WHEN EXCLUDED.os_family <> '' THEN EXCLUDED.os_family ELSE scan_discoveries.os_family END,
 	os_detail = CASE WHEN EXCLUDED.os_detail <> '' THEN EXCLUDED.os_detail ELSE scan_discoveries.os_detail END,
+	-- Hardware identity merges like the OS fields: only the SNMP inventory source
+	-- supplies it, so an nmap re-scan with none must not wipe it.
+	hw_serial = CASE WHEN EXCLUDED.hw_serial <> '' THEN EXCLUDED.hw_serial ELSE scan_discoveries.hw_serial END,
+	hw_object_id = CASE WHEN EXCLUDED.hw_object_id <> '' THEN EXCLUDED.hw_object_id ELSE scan_discoveries.hw_object_id END,
 	-- Preserve a known VLAN when a later (non-inventory) source merges onto the same
 	-- IP with none, mirroring the service-list merge.
 	vlan = CASE WHEN EXCLUDED.vlan <> 0 THEN EXCLUDED.vlan ELSE scan_discoveries.vlan END,
@@ -150,7 +161,7 @@ ON CONFLICT (ip) DO UPDATE SET
 	updated_at = now()
 RETURNING id, status`,
 		id, emptyToNil(input.JobID), emptyToNil(input.AgentID), input.IP, emptyToNil(input.MAC),
-		input.Vendor, input.Hostname, input.OSFamily, input.OSDetail, input.VLAN, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
+		input.Vendor, input.Hostname, input.OSFamily, input.OSDetail, input.HWSerial, input.HWObjectID, input.VLAN, string(servicesJSON), status, conflict).Scan(&out.ID, &out.ReviewStatus); err != nil {
 		return DiscoveryUpsert{}, fmt.Errorf("upsert discovery: %w", err)
 	}
 
@@ -279,7 +290,7 @@ func (s *Store) ListDiscoveries(ctx context.Context, status, reconcile string, l
 	}
 	rows, err := s.db.Query(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.vlan, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.hw_serial, d.hw_object_id, d.vlan, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -306,7 +317,7 @@ LIMIT $3`, status, reconcile, limit)
 func (s *Store) GetDiscovery(ctx context.Context, id string) (Discovery, error) {
 	discovery, err := scanDiscovery(s.db.QueryRow(ctx, `
 SELECT d.id, COALESCE(d.job_id, ''), COALESCE(d.agent_id, ''), COALESCE(a.name, ''),
-	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.vlan, d.services::text,
+	host(d.ip), COALESCE(d.mac::text, ''), d.vendor, d.hostname, d.os_family, d.os_detail, d.hw_serial, d.hw_object_id, d.vlan, d.services::text,
 	d.status, d.reconcile_status, d.conflict, COALESCE(d.imported_address_id, ''), COALESCE(d.imported_device_id, ''), d.first_seen_at, d.last_seen_at
 FROM scan_discoveries d
 LEFT JOIN scan_agents a ON a.id = d.agent_id
@@ -422,32 +433,34 @@ WHERE id = $1`, discovery.ID, addressID, emptyToNil(deviceID)); err != nil {
 // imported, or whose linked device has since been deleted, is a no-op. Callers
 // must skip conflicting observations — resolving a conflict is an operator
 // decision, not something a re-scan should silently apply.
-func (s *Store) SyncImportedDiscovery(ctx context.Context, id string) error {
+// It returns the synced device's id ("" for a no-op) so callers can run
+// post-sync steps such as the opt-in serial auto-link (ADR 0030).
+func (s *Store) SyncImportedDiscovery(ctx context.Context, id string) (string, error) {
 	discovery, err := s.GetDiscovery(ctx, id)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if discovery.Status != "imported" || discovery.ImportedDeviceID == "" {
-		return nil
+		return "", nil
 	}
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin sync: %w", err)
+		return "", fmt.Errorf("begin sync: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
 	var exists bool
 	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1)", discovery.ImportedDeviceID).Scan(&exists); err != nil {
-		return fmt.Errorf("look up imported device: %w", err)
+		return "", fmt.Errorf("look up imported device: %w", err)
 	}
 	if !exists {
-		return nil
+		return "", nil
 	}
 
 	servicesJSON, err := json.Marshal(discovery.Services)
 	if err != nil {
-		return fmt.Errorf("marshal discovery services: %w", err)
+		return "", fmt.Errorf("marshal discovery services: %w", err)
 	}
 	source := discovery.AgentName
 	if source == "" {
@@ -457,16 +470,18 @@ func (s *Store) SyncImportedDiscovery(ctx context.Context, id string) error {
 UPDATE devices SET
 	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
 	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
+	hw_serial = CASE WHEN $6 <> '' THEN $6 ELSE hw_serial END,
+	hw_object_id = CASE WHEN $7 <> '' THEN $7 ELSE hw_object_id END,
 	services = CASE WHEN jsonb_array_length($4::jsonb) > 0 THEN $4::jsonb ELSE services END,
 	discovery_source = $5,
 	updated_at = now()
-WHERE id = $1`, discovery.ImportedDeviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
-		return fmt.Errorf("sync discovery device: %w", err)
+WHERE id = $1`, discovery.ImportedDeviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source, discovery.HWSerial, discovery.HWObjectID); err != nil {
+		return "", fmt.Errorf("sync discovery device: %w", err)
 	}
 
 	if discovery.MAC != "" {
 		if err := attachDiscoveryMAC(ctx, tx, discovery.ImportedDeviceID, discovery.MAC, discovery.Vendor); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -477,7 +492,7 @@ WHERE id = $1`, discovery.ImportedDeviceID, discovery.OSFamily, discovery.OSDeta
 		if _, err := tx.Exec(ctx, `
 UPDATE ip_addresses SET hostname = $2, updated_at = now()
 WHERE id = $1 AND hostname = ''`, discovery.ImportedAddressID, discovery.Hostname); err != nil {
-			return fmt.Errorf("sync discovery hostname: %w", err)
+			return "", fmt.Errorf("sync discovery hostname: %w", err)
 		}
 	}
 
@@ -485,10 +500,13 @@ WHERE id = $1 AND hostname = ''`, discovery.ImportedAddressID, discovery.Hostnam
 	// one and the subnet has none yet, so VLAN findings reach the Subnets page on a
 	// re-scan, not only at first import.
 	if err := backfillSubnetVLAN(ctx, tx, discovery.IP, discovery.VLAN); err != nil {
-		return err
+		return "", err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return discovery.ImportedDeviceID, nil
 }
 
 // backfillSubnetVLAN sets the VLAN of the subnet containing ip when the scan
@@ -548,9 +566,9 @@ func importDiscoveryDevice(ctx context.Context, tx pgx.Tx, discovery Discovery, 
 			return "", err
 		}
 		if _, err := tx.Exec(ctx, `
-INSERT INTO devices (id, name, description, os_family, os_detail, services, discovery_source)
-VALUES ($1, $2, 'Created from scan discovery', $3, $4, $5::jsonb, $6)`,
-			deviceID, deviceName, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source); err != nil {
+INSERT INTO devices (id, name, description, os_family, os_detail, hw_serial, hw_object_id, services, discovery_source)
+VALUES ($1, $2, 'Created from scan discovery', $3, $4, $5, $6, $7::jsonb, $8)`,
+			deviceID, deviceName, discovery.OSFamily, discovery.OSDetail, discovery.HWSerial, discovery.HWObjectID, string(servicesJSON), source); err != nil {
 			return "", fmt.Errorf("create discovery device: %w", err)
 		}
 	} else {
@@ -565,10 +583,12 @@ UPDATE devices SET
 	name = CASE WHEN $6 <> '' THEN $6 ELSE name END,
 	os_family = CASE WHEN $2 <> '' THEN $2 ELSE os_family END,
 	os_detail = CASE WHEN $3 <> '' THEN $3 ELSE os_detail END,
+	hw_serial = CASE WHEN $7 <> '' THEN $7 ELSE hw_serial END,
+	hw_object_id = CASE WHEN $8 <> '' THEN $8 ELSE hw_object_id END,
 	services = CASE WHEN jsonb_array_length($4::jsonb) > 0 THEN $4::jsonb ELSE services END,
 	discovery_source = $5,
 	updated_at = now()
-WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source, manualName); err != nil {
+WHERE id = $1`, deviceID, discovery.OSFamily, discovery.OSDetail, string(servicesJSON), source, manualName, discovery.HWSerial, discovery.HWObjectID); err != nil {
 			return "", fmt.Errorf("update discovery device: %w", err)
 		}
 	}
@@ -641,7 +661,7 @@ func scanDiscovery(row subnetScanner) (Discovery, error) {
 	var servicesJSON string
 	if err := row.Scan(
 		&d.ID, &d.JobID, &d.AgentID, &d.AgentName,
-		&d.IP, &d.MAC, &d.Vendor, &d.Hostname, &d.OSFamily, &d.OSDetail, &d.VLAN, &servicesJSON,
+		&d.IP, &d.MAC, &d.Vendor, &d.Hostname, &d.OSFamily, &d.OSDetail, &d.HWSerial, &d.HWObjectID, &d.VLAN, &servicesJSON,
 		&d.Status, &d.ReconcileStatus, &d.Conflict, &d.ImportedAddressID, &d.ImportedDeviceID, &d.FirstSeenAt, &d.LastSeenAt,
 	); err != nil {
 		return Discovery{}, fmt.Errorf("scan discovery: %w", err)

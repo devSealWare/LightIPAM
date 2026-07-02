@@ -192,16 +192,18 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 			continue
 		}
 		result, err := s.store.UpsertDiscovery(ctx, store.DiscoveryInput{
-			JobID:    job.ID,
-			AgentID:  agent.ID,
-			IP:       obs.IP,
-			MAC:      obs.MAC,
-			Vendor:   obs.Vendor,
-			Hostname: obs.Hostname,
-			OSFamily: obs.OSFamily,
-			OSDetail: obs.OSDetail,
-			VLAN:     obs.VLAN,
-			Services: servicesFromObservation(obs.Services),
+			JobID:      job.ID,
+			AgentID:    agent.ID,
+			IP:         obs.IP,
+			MAC:        obs.MAC,
+			Vendor:     obs.Vendor,
+			Hostname:   obs.Hostname,
+			OSFamily:   obs.OSFamily,
+			OSDetail:   obs.OSDetail,
+			HWSerial:   obs.HWSerial,
+			HWObjectID: obs.HWObjectID,
+			VLAN:       obs.VLAN,
+			Services:   servicesFromObservation(obs.Services),
 		})
 		if err != nil {
 			s.logger.Error("record discovery", "ip", obs.IP, "error", err)
@@ -249,6 +251,7 @@ func (s *Service) maybeAutoImport(ctx context.Context, agent store.ScanAgent, re
 		return false
 	}
 	s.auditSubject(ctx, nil, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID, "auto")
+	s.autoLinkBySerial(ctx, discovery.ImportedDeviceID)
 	return true
 }
 
@@ -264,11 +267,32 @@ func (s *Service) syncImported(ctx context.Context, result store.DiscoveryUpsert
 	if result.ReviewStatus != "imported" || result.ReconcileStatus == store.ReconcileConflict {
 		return false
 	}
-	if err := s.store.SyncImportedDiscovery(ctx, result.ID); err != nil {
+	deviceID, err := s.store.SyncImportedDiscovery(ctx, result.ID)
+	if err != nil {
 		s.logger.Error("sync imported discovery", "id", result.ID, "error", err)
 		return false
 	}
+	s.autoLinkBySerial(ctx, deviceID)
 	return true
+}
+
+// autoLinkBySerial runs the opt-in gold-confidence auto-link (ADR 0030) after a
+// device gained scan findings: when the setting is enabled and the device's
+// chassis serial exactly matches other devices' (disjoint subnets, dismissed
+// pairs respected), they are linked as one physical device and audited. A
+// failure is logged, never fatal — the import/sync itself already succeeded.
+func (s *Service) autoLinkBySerial(ctx context.Context, deviceID string) {
+	if deviceID == "" {
+		return
+	}
+	linked, err := s.store.AutoLinkDeviceBySerial(ctx, deviceID)
+	if err != nil {
+		s.logger.Error("auto-link device by serial", "device", deviceID, "error", err)
+		return
+	}
+	if len(linked) > 0 {
+		s.auditSubject(ctx, nil, "device.link.auto", "device", deviceID, "serial")
+	}
 }
 
 // headlineError returns the first real failure message to surface as the job's

@@ -12,6 +12,16 @@ migration, requires a major-version bump.
 
 ### Added
 
+- SNMP hardware identity + gold-confidence device links (ADR 0030, migration 23):
+  `snmp_inventory` (and `combined`) scans now read the device's ENTITY-MIB chassis
+  serial number and `sysObjectID`, persist them through the discovery queue onto
+  the imported device, and show the serial on the device page. An exact serial
+  match across disjoint subnets is a gold-confidence "Serial match" link
+  suggestion (independent of hostname/OS agreement), and a new
+  **Settings → Discovery** toggle (default off) opts in to auto-linking those
+  matches at import/sync time, audited as `device.link.auto`. Placeholder vendor
+  serials ("N/A", "To be filled by O.E.M.", …) are filtered agent-side; the
+  scanner protocol gains only optional observation fields and stays `v1`.
 - Same-physical-device links (ADR 0029, migration 22): a reversible link layer that
   groups the multiple device records a multi-homed device (e.g. a router with one
   IP and MAC per subnet) imports as. The device page suggests high-confidence

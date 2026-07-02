@@ -67,11 +67,10 @@ Confirm, unlink, and dismiss are CSRF-protected POSTs audited as
 - The hostname signal depends on discovery having recorded hostnames; environments
   without reverse DNS/NetBIOS names get no suggestions and rely on manual linking.
 
-## Phase 2 (PLANNED, not shipped)
+## Phase 2 (shipped — see ADR 0030)
 
-A future, separate branch may persist an SNMP hardware identity — `sysObjectID`,
-ENTITY-MIB `entPhysicalSerialNum`, and/or the SNMPv3 engine ID — through
-`docs/SCANNER_PROTOCOL.md`, the `scan_discoveries`/`devices` schema, and the agent's
-SNMP source, then use an exact serial/engine-ID match as a gold-confidence signal
-that could support **opt-in** auto-linking. That work needs its own ADR; nothing in
-this decision ships or depends on it.
+Phase 2 — persisting an SNMP hardware identity (ENTITY-MIB chassis serial +
+`sysObjectID`) and using an exact serial match as a gold-confidence signal with
+**opt-in** auto-linking — shipped separately as
+[ADR 0030](0030-snmp-hardware-identity.md). The SNMPv3 engine ID remains out of
+scope until SNMPv3 support exists (the stack is v2c-only).

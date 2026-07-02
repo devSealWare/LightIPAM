@@ -345,11 +345,14 @@ import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
   or dismiss, with manual link/unlink always available. Link-not-merge — each
   record keeps its own address in its own subnet — and never automatic. Import
   merge-on-MAC is unchanged.
-- **Phase 2 — persisted SNMP hardware identity (planned, not started).** Carry
-  `sysObjectID`, ENTITY-MIB `entPhysicalSerialNum`, and/or the SNMPv3 engine ID
-  through the scanner protocol and schema, and use an exact serial/engine-ID match
-  as a gold-confidence signal that may support opt-in auto-linking. Separate
-  branch, own ADR; nothing shipped.
+- **Phase 2 — persisted SNMP hardware identity (done, ADR 0030, migration 23).**
+  `snmp_inventory`/`combined` scans read the ENTITY-MIB chassis serial (vendor
+  placeholders filtered) and `sysObjectID`, persist both through
+  `scan_discoveries` onto devices, and use an exact serial match across disjoint
+  subnets as a **gold-confidence** link suggestion — plus an opt-in
+  Settings → Discovery toggle (default off) that auto-links serial matches at
+  import/sync time (`device.link.auto`). The SNMPv3 engine ID stays out of scope
+  until SNMPv3 support exists (the stack is v2c-only).
 
 ## Planned
 

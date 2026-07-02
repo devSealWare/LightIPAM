@@ -385,7 +385,7 @@ func TestCombinedNoLiveHostsSkipsPerHost(t *testing.T) {
 func TestMergeObservations(t *testing.T) {
 	in := []scanner.Observation{
 		{IP: "10.0.0.1", Services: []scanner.ServiceObservation{{Protocol: "tcp", Port: 80}}},
-		{IP: "10.0.0.1", MAC: "aa:bb:cc:dd:ee:ff", VLAN: 40,
+		{IP: "10.0.0.1", MAC: "aa:bb:cc:dd:ee:ff", VLAN: 40, HWSerial: "CHS-5", HWObjectID: "1.3.6.1.4.1.9",
 			Services: []scanner.ServiceObservation{{Protocol: "tcp", Port: 80}, {Protocol: "tcp", Port: 443}},
 			Evidence: []scanner.Evidence{{Source: "snmp", Summary: "x"}}},
 		{IP: ""}, // dropped
@@ -404,6 +404,9 @@ func TestMergeObservations(t *testing.T) {
 	}
 	if first.VLAN != 40 {
 		t.Fatalf("expected VLAN filled from the second observation, got %d", first.VLAN)
+	}
+	if first.HWSerial != "CHS-5" || first.HWObjectID != "1.3.6.1.4.1.9" {
+		t.Fatalf("expected hardware identity filled from the SNMP observation, got %q/%q", first.HWSerial, first.HWObjectID)
 	}
 	if len(first.Services) != 2 {
 		t.Fatalf("expected services unioned to 2 (80,443) without duplicating 80, got %+v", first.Services)
