@@ -162,7 +162,16 @@ type Observation struct {
 	// on, learned from an SNMP inventory scan (dot1qPvid). 0 means unknown. It maps
 	// the host's IP to a VLAN, which LightIPAM uses to fill the containing subnet's
 	// VLAN when it has none.
-	VLAN       int                  `json:"vlan,omitempty"`
+	VLAN int `json:"vlan,omitempty"`
+	// HWSerial and HWObjectID are the device's SNMP hardware identity (ADR 0030),
+	// learned by an snmp_inventory scan: the chassis serial number from the
+	// ENTITY-MIB (entPhysicalSerialNum) and the vendor's authoritative device OID
+	// (sysObjectID). The serial identifies the physical unit — every interface of
+	// a multi-homed device reports the same one — so the app uses an exact serial
+	// match as a gold-confidence same-hardware signal. Both are optional and
+	// additive; agents that cannot read them simply omit them (protocol stays v1).
+	HWSerial   string               `json:"hw_serial,omitempty"`
+	HWObjectID string               `json:"hw_object_id,omitempty"`
 	Services   []ServiceObservation `json:"services,omitempty"`
 	Evidence   []Evidence           `json:"evidence,omitempty"`
 	ObservedAt time.Time            `json:"observed_at"`

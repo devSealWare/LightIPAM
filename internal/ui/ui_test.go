@@ -83,6 +83,7 @@ func TestRenderTemplates(t *testing.T) {
 			MACCount:        1,
 			PrivateMACCount: 1,
 			Tags:            []string{"Private MAC"},
+			HWSerial:        "CHS-0042",
 		},
 		DeviceGroups: []store.DeviceGroup{
 			{
@@ -138,6 +139,18 @@ func TestRenderTemplates(t *testing.T) {
 				SubnetID:   "subnet-3",
 				SubnetName: "IoT LAN",
 				SubnetCIDR: "192.168.2.0/24",
+			}},
+		}, {
+			DeviceID:    "device-5",
+			Name:        "Archer_A7.internal",
+			Hostname:    "archer_a7.internal",
+			OSFamily:    "FreeBSD",
+			SerialMatch: true,
+			Addresses: []store.LinkedAddress{{
+				IP:         "192.168.3.1",
+				SubnetID:   "subnet-4",
+				SubnetName: "Lab LAN",
+				SubnetCIDR: "192.168.3.0/24",
 			}},
 		}},
 		AuditLogs: []store.AuditLog{{
@@ -899,5 +912,25 @@ func TestBrandStaticAssets(t *testing.T) {
 	}
 	if !strings.Contains(manifestRec.Body.String(), `"name": "LightIPAM"`) {
 		t.Fatal("manifest response did not contain LightIPAM metadata")
+	}
+}
+
+func TestSettingsDiscoveryTabRenders(t *testing.T) {
+	data := PageData{
+		User:      store.User{ID: "user-1", DisplayName: "Admin", Role: store.RoleAdmin, IsAdmin: true},
+		CSRF:      "token",
+		ActiveTab: "discovery",
+		Form:      map[string]string{"auto_link_serial": "on"},
+	}
+	body := renderToString(t, "settings.html", data)
+	for _, want := range []string{
+		`action="/settings/discovery"`,
+		`name="auto_link_serial"`,
+		"Auto-link on hardware serial match",
+		"checked",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("discovery tab missing %q", want)
+		}
 	}
 }

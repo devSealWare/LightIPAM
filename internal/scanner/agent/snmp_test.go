@@ -568,3 +568,111 @@ func TestInventoryValueExtractors(t *testing.T) {
 		t.Errorf("intFromPDU(string) should not parse")
 	}
 }
+
+// entClassPDU and entSerialPDU build ENTITY-MIB rows for the hardware-serial
+// walks (ADR 0030).
+func entClassPDU(idx, class int) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidEntPhysicalClass + "." + itoa(idx), Type: gosnmp.Integer, Value: class}
+}
+
+func entSerialPDU(idx int, serial string) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: oidEntPhysicalSerialNum + "." + itoa(idx), Type: gosnmp.OctetString, Value: []byte(serial)}
+}
+
+func TestSNMPInventoryReadsHardwareSerial(t *testing.T) {
+	session := &fakeSNMPSession{
+		getPDUs: []gosnmp.SnmpPDU{
+			octet(oidSysName, "fw1"),
+			octet(oidSysDescr, "FreeBSD OPNsense"),
+			{Name: oidSysObjectID, Type: gosnmp.ObjectIdentifier, Value: ".1.3.6.1.4.1.12325.1.1.2.1.1"},
+		},
+		walks: map[string][]gosnmp.SnmpPDU{
+			oidIPAdEntIfIndex: {ipAddrPDU([4]int{192, 168, 0, 1}, 2)},
+			// A port module (class 10) with its own serial sits at a lower index
+			// than the chassis (class 3): the chassis serial must still win.
+			oidEntPhysicalClass:     {entClassPDU(1, 10), entClassPDU(2, entPhysicalClassChassis)},
+			oidEntPhysicalSerialNum: {entSerialPDU(1, "PORT-42"), entSerialPDU(2, "CHASSIS-7")},
+		},
+	}
+	d := NewSNMPDiscoverer(SNMPConfig{})
+	d.dial = func(target string, cfg SNMPConfig) (snmpSession, error) { return session, nil }
+
+	obs, scanErrs, err := d.Discover(context.Background(), inventoryJob(
+		[]string{"192.168.0.1"}, []string{"192.168.0.0/24"}))
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(scanErrs) != 0 {
+		t.Fatalf("unexpected scan errors: %+v", scanErrs)
+	}
+	if len(obs) != 1 {
+		t.Fatalf("got %d observations, want 1: %+v", len(obs), obs)
+	}
+	o := obs[0]
+	if o.HWSerial != "CHASSIS-7" {
+		t.Errorf("HWSerial = %q, want CHASSIS-7 (chassis row must beat the module row)", o.HWSerial)
+	}
+	if o.HWObjectID != "1.3.6.1.4.1.12325.1.1.2.1.1" {
+		t.Errorf("HWObjectID = %q", o.HWObjectID)
+	}
+	if !hasEvidence(o.Evidence, "Hardware serial: CHASSIS-7") {
+		t.Errorf("missing serial evidence: %+v", o.Evidence)
+	}
+}
+
+func TestChassisSerial(t *testing.T) {
+	cases := []struct {
+		name    string
+		classes map[int]int
+		serials map[int]string
+		want    string
+	}{
+		{"empty", nil, nil, ""},
+		{
+			"chassis wins over lower-indexed module",
+			map[int]int{1: 10, 5: entPhysicalClassChassis},
+			map[int]string{1: "MOD-1", 5: "CHS-5"},
+			"CHS-5",
+		},
+		{
+			"fallback to first usable serial when no chassis row",
+			map[int]int{3: 10, 4: 9},
+			map[int]string{3: "MOD-3", 4: "FAN-4"},
+			"MOD-3",
+		},
+		{
+			"placeholder serials rejected",
+			map[int]int{1: entPhysicalClassChassis, 2: 10},
+			map[int]string{1: "N/A", 2: "REAL-2"},
+			"REAL-2",
+		},
+		{
+			"all placeholders yield nothing",
+			map[int]int{1: entPhysicalClassChassis},
+			map[int]string{1: "To be filled by O.E.M."},
+			"",
+		},
+		{
+			"chassis with empty serial falls back",
+			map[int]int{1: entPhysicalClassChassis, 2: 10},
+			map[int]string{1: "", 2: "MOD-2"},
+			"MOD-2",
+		},
+	}
+	for _, tc := range cases {
+		if got := chassisSerial(tc.classes, tc.serials); got != tc.want {
+			t.Errorf("%s: chassisSerial() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestUsableSerial(t *testing.T) {
+	for serial, want := range map[string]bool{
+		"CHS-5": true, "  ": false, "n/a": false, "NONE": false,
+		"0": false, "Default string": false, "0012345": true,
+	} {
+		if got := usableSerial(serial); got != want {
+			t.Errorf("usableSerial(%q) = %v, want %v", serial, got, want)
+		}
+	}
+}

@@ -3,10 +3,14 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/devSealWare/LightIPAM/internal/store"
+	"github.com/devSealWare/LightIPAM/internal/ui"
 )
 
 // SecuritySettings is the runtime-tunable auth + session policy. Boot defaults
@@ -209,4 +213,90 @@ func durationHours(d time.Duration) int {
 		return h
 	}
 	return 1
+}
+
+// settingsDiscovery renders the admin-only Discovery settings tab (ADR 0030):
+// today a single toggle, the opt-in gold-confidence serial auto-link. Unlike the
+// hot-path security settings the value is not cached — the store reads it at
+// import time, so a save takes effect immediately everywhere.
+func (a *App) settingsDiscovery(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	stored, err := a.store.GetAppSettings(r.Context())
+	if err != nil {
+		a.logger.Error("load app settings", "error", err)
+		http.Error(w, "Unable to load settings", http.StatusInternalServerError)
+		return
+	}
+	a.renderDiscoveryTab(w, r, session, discoverySettingsForm(stored), "", discoveryNotice(r))
+}
+
+func (a *App) settingsDiscoveryUpdate(w http.ResponseWriter, r *http.Request) {
+	session, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	values := parseDiscoverySettingsForm(r.PostForm)
+	if err := a.store.SetAppSettings(r.Context(), values); err != nil {
+		a.logger.Error("save app settings", "error", err)
+		a.renderDiscoveryTab(w, r, session, submittedDiscoveryForm(r.PostForm), "Unable to save settings. Please try again.", "")
+		return
+	}
+	a.auditMeta(r, &session.User.ID, "settings.discovery.updated", "settings", "discovery", values)
+	http.Redirect(w, r, "/settings/discovery?notice=saved", http.StatusSeeOther)
+}
+
+func (a *App) renderDiscoveryTab(w http.ResponseWriter, r *http.Request, session store.Session, form map[string]string, errMsg, notice string) {
+	_ = ui.Render(w, "settings.html", ui.PageData{
+		Title:          "Settings",
+		Error:          errMsg,
+		SuccessMessage: notice,
+		User:           session.User,
+		CSRF:           session.CSRFToken,
+		Form:           form,
+		ActiveNav:      "settings",
+		ActiveTab:      "discovery",
+	})
+}
+
+// discoverySettingsForm renders the stored discovery settings as the checkbox
+// Form map; parseDiscoverySettingsForm is its inverse (a checkbox posts "on" or
+// nothing, persisted as "true"/"false"). Both are pure.
+func discoverySettingsForm(stored map[string]string) map[string]string {
+	form := map[string]string{}
+	if stored[store.SettingDeviceLinkAutoSerial] == "true" {
+		form["auto_link_serial"] = "on"
+	}
+	return form
+}
+
+func parseDiscoverySettingsForm(form url.Values) map[string]string {
+	return map[string]string{
+		store.SettingDeviceLinkAutoSerial: strconv.FormatBool(form.Get("auto_link_serial") != ""),
+	}
+}
+
+func submittedDiscoveryForm(form url.Values) map[string]string {
+	out := map[string]string{}
+	if form.Get("auto_link_serial") != "" {
+		out["auto_link_serial"] = "on"
+	}
+	return out
+}
+
+func discoveryNotice(r *http.Request) string {
+	if r.URL.Query().Get("notice") == "saved" {
+		return "Discovery settings saved."
+	}
+	return ""
 }

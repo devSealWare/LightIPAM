@@ -131,6 +131,12 @@ Observation fields:
   NetBIOS/mDNS name).
 - `os_family`: optional OS family.
 - `os_detail`: optional OS details.
+- `hw_serial`: optional hardware (chassis) serial number from the ENTITY-MIB,
+  read by an `snmp_inventory` scan (ADR 0030). Identifies the physical unit; the
+  app uses an exact match as a gold-confidence same-hardware signal for device
+  links. Placeholder vendor values are filtered agent-side.
+- `hw_object_id`: optional vendor `sysObjectID` (SNMP), identifying the
+  vendor/model — informational, never matched on.
 - `services`: optional service observations.
 - `evidence`: raw or normalized evidence references.
 - `observed_at`: time the observation was made.

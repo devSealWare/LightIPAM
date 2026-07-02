@@ -146,6 +146,16 @@ reliably across a router.
   device's name (→ hostname), `sysDescr` (→ OS detail) and a coarse OS-family
   guess, plus the MAC of that IP's interface. sysLocation/contact/uptime and
   `sysObjectID` ride along as evidence.
+- **Hardware identity (ADR 0030).** The agent also walks the ENTITY-MIB
+  (`entPhysicalClass`/`entPhysicalSerialNum`) and reports the **chassis serial
+  number** (`hw_serial`; lowest-indexed chassis row, falling back to the first
+  usable serial of any class, with vendor placeholder values like "N/A" filtered
+  out) plus `sysObjectID` as `hw_object_id`. Both persist through the discovery
+  queue onto the imported device: the serial backs gold-confidence
+  same-physical-device link suggestions — and, when the operator opts in on
+  Settings → Discovery, auto-linking at import time — while `hw_object_id` is
+  informational only. Best-effort: a device without the ENTITY-MIB simply yields
+  no serial.
 - **VLAN and interface mapping.** Each owned IP carries the **802.1Q access VLAN**
   of its interface, read from the Q-BRIDGE-MIB `dot1qPvid` table and joined to the
   interface through `dot1dBasePortIfIndex` (bridge port → ifIndex); `dot1qVlanStaticName`

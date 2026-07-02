@@ -89,6 +89,69 @@ func TestSameHardwareCandidate(t *testing.T) {
 	}
 }
 
+func TestGoldHardwareCandidate(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b deviceIdentity
+		want bool
+	}{
+		{
+			// The gold signal needs no hostname/OS agreement at all: the same
+			// chassis serial across disjoint subnets is the physical unit.
+			"serial match ignores hostname and os",
+			deviceIdentity{Hostname: "gw0", OSFamily: "FreeBSD", HWSerial: "CHS-7", SubnetIDs: []string{"a"}},
+			deviceIdentity{Hostname: "gw1", OSFamily: "", HWSerial: "CHS-7", SubnetIDs: []string{"b"}},
+			true,
+		},
+		{
+			"serial trimmed before compare",
+			deviceIdentity{HWSerial: " CHS-7 ", SubnetIDs: []string{"a"}},
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"b"}},
+			true,
+		},
+		{
+			// Serials name one unit; case is preserved, not folded.
+			"serial compare is case-sensitive",
+			deviceIdentity{HWSerial: "chs-7", SubnetIDs: []string{"a"}},
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"b"}},
+			false,
+		},
+		{
+			"empty serials never match",
+			deviceIdentity{HWSerial: "", SubnetIDs: []string{"a"}},
+			deviceIdentity{HWSerial: "", SubnetIDs: []string{"b"}},
+			false,
+		},
+		{
+			// Cloned-serial guard: same subnet means two hosts, even at gold.
+			"shared subnet blocks a serial match",
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"a"}},
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"a", "b"}},
+			false,
+		},
+		{
+			"no subnets blocks a serial match",
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: nil},
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"b"}},
+			false,
+		},
+		{
+			"different serials",
+			deviceIdentity{HWSerial: "CHS-7", SubnetIDs: []string{"a"}},
+			deviceIdentity{HWSerial: "CHS-8", SubnetIDs: []string{"b"}},
+			false,
+		},
+	}
+	for _, tc := range cases {
+		if got := goldHardwareCandidate(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: goldHardwareCandidate(%+v, %+v) = %v, want %v", tc.name, tc.a, tc.b, got, tc.want)
+		}
+		if got := goldHardwareCandidate(tc.b, tc.a); got != tc.want {
+			t.Errorf("%s (reversed): goldHardwareCandidate(%+v, %+v) = %v, want %v", tc.name, tc.b, tc.a, got, tc.want)
+		}
+	}
+}
+
 func TestSingleHostname(t *testing.T) {
 	cases := []struct {
 		name string

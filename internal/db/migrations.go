@@ -553,6 +553,24 @@ CREATE TABLE IF NOT EXISTS device_link_rejections (
 );
 `,
 	},
+	{
+		version: 23,
+		sql: `
+-- SNMP hardware identity (ADR 0030). An snmp_inventory scan reads the device's
+-- ENTITY-MIB chassis serial (hw_serial) and vendor sysObjectID (hw_object_id);
+-- both persist through the discovery queue onto the imported device. The serial
+-- identifies the physical unit — every interface of a multi-homed device reports
+-- the same one — so an exact serial match is a gold-confidence same-hardware
+-- signal for device links, and (opt-in) may auto-link on import. hw_object_id
+-- identifies the vendor/model only, never the unit, so it is informational and
+-- never matched on.
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS hw_serial text NOT NULL DEFAULT '';
+ALTER TABLE scan_discoveries ADD COLUMN IF NOT EXISTS hw_object_id text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS hw_serial text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS hw_object_id text NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_devices_hw_serial ON devices (hw_serial) WHERE hw_serial <> '';
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

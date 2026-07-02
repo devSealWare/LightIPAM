@@ -136,6 +136,7 @@ func (a *App) discoveryImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.audit(r, &session.User.ID, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID)
+	a.autoLinkBySerial(r, discovery.ImportedDeviceID)
 	http.Redirect(w, r, "/discoveries?imported=1", http.StatusSeeOther)
 }
 
@@ -232,6 +233,7 @@ func (a *App) discoverySubnetCreate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			a.audit(r, &session.User.ID, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID)
+			a.autoLinkBySerial(r, discovery.ImportedDeviceID)
 		}
 		http.Redirect(w, r, "/discoveries?imported=1", http.StatusSeeOther)
 		return
@@ -275,6 +277,7 @@ func (a *App) importTargets(r *http.Request, session store.Session, targets []st
 			return count, err
 		}
 		a.audit(r, &session.User.ID, "scan.discovery.imported", "ip_address", discovery.ImportedAddressID)
+		a.autoLinkBySerial(r, discovery.ImportedDeviceID)
 		count++
 	}
 	return count, nil
@@ -500,4 +503,23 @@ func (a *App) discoveryDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	a.audit(r, &session.User.ID, "scan.discovery.dismissed", "scan_discovery", id)
 	http.Redirect(w, r, "/discoveries", http.StatusSeeOther)
+}
+
+// autoLinkBySerial runs the opt-in gold-confidence auto-link (ADR 0030) after a
+// manual discovery import: when the Settings → Discovery toggle is enabled and
+// the imported device's chassis serial exactly matches other devices' (disjoint
+// subnets, dismissed pairs respected), they are linked as one physical device
+// and audited. Failures are logged, never fatal — the import already succeeded.
+func (a *App) autoLinkBySerial(r *http.Request, deviceID string) {
+	if deviceID == "" {
+		return
+	}
+	linked, err := a.store.AutoLinkDeviceBySerial(r.Context(), deviceID)
+	if err != nil {
+		a.logger.Error("auto-link device by serial", "device", deviceID, "error", err)
+		return
+	}
+	if len(linked) > 0 {
+		a.audit(r, nil, "device.link.auto", "device", deviceID)
+	}
 }

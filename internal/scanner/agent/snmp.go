@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +48,18 @@ const (
 	oidDot1dBasePortIfIndex = "1.3.6.1.2.1.17.1.4.1.2"     // bridge port -> ifIndex
 	oidDot1qPvid            = "1.3.6.1.2.1.17.7.1.4.5.1.1" // bridge port -> PVID (untagged/access VLAN)
 	oidDot1qVlanStaticName  = "1.3.6.1.2.1.17.7.1.4.3.1.1" // VLAN id -> administrative name
+
+	// ENTITY-MIB (RFC 6933) physical-inventory columns, walked to recover the
+	// device's hardware serial number (ADR 0030). entPhysicalClass distinguishes
+	// the chassis row (class 3) from modules/ports/fans that carry their own
+	// serials; entPhysicalSerialNum is the vendor-assigned serial per row.
+	oidEntPhysicalClass     = "1.3.6.1.2.1.47.1.1.1.1.5"  // entPhysicalIndex -> class (3 = chassis)
+	oidEntPhysicalSerialNum = "1.3.6.1.2.1.47.1.1.1.1.11" // entPhysicalIndex -> serial number
 )
+
+// entPhysicalClassChassis is the ENTITY-MIB entPhysicalClass value for the
+// chassis itself — the row whose serial identifies the physical unit.
+const entPhysicalClassChassis = 3
 
 // SNMPVersion selects the SNMP protocol version. Only v2c is wired today; the
 // type and SNMPConfig leave room for v3 (user-based security) to drop in without
@@ -412,6 +424,7 @@ type deviceInventory struct {
 	sysObjectID string
 	sysContact  string
 	sysLocation string
+	hwSerial    string         // chassis serial from the ENTITY-MIB, "" when unknown
 	sysUpTime   string         // human-readable, "" when unknown
 	ifMAC       map[int]string // ifIndex -> MAC
 	ifDescr     map[int]string // ifIndex -> interface name
@@ -438,6 +451,8 @@ func (inv deviceInventory) observation(addr inventoryAddr, now time.Time, target
 		Hostname:   inv.sysName,
 		OSDetail:   inv.sysDescr,
 		OSFamily:   classifyOSFamily(inv.sysDescr),
+		HWSerial:   inv.hwSerial,
+		HWObjectID: inv.sysObjectID,
 		ObservedAt: now,
 	}
 	if addr.hasIf {
@@ -480,6 +495,9 @@ func (inv deviceInventory) evidence(addr inventoryAddr, target string) []scanner
 	}
 	if inv.sysObjectID != "" {
 		ev = append(ev, scanner.Evidence{Source: "snmp", Summary: "sysObjectID", Raw: inv.sysObjectID})
+	}
+	if inv.hwSerial != "" {
+		ev = append(ev, scanner.Evidence{Source: "snmp", Summary: "Hardware serial: " + inv.hwSerial})
 	}
 	return ev
 }
@@ -576,7 +594,69 @@ func (d *SNMPDiscoverer) walkInventory(target string) (deviceInventory, error) {
 
 	d.walkVLANs(session, &inv)
 
+	// ENTITY-MIB: chassis serial (best-effort; ADR 0030). A device without the
+	// MIB simply yields no serial and keeps the rest of its inventory.
+	classes := map[int]int{}
+	serials := map[int]string{}
+	if pdus, err := session.BulkWalkAll(oidEntPhysicalClass); err == nil {
+		for _, pdu := range pdus {
+			if idx, ok := lastOIDSubID(pdu.Name); ok {
+				if class, ok := intFromPDU(pdu); ok {
+					classes[idx] = class
+				}
+			}
+		}
+	}
+	if pdus, err := session.BulkWalkAll(oidEntPhysicalSerialNum); err == nil {
+		for _, pdu := range pdus {
+			if idx, ok := lastOIDSubID(pdu.Name); ok {
+				serials[idx] = singleLine(octetString(pdu))
+			}
+		}
+	}
+	inv.hwSerial = chassisSerial(classes, serials)
+
 	return inv, nil
+}
+
+// chassisSerial picks the serial that identifies the physical unit from the
+// walked ENTITY-MIB rows: the lowest-indexed chassis-class row with a usable
+// serial wins (a stacked/modular device lists the chassis first), falling back
+// to the lowest-indexed usable serial of any class when no chassis row carries
+// one. Placeholder values vendors ship instead of a real serial are rejected —
+// matching two devices on "N/A" would fabricate identity.
+func chassisSerial(classes map[int]int, serials map[int]string) string {
+	indexes := make([]int, 0, len(serials))
+	for idx := range serials {
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+
+	fallback := ""
+	for _, idx := range indexes {
+		serial := serials[idx]
+		if !usableSerial(serial) {
+			continue
+		}
+		if classes[idx] == entPhysicalClassChassis {
+			return serial
+		}
+		if fallback == "" {
+			fallback = serial
+		}
+	}
+	return fallback
+}
+
+// usableSerial rejects empty and well-known placeholder serials so a
+// gold-confidence identity is never built from a value shared by every unit a
+// vendor ships.
+func usableSerial(serial string) bool {
+	switch strings.ToLower(strings.TrimSpace(serial)) {
+	case "", "n/a", "na", "none", "unknown", "0", "default string", "to be filled by o.e.m.":
+		return false
+	}
+	return true
 }
 
 // walkVLANs reads the 802.1Q access-VLAN mapping for the device's interfaces. The

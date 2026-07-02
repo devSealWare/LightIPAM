@@ -4,9 +4,9 @@ Light IPAM aims to be highly configurable from the UI, not just from environment
 variables. The **Settings** page (sidebar → System → **Settings**) is the home for
 that configuration: a tabbed panel where an operator tunes how the product behaves.
 Today it ships the **Security**, **Users & Roles**, **Authentication**, **Agent
-certificates**, **Backup & Restore**, **Custom fields**, **Policy**, and
-**Notifications** tabs; the remaining tabs below are planned and tracked here and in
-`docs/ROADMAP.md`.
+certificates**, **Backup & Restore**, **Custom fields**, **Policy**, **Discovery**,
+and **Notifications** tabs; the remaining tabs below are planned and tracked here
+and in `docs/ROADMAP.md`.
 
 ## How settings work
 
@@ -64,7 +64,7 @@ elevated scanner agent:
 | **Policy** | Enable/disable the Policy / Health checks (overlapping subnets, stale records, unmanaged services), set the stale threshold (days), and choose whether never-seen records are flagged. Feeds the `/policy` page and the dashboard widget. | App | **Done** (ADR 0020) |
 | **General** | Instance/display name, default site, table page size, date/time format, default theme (light/dark). | App | Planned |
 | **Scanning (nmap)** | App-side scan **dispatch defaults**: default scan type (Combined) and nmap depth mode (Light/Standard/Deep), per-type timeout defaults, optional rate/timing cap passed to nmap, default targets/allowlist hints, and the scheduler tick. **Agent-local** nmap/SNMP/DHCP credentials and raw-socket config stay on the agent. (A schedule's **run window** — time-of-day + weekdays + timezone, ADR 0021 — is **per-schedule** config on the schedule form, not a global setting here.) | App (dispatch defaults only) | Planned |
-| **Discovery** | Auto-import policy for trusted agents, reconciliation/conflict handling, and review-queue retention. (The "when to mark a record stale" aging knob now lives on the **Policy** tab, ADR 0020.) | App | Planned |
+| **Discovery** | How scan findings fold into the inventory. Ships the opt-in **auto-link on hardware serial match** toggle (gold-confidence device links at import time, default off, ADR 0030). Future: auto-import policy for trusted agents (today per-agent on the agent form), reconciliation/conflict handling, and review-queue retention. (The "when to mark a record stale" aging knob lives on the **Policy** tab, ADR 0020.) | App | **Partial** (ADR 0030) |
 | **Notifications** | Change webhooks: register outbound endpoints, subscribe each to event categories (IPAM / discovery / scan / security), optionally sign deliveries with a sealed HMAC secret, send a test, and review the recent delivery log. Driven by the audit log as the change feed. Future: alert thresholds. | App (secret sealed at rest) | **Done** (ADR 0022) |
 | **Data & Audit** | Audit-log retention/export and the CSV / NetBox import-export entry points (CSV **and** NetBox import/export both exist on the Import / Export page, ADR 0016 + 0023). | App | Partial (import/export exists) |
 
