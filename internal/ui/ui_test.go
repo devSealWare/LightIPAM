@@ -98,6 +98,7 @@ func TestRenderTemplates(t *testing.T) {
 					MACCount:        1,
 					PrivateMACCount: 1,
 					Tags:            []string{"Private MAC"},
+					Linked:          true,
 				}},
 			},
 			{
@@ -109,6 +110,35 @@ func TestRenderTemplates(t *testing.T) {
 			DeviceID:  "device-1",
 			Address:   "da:a1:19:22:33:44",
 			IsPrivate: true,
+		}},
+		LinkedDevices: []store.LinkedDevice{{
+			Device: store.Device{
+				ID:       "device-3",
+				Name:     "Archer_A7.internal",
+				OSFamily: "FreeBSD",
+				OSDetail: "FreeBSD 11.2-RELEASE",
+				Services: []store.DiscoveryService{{Port: 53, Protocol: "tcp", ServiceName: "domain"}},
+				Linked:   true,
+			},
+			Addresses: []store.LinkedAddress{{
+				IP:         "192.168.1.1",
+				SubnetID:   "subnet-2",
+				SubnetName: "Guest LAN",
+				SubnetCIDR: "192.168.1.0/24",
+			}},
+			MACs: []store.MACAddress{{ID: "mac-2", DeviceID: "device-3", Address: "c4:62:37:09:1a:f4"}},
+		}},
+		LinkSuggestions: []store.DeviceLinkSuggestion{{
+			DeviceID: "device-4",
+			Name:     "Archer_A7.internal",
+			Hostname: "archer_a7.internal",
+			OSFamily: "FreeBSD",
+			Addresses: []store.LinkedAddress{{
+				IP:         "192.168.2.1",
+				SubnetID:   "subnet-3",
+				SubnetName: "IoT LAN",
+				SubnetCIDR: "192.168.2.0/24",
+			}},
 		}},
 		AuditLogs: []store.AuditLog{{
 			ID:               1,

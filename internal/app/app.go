@@ -193,6 +193,9 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /devices/{id}/delete", app.deviceDeleteConfirm)
 	mux.HandleFunc("POST /devices/{id}/delete", app.deviceDelete)
 	mux.HandleFunc("POST /devices/{id}/macs", app.macCreate)
+	mux.HandleFunc("POST /devices/{id}/link", app.deviceLink)
+	mux.HandleFunc("POST /devices/{id}/link/dismiss", app.deviceLinkDismiss)
+	mux.HandleFunc("POST /devices/{id}/unlink", app.deviceUnlink)
 	mux.HandleFunc("GET /macs/{id}/delete", app.macDeleteConfirm)
 	mux.HandleFunc("POST /macs/{id}/delete", app.macDelete)
 	mux.HandleFunc("GET /audit", app.auditIndex)
@@ -735,15 +738,29 @@ func (a *App) deviceShow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
 		return
 	}
+	linked, err := a.store.ListLinkedDevices(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list linked devices", "error", err)
+		http.Error(w, "Unable to load linked devices", http.StatusInternalServerError)
+		return
+	}
+	suggestions, err := a.store.ListDeviceLinkSuggestions(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list device link suggestions", "error", err)
+		http.Error(w, "Unable to load link suggestions", http.StatusInternalServerError)
+		return
+	}
 	_ = ui.Render(w, "device_detail.html", ui.PageData{
-		Title:        device.Name,
-		User:         session.User,
-		CSRF:         session.CSRFToken,
-		Device:       device,
-		MACAddresses: macs,
-		Addresses:    addresses,
-		CustomFields: a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
-		ActiveNav:    "devices",
+		Title:           device.Name,
+		User:            session.User,
+		CSRF:            session.CSRFToken,
+		Device:          device,
+		MACAddresses:    macs,
+		Addresses:       addresses,
+		LinkedDevices:   linked,
+		LinkSuggestions: suggestions,
+		CustomFields:    a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
+		ActiveNav:       "devices",
 	})
 }
 
@@ -894,6 +911,91 @@ func (a *App) macDeleteConfirm(w http.ResponseWriter, r *http.Request) {
 			"device_id":    mac.DeviceID,
 		},
 	})
+}
+
+// deviceLink confirms a "same physical device" link (ADR 0029): the viewed
+// device and the posted sibling join one hardware group (merging groups when
+// either is already linked). Manual links bypass the suggestion rule — the
+// operator's judgment wins.
+func (a *App) deviceLink(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	siblingID := strings.TrimSpace(r.FormValue("sibling_id"))
+	if siblingID == "" || siblingID == device.ID {
+		http.Error(w, "Invalid device to link", http.StatusBadRequest)
+		return
+	}
+	if err := a.store.LinkDevices(r.Context(), device.ID, siblingID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		a.logger.Error("link devices", "error", err)
+		http.Error(w, "Unable to link devices", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "device.link.confirmed", "device", device.ID)
+	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
+}
+
+// deviceUnlink removes one member (the posted sibling, or the viewed device
+// itself when none is posted) from its hardware group; a group left with fewer
+// than two members dissolves.
+func (a *App) deviceUnlink(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	unlinkID := strings.TrimSpace(r.FormValue("sibling_id"))
+	if unlinkID == "" {
+		unlinkID = device.ID
+	}
+	if err := a.store.UnlinkDevice(r.Context(), unlinkID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		a.logger.Error("unlink device", "error", err)
+		http.Error(w, "Unable to unlink device", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "device.link.removed", "device", unlinkID)
+	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
+}
+
+// deviceLinkDismiss suppresses a link suggestion for this unordered device
+// pair; it will not be suggested again (manual linking stays available).
+func (a *App) deviceLinkDismiss(w http.ResponseWriter, r *http.Request) {
+	session, device, ok := a.loadDevicePage(w, r)
+	if !ok {
+		return
+	}
+	if !a.verifySessionCSRF(r, session) {
+		http.Error(w, "Invalid form token", http.StatusForbidden)
+		return
+	}
+	siblingID := strings.TrimSpace(r.FormValue("sibling_id"))
+	if siblingID == "" || siblingID == device.ID {
+		http.Error(w, "Invalid device to dismiss", http.StatusBadRequest)
+		return
+	}
+	if err := a.store.DismissDeviceLinkSuggestion(r.Context(), device.ID, siblingID); err != nil {
+		a.logger.Error("dismiss device link suggestion", "error", err)
+		http.Error(w, "Unable to dismiss suggestion", http.StatusInternalServerError)
+		return
+	}
+	a.audit(r, &session.User.ID, "device.link.dismissed", "device", device.ID)
+	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
 }
 
 func (a *App) bootstrapForm(w http.ResponseWriter, r *http.Request) {
@@ -1427,16 +1529,30 @@ func (a *App) renderDeviceDetailError(w http.ResponseWriter, r *http.Request, se
 		http.Error(w, "Unable to load addresses", http.StatusInternalServerError)
 		return
 	}
+	linked, err := a.store.ListLinkedDevices(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list linked devices", "error", err)
+		http.Error(w, "Unable to load linked devices", http.StatusInternalServerError)
+		return
+	}
+	suggestions, err := a.store.ListDeviceLinkSuggestions(r.Context(), device.ID)
+	if err != nil {
+		a.logger.Error("list device link suggestions", "error", err)
+		http.Error(w, "Unable to load link suggestions", http.StatusInternalServerError)
+		return
+	}
 	_ = ui.Render(w, "device_detail.html", ui.PageData{
-		Title:        device.Name,
-		Error:        message,
-		User:         session.User,
-		CSRF:         session.CSRFToken,
-		Device:       device,
-		MACAddresses: macs,
-		Addresses:    addresses,
-		CustomFields: a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
-		ActiveNav:    "devices",
+		Title:           device.Name,
+		Error:           message,
+		User:            session.User,
+		CSRF:            session.CSRFToken,
+		Device:          device,
+		MACAddresses:    macs,
+		Addresses:       addresses,
+		LinkedDevices:   linked,
+		LinkSuggestions: suggestions,
+		CustomFields:    a.loadCustomFields(r, store.CustomFieldDevice, device.ID),
+		ActiveNav:       "devices",
 	})
 }
 

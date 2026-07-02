@@ -33,12 +33,16 @@ type PageData struct {
 	DeviceGroups  []store.DeviceGroup
 	Device        store.Device
 	MACAddresses  []store.MACAddress
-	AuditLogs     []store.AuditLog
-	AuditActions  []string
-	AuditSubjects []string
-	AuditActors   []store.User
-	ScanAgents    []store.ScanAgent
-	ScanAgent     store.ScanAgent
+	// Same-physical-device links (ADR 0029): confirmed hardware-group siblings
+	// of the viewed device, and unconfirmed suggestions awaiting operator review.
+	LinkedDevices   []store.LinkedDevice
+	LinkSuggestions []store.DeviceLinkSuggestion
+	AuditLogs       []store.AuditLog
+	AuditActions    []string
+	AuditSubjects   []string
+	AuditActors     []store.User
+	ScanAgents      []store.ScanAgent
+	ScanAgent       store.ScanAgent
 	// AgentDiagnostics, when set, renders the agent's network self-view (source/
 	// route/interface, pin mode, nmap version, capabilities, warnings) on the
 	// agent detail page after "Run diagnostics" (ADR 0027 §3).

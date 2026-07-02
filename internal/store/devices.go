@@ -38,6 +38,9 @@ type Device struct {
 	// shown in the Devices list. Empty for a device with no address; when
 	// AddressCount > 1 the UI adds a "+N" affordance for the remainder.
 	PrimaryIP string
+	// Linked marks a device that is part of a hardware group (ADR 0029): one
+	// physical multi-homed device represented by several records.
+	Linked    bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -75,6 +78,7 @@ SELECT d.id, d.name, d.description,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
 	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
+	EXISTS (SELECT 1 FROM devices sib WHERE sib.hardware_group_id = d.hardware_group_id AND sib.id <> d.id),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -158,6 +162,7 @@ SELECT d.id, d.name, d.description,
 	COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), '{}')::text[],
 	d.os_family, d.os_detail, d.services::text, d.discovery_source,
 	COALESCE(ps.subnet_id, ''), COALESCE(ps.subnet_name, ''), COALESCE(ps.cidr, ''), COALESCE(ps.ip, ''),
+	EXISTS (SELECT 1 FROM devices sib WHERE sib.hardware_group_id = d.hardware_group_id AND sib.id <> d.id),
 	d.created_at, d.updated_at
 FROM devices d
 LEFT JOIN ip_addresses ip ON ip.device_id = d.id
@@ -376,6 +381,7 @@ func scanDevice(scanner subnetScanner) (Device, error) {
 		&device.PrimarySubnetName,
 		&device.PrimarySubnetCIDR,
 		&device.PrimaryIP,
+		&device.Linked,
 		&device.CreatedAt,
 		&device.UpdatedAt,
 	); err != nil {

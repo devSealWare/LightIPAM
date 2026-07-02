@@ -8,6 +8,19 @@ Starting at v1.0.0, the JSON API (`/api/v1`) and the scanner protocol (`v1`) are
 treated as stable surfaces: a breaking change to either, or a destructive database
 migration, requires a major-version bump.
 
+## [Unreleased]
+
+### Added
+
+- Same-physical-device links (ADR 0029, migration 22): a reversible link layer that
+  groups the multiple device records a multi-homed device (e.g. a router with one
+  IP and MAC per subnet) imports as. The device page suggests high-confidence
+  matches (identical hostname + same OS family + disjoint subnets — never an exact
+  OS-string match) for the operator to confirm or dismiss; nothing links
+  automatically. Linked siblings show their IPs, subnets, MACs, OS, and services on
+  the device page, records are never merged, and manual link/unlink always works.
+  Link actions are audited (`device.link.confirmed` / `.removed` / `.dismissed`).
+
 ## [1.1.0] - 2026-06-29
 
 A backward-compatible release: no breaking `/api/v1` or scanner-protocol changes,
@@ -127,5 +140,6 @@ separate, optional scanner agent.
   into the binaries and reported on `/healthz`, in the startup log, and via
   `--version`.
 
+[Unreleased]: https://github.com/devSealWare/LightIPAM/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.1.0
 [1.0.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.0.0
