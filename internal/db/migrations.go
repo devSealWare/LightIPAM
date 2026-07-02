@@ -528,6 +528,31 @@ ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS last_run_error text NOT NULL
 ALTER TABLE scan_schedules ADD COLUMN IF NOT EXISTS last_job_id text;
 `,
 	},
+	{
+		version: 22,
+		sql: `
+-- Device hardware links (ADR 0029). A multi-homed device (classically a
+-- router/firewall) presents one IP per subnet, each behind a different port MAC,
+-- so the MAC-conservative import path correctly creates one device record per
+-- interface. hardware_group_id is a reversible link layer on top: all devices
+-- sharing a non-null group id are one physical device. Records are never merged
+-- or collapsed — each keeps its own subnet listing — and the id is an opaque
+-- generated token, not a row in its own table.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS hardware_group_id text;
+CREATE INDEX IF NOT EXISTS idx_devices_hardware_group ON devices (hardware_group_id) WHERE hardware_group_id IS NOT NULL;
+
+-- Dismissed link suggestions, keyed by the unordered device pair (callers store
+-- the lexically smaller id in device_lo). A dismissed pair is never suggested
+-- again; manual linking remains possible regardless.
+CREATE TABLE IF NOT EXISTS device_link_rejections (
+	device_lo text NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+	device_hi text NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	PRIMARY KEY (device_lo, device_hi),
+	CHECK (device_lo < device_hi)
+);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

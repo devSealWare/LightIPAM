@@ -36,6 +36,11 @@ The design is intentionally split so risk stays isolated:
   tracking with private/rotating-MAC detection and best-effort OUI vendor lookup.
 - Devices grouped by subnet, global search across subnets/addresses/devices/MACs,
   and per-table selectable columns.
+- **Same-physical-device links** (ADR 0029): the separate per-subnet records of a
+  multi-homed device (e.g. a router with one IP and MAC per interface) can be
+  linked as one physical device — high-confidence suggestions (identical hostname +
+  OS family across disjoint subnets) that the operator confirms or dismisses, plus
+  manual link/unlink. Records are never merged, and nothing links automatically.
 - Tags and operator-defined **custom fields** (text) on subnets, addresses, and
   devices — custom fields are defined on an admin Settings tab and edited on each
   record's form (ADR 0019).

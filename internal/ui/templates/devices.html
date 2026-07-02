@@ -75,7 +75,10 @@
       <div data-cols-grid class="grid grid-cols-[auto_1.2fr_1fr_0.5fr_0.7fr_0.6fr_1fr] items-center gap-4 border-b border-zinc-100 px-5 py-4 text-sm transition last:border-b-0 hover:bg-white/70 dark:border-zinc-800 dark:hover:bg-zinc-900/80">
         <span data-col="select" class="flex items-center"><input type="checkbox" name="ids" value="{{ .ID }}" data-bulk-checkbox aria-label="Select {{ .Name }}" class="h-4 w-4 accent-zinc-900 dark:accent-zinc-100"></span>
         <span data-col="name" class="min-w-0">
-          <a class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .ID }}">{{ .Name }}</a>
+          <span class="flex items-center gap-1.5">
+            <a class="block truncate font-semibold text-zinc-950 hover:underline dark:text-white" href="/devices/{{ .ID }}">{{ .Name }}</a>
+            {{ if .Linked }}<span class="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-200">Linked</span>{{ end }}
+          </span>
           <span class="block truncate text-xs text-zinc-500 dark:text-zinc-400">{{ if .OSDetail }}{{ .OSDetail }}{{ else if .OSFamily }}{{ .OSFamily }}{{ else }}{{ .Description }}{{ end }}</span>
         </span>
         <span data-col="ip" class="text-zinc-600 dark:text-zinc-300">

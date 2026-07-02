@@ -336,6 +336,21 @@ import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
   failure reason in a **Last run** column (migration 21, additive). App-side only, no
   new privilege, no client JS.
 
+## Device correlation (multi-homed devices)
+
+- **Phase 1 — same-physical-device links (done, ADR 0029, migration 22).** A
+  reversible link layer over existing device records: the device page suggests
+  high-confidence same-hardware matches (identical hostname + same OS family +
+  disjoint subnets; `os_detail` deliberately excluded) for the operator to confirm
+  or dismiss, with manual link/unlink always available. Link-not-merge — each
+  record keeps its own address in its own subnet — and never automatic. Import
+  merge-on-MAC is unchanged.
+- **Phase 2 — persisted SNMP hardware identity (planned, not started).** Carry
+  `sysObjectID`, ENTITY-MIB `entPhysicalSerialNum`, and/or the SNMPv3 engine ID
+  through the scanner protocol and schema, and use an exact serial/engine-ID match
+  as a gold-confidence signal that may support opt-in auto-linking. Separate
+  branch, own ADR; nothing shipped.
+
 ## Planned
 
 - The next phase is open — confirm direction with the user before starting.

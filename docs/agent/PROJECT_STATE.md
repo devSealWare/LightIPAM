@@ -11,7 +11,9 @@ file** — a stale snapshot here is worse than none.
 
 - **Latest release: v1.1.0** (see [`CHANGELOG.md`](../../CHANGELOG.md)). Tagged
   releases publish multi-arch app + scanner images to GHCR.
-- Database schema is at **migration 21** (additive; migrations 1–21 applied in order).
+- Database schema is at **migration 22** (additive; migrations 1–22 applied in
+  order). Migration 22 (device hardware links, ADR 0029) is merged but not yet in a
+  tagged release — see the CHANGELOG "Unreleased" section.
 - Stable surfaces (SemVer-guarded): the JSON API `/api/v1` and the scanner protocol
   `v1`. A breaking change to either, or a destructive migration, is a major bump.
 
@@ -34,6 +36,10 @@ file** — a stale snapshot here is worse than none.
   API `/api/v1` + `lightipam-cli`.
 - **Post-1.0 (shipped in v1.1.0):** routing-aware scanner egress + agent diagnostics
   (ADR 0027) and schedule scope validation + last-run outcome (ADR 0028).
+- **Post-1.1 (merged, unreleased):** same-physical-device links (ADR 0029,
+  migration 22) — suggest-and-confirm linking of a multi-homed device's per-subnet
+  records; link-not-merge, never automatic. Phase 2 of that ADR (persisted SNMP
+  hardware identity as a gold-confidence signal) is **planned only**.
 
 ## Known limitations
 
