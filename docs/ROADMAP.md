@@ -336,7 +336,7 @@ import/export (ADR 0023), and the machine API + CLI (ADR 0024) are all merged.
   failure reason in a **Last run** column (migration 21, additive). App-side only, no
   new privilege, no client JS.
 
-## Device correlation (multi-homed devices)
+## Device correlation (multi-homed devices) (shipped in v1.2.0)
 
 - **Phase 1 — same-physical-device links (done, ADR 0029, migration 22).** A
   reversible link layer over existing device records: the device page suggests
