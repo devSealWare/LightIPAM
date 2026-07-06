@@ -9,12 +9,11 @@ file** — a stale snapshot here is worse than none.
 
 ## Current release
 
-- **Latest release: v1.1.0** (see [`CHANGELOG.md`](../../CHANGELOG.md)). Tagged
+- **Latest release: v1.2.0** (see [`CHANGELOG.md`](../../CHANGELOG.md)). Tagged
   releases publish multi-arch app + scanner images to GHCR.
 - Database schema is at **migration 23** (additive; migrations 1–23 applied in
   order). Migrations 22–23 (device hardware links, ADR 0029; SNMP hardware
-  identity, ADR 0030) are merged but not yet in a tagged release — see the
-  CHANGELOG "Unreleased" section.
+  identity, ADR 0030) shipped in v1.2.0.
 - Stable surfaces (SemVer-guarded): the JSON API `/api/v1` and the scanner protocol
   `v1`. A breaking change to either, or a destructive migration, is a major bump.
 
@@ -37,7 +36,7 @@ file** — a stale snapshot here is worse than none.
   API `/api/v1` + `lightipam-cli`.
 - **Post-1.0 (shipped in v1.1.0):** routing-aware scanner egress + agent diagnostics
   (ADR 0027) and schedule scope validation + last-run outcome (ADR 0028).
-- **Post-1.1 (merged, unreleased):** same-physical-device links (ADR 0029,
+- **Post-1.1 (shipped in v1.2.0):** same-physical-device links (ADR 0029,
   migration 22) — suggest-and-confirm linking of a multi-homed device's per-subnet
   records; link-not-merge. Phase 2 shipped as ADR 0030 (migration 23): the SNMP
   ENTITY-MIB chassis serial persists as a hardware identity, an exact serial

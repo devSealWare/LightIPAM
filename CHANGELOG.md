@@ -8,7 +8,12 @@ Starting at v1.0.0, the JSON API (`/api/v1`) and the scanner protocol (`v1`) are
 treated as stable surfaces: a breaking change to either, or a destructive database
 migration, requires a major-version bump.
 
-## [Unreleased]
+## [1.2.0] - 2026-07-06
+
+A backward-compatible release: no breaking `/api/v1` or scanner-protocol changes, and
+the two new database migrations (22, 23) are additive. The headline is device
+correlation for multi-homed hardware — link-not-merge suggestions, now upgraded to a
+gold-confidence signal from SNMP-derived chassis serials.
 
 ### Added
 
@@ -30,6 +35,26 @@ migration, requires a major-version bump.
   automatically. Linked siblings show their IPs, subnets, MACs, OS, and services on
   the device page, records are never merged, and manual link/unlink always works.
   Link actions are audited (`device.link.confirmed` / `.removed` / `.dismissed`).
+
+### Fixed
+
+- Guarded the operator-supplied scanner-agent `endpoint_url` against SSRF: the app's
+  mTLS dispatcher connects to that URL (TCP connect + TLS ClientHello) before the
+  pinned-CA cert check runs, and the only prior validation was an `https://` prefix
+  check, so an endpoint like `https://169.254.169.254` turned the app into an internal
+  port-scan / metadata oracle. A new `ValidateAgentEndpoint` requires an `https` URL
+  with a host and rejects literal loopback/link-local/unspecified IPs (private
+  RFC-1918 ranges, where real agents live, stay allowed); it runs at save time and
+  defensively in the dispatcher itself (CodeQL `go/request-forgery`).
+- Bounded the argon2 parameters (memory/iterations/parallelism) decoded from a stored
+  password hash before their narrowing conversion to `uint32`/`uint32`/`uint8` —
+  an out-of-range value in a malformed or hostile hash string wrapped silently instead
+  of failing closed (CodeQL `go/incorrect-integer-conversion`).
+- Range-checked the `AGENT_SNMP_PORT` / `AGENT_NETBIOS_PORT` / `AGENT_MDNS_PORT`
+  scanner-agent environment variables (1–65535) before their narrowing conversion to
+  `uint16` — an out-of-range value (e.g. `65537`) previously wrapped silently to `1`
+  instead of falling back to the documented default (CodeQL
+  `go/incorrect-integer-conversion`).
 
 ## [1.1.0] - 2026-06-29
 
@@ -150,6 +175,7 @@ separate, optional scanner agent.
   into the binaries and reported on `/healthz`, in the startup log, and via
   `--version`.
 
-[Unreleased]: https://github.com/devSealWare/LightIPAM/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/devSealWare/LightIPAM/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.2.0
 [1.1.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.1.0
 [1.0.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.0.0
