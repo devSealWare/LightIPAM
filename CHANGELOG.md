@@ -8,6 +8,17 @@ Starting at v1.0.0, the JSON API (`/api/v1`) and the scanner protocol (`v1`) are
 treated as stable surfaces: a breaking change to either, or a destructive database
 migration, requires a major-version bump.
 
+## [Unreleased]
+
+### Fixed
+
+- CSV formula injection in exports (docs/agent/findings/0001): subnet, address,
+  device, and NetBox-compatible CSV exports now sanitize any cell beginning with
+  `=`, `+`, `-`, `@`, tab, or carriage return by prefixing it with a leading `'`,
+  so operator- or discovery-sourced strings (e.g. a subnet named `=SUM(1+1)`, or a
+  hostname planted via DNS/NetBIOS/DHCP) can no longer execute as a formula when
+  the export is opened in Excel or Google Sheets.
+
 ## [1.2.0] - 2026-07-06
 
 A backward-compatible release: no breaking `/api/v1` or scanner-protocol changes, and
