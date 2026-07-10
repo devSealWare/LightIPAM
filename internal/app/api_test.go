@@ -1,6 +1,33 @@
 package app
 
-import "testing"
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestAPIMethodNotAllowedUsesJSONEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	(&App{}).registerAPIRoutes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, "/api/v1/whoami", nil))
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Fatalf("expected JSON content type, got %q", ct)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("expected valid JSON body: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatalf("expected non-empty error message, got %+v", body)
+	}
+}
 
 func TestSubnetReqToInput(t *testing.T) {
 	vlan := 100
