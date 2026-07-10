@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/csv"
 	"net/netip"
 	"testing"
 )
@@ -112,6 +114,47 @@ func TestValidateDevices(t *testing.T) {
 	}
 	if len(imports) != 3 {
 		t.Fatalf("want 3 importable device rows, got %d", len(imports))
+	}
+}
+
+func TestSanitizeCSVCell(t *testing.T) {
+	cases := map[string]string{
+		"=SUM(1+1)":      "'=SUM(1+1)",
+		"@cmd|'/c calc'": "'@cmd|'/c calc'",
+		"+1234":          "'+1234",
+		"-1234":          "'-1234",
+		"\ttabbed":       "'\ttabbed",
+		"\rcr":           "'\rcr",
+		"Normal name":    "Normal name",
+		"":               "",
+	}
+	for in, want := range cases {
+		if got := sanitizeCSVCell(in); got != want {
+			t.Errorf("sanitizeCSVCell(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestCSVExportNeutralizesFormulaInjection is the regression test for
+// docs/agent/findings/0001-csv-formula-injection.md: a subnet named
+// "=SUM(1+1)" must not reach the exported file as a live formula.
+func TestCSVExportNeutralizesFormulaInjection(t *testing.T) {
+	var buf bytes.Buffer
+	cw := &csvCellWriter{csv.NewWriter(&buf)}
+	_ = cw.Write([]string{"name", "cidr"})
+	_ = cw.Write([]string{"=SUM(1+1)", "10.0.0.0/24"})
+	cw.Flush()
+
+	r := csv.NewReader(bytes.NewReader(buf.Bytes()))
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("parse exported csv: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("want 2 rows, got %d", len(records))
+	}
+	if got := records[1][0]; got != "'=SUM(1+1)" {
+		t.Fatalf("exported cell = %q, want a leading-quote-neutralized formula", got)
 	}
 }
 

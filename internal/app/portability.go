@@ -555,12 +555,51 @@ func (a *App) exportDevicesCSV(w http.ResponseWriter, r *http.Request) {
 	a.audit(r, &session.User.ID, "device.csv_exported", "device", "")
 }
 
-func beginCSV(w http.ResponseWriter, filename string, header []string) *csv.Writer {
+func beginCSV(w http.ResponseWriter, filename string, header []string) *csvCellWriter {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	cw := csv.NewWriter(w)
+	cw := &csvCellWriter{csv.NewWriter(w)}
 	_ = cw.Write(header)
 	return cw
+}
+
+// csvCellWriter wraps csv.Writer so every exported cell is run through
+// sanitizeCSVCell before it reaches the file. encoding/csv only quotes for CSV
+// *parsing*; it does not neutralize spreadsheet formulas, so operator- and
+// discovery-sourced strings (subnet/device names, DNS/NetBIOS/DHCP hostnames)
+// could otherwise execute as formulas when the export is opened in Excel or
+// Google Sheets (docs/agent/findings/0001-csv-formula-injection.md).
+type csvCellWriter struct {
+	w *csv.Writer
+}
+
+func (cw *csvCellWriter) Write(record []string) error {
+	sanitized := make([]string, len(record))
+	for i, v := range record {
+		sanitized[i] = sanitizeCSVCell(v)
+	}
+	return cw.w.Write(sanitized)
+}
+
+func (cw *csvCellWriter) Flush() {
+	cw.w.Flush()
+}
+
+// sanitizeCSVCell prefixes a cell with a leading single quote when it begins
+// with a character a spreadsheet application would interpret as a formula
+// trigger: =, +, -, @, tab, or carriage return. This is the standard OWASP
+// CSV-injection mitigation and preserves the original value (Excel/Sheets
+// strip the leading quote on display; other tools see it as a literal string).
+func sanitizeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	default:
+		return s
+	}
 }
 
 func (a *App) renderImportPreview(w http.ResponseWriter, session store.Session, result importResult) {
