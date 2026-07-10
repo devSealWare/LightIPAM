@@ -1,0 +1,108 @@
+services:
+  app:
+    image: ghcr.io/devsealware/lightipam:${LIGHTIPAM_VERSION:-1.2.0}
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-lightipam}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-lightipam}?sslmode=disable
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SCANNER_CLIENT_CERT: /certs/app.crt
+      SCANNER_CLIENT_KEY: /certs/app.key
+      SCANNER_CLIENT_CA: /certs/ca.crt
+      SCANNER_AGENT_ENDPOINT: ${SCANNER_AGENT_ENDPOINT:-}
+      BACKUP_DIR: /var/lib/lightipam/backups
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      cert-perms:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ./deploy/scanner-certs:/certs:ro
+      - backups:/var/lib/lightipam/backups
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  cert-perms:
+    image: alpine:3.20
+    command: ["sh", "/fix-cert-perms.sh", "/certs"]
+    volumes:
+      - ./deploy/fix-cert-perms.sh:/fix-cert-perms.sh:ro
+      - ./deploy/scanner-certs:/certs
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  scanner-agent:
+    image: ghcr.io/devsealware/lightipam-scanner:${LIGHTIPAM_VERSION:-1.2.0}
+    profiles:
+      - scanner
+    depends_on:
+      cert-perms:
+        condition: service_completed_successfully
+    environment:
+      AGENT_LISTEN: ":8443"
+      AGENT_ID: ${AGENT_ID:-agent-local}
+      AGENT_NAME: ${AGENT_NAME:-local-scanner-agent}
+      AGENT_ALLOWED_CIDRS: ${AGENT_ALLOWED_CIDRS:-127.0.0.1/32}
+      AGENT_SCAN_PIN_MODE: ${AGENT_SCAN_PIN_MODE:-auto}
+      AGENT_SNMP_VERSION: "2c"
+      AGENT_SNMP_COMMUNITY: ${AGENT_SNMP_COMMUNITY:-not-configured}
+      APP_CLIENT_CN: light-ipam-app
+      SCANNER_TLS_CERT: /certs/agent.crt
+      SCANNER_TLS_KEY: /certs/agent.key
+      SCANNER_TLS_CA: /certs/ca.crt
+    volumes:
+      - ./deploy/scanner-certs:/certs:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "scanner-agent", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lightipam}
+      POSTGRES_USER: ${POSTGRES_USER:-lightipam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lightipam} -d ${POSTGRES_DB:-lightipam}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  backups:
