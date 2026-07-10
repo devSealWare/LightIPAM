@@ -14,7 +14,7 @@ the only service that receives `NET_RAW`.
 | Source development | `compose.yaml` | Built from the local checkout |
 | Add discovery | Either file with `--profile scanner` | Matching app and scanner versions |
 
-The current stable release is **v1.2.0**. The release workflow publishes
+The current stable release is **v1.2.1**. The release workflow publishes
 `ghcr.io/devsealware/lightipam` and
 `ghcr.io/devsealware/lightipam-scanner` for amd64 and arm64.
 
@@ -132,9 +132,9 @@ production configuration.
 
 ## Image tags
 
-For a stable tag such as `v1.2.0`, the release workflow publishes:
+For the current stable tag `v1.2.1`, the release workflow publishes:
 
-- `1.2.0` — exact release; recommended for production.
+- `1.2.1` — exact release; recommended for production.
 - `1.2` — moving minor-series tag; receives later 1.2.x releases.
 - `latest` — moving newest stable release.
 

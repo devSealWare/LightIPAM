@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        # Stamp a version into the binary: `VERSION=v1.0.0 docker compose build`.
+        # Stamp a version into the binary: `VERSION=vX.Y.Z docker compose build`.
         VERSION: ${VERSION:-dev}
     environment:
       PORT: "8080"
