@@ -10,6 +10,13 @@ migration, requires a major-version bump.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-10
+
+A backward-compatible patch release focused on security hardening, auditability,
+API consistency, and published-image installation. There are no database
+migrations, no breaking `/api/v1` changes, and no scanner-protocol changes;
+the schema remains at migration 23 and the scanner protocol remains `v1`.
+
 ### Added
 
 - A published-image deployment path using `compose.release.yaml`, pinned by
@@ -24,6 +31,9 @@ migration, requires a major-version bump.
 - Reorganized the README as a product landing page with clearer positioning,
   audience guidance, feature groupings, a short release-image quick start, and
   direct navigation to operational and technical documentation.
+- Webhook create/update now requires `https://`. Existing plain-HTTP webhook
+  configurations must move behind TLS before they can be saved again; this closes
+  the SSRF gap between webhook URLs and scanner-agent endpoints.
 
 ### Fixed
 
@@ -35,28 +45,11 @@ migration, requires a major-version bump.
   CI runs, unrelated to those PRs' actual changes). Now flips a real decoded
   ciphertext byte before re-encoding, which always changes the data.
 
-### Investigated
-
-- Transient 503 on repeated `/subnets/export.csv` requests
-  (docs/agent/findings/0006): not reproduced. Sequential rapid requests and
-  concurrent bursts up to 300 simultaneous requests against `/subnets/export.csv`,
-  `/addresses/export.csv`, and `/devices/export.csv` all returned `200` with no
-  server-side errors. Static review confirms no code path in the export
-  handlers or their store calls can emit a `503` today — the only `503` sources
-  in the app are `/readyz` and two unrelated MFA config-error paths — so the
-  original observation is most likely an artifact of the reporting
-  environment (proxy, dev tooling, or a one-off DB cold-start race) rather
-  than application code. Closing without a code change; reopen as a new
-  finding with concrete repro steps if it recurs.
-
-### Fixed
-
-- Webhook Payload URL SSRF guard (docs/agent/findings/0005): webhook create/update
-  now requires `https://` and rejects a literal loopback, link-local, or
-  unspecified IP (e.g. `169.254.169.254`) via the new `webhook.ValidateURL`,
-  matching the existing agent-endpoint guard. Plain `http://` webhook URLs are
-  no longer accepted — a behavior change for anyone who had configured one.
-  Documented both guards as a matched pair in `docs/SECURITY.md`.
+- Webhook Payload URL SSRF guard (docs/agent/findings/0005): webhook URLs reject
+  a literal loopback, link-local, or unspecified IP (e.g. `169.254.169.254`)
+  via the new `webhook.ValidateURL`,
+  matching the existing agent-endpoint guard. Both guards are documented as a
+  matched pair in `docs/SECURITY.md`.
 - Viewer API token creation restricted to admins (docs/agent/findings/0004):
   `POST /account/tokens` now requires the writer (admin) role, and the
   "Create token" form is hidden for viewers on the account page. Token
@@ -100,6 +93,20 @@ migration, requires a major-version bump.
   so operator- or discovery-sourced strings (e.g. a subnet named `=SUM(1+1)`, or a
   hostname planted via DNS/NetBIOS/DHCP) can no longer execute as a formula when
   the export is opened in Excel or Google Sheets.
+
+### Investigated
+
+- Transient 503 on repeated `/subnets/export.csv` requests
+  (docs/agent/findings/0006): not reproduced. Sequential rapid requests and
+  concurrent bursts up to 300 simultaneous requests against `/subnets/export.csv`,
+  `/addresses/export.csv`, and `/devices/export.csv` all returned `200` with no
+  server-side errors. Static review confirms no code path in the export
+  handlers or their store calls can emit a `503` today — the only `503` sources
+  in the app are `/readyz` and two unrelated MFA config-error paths — so the
+  original observation is most likely an artifact of the reporting
+  environment (proxy, dev tooling, or a one-off DB cold-start race) rather
+  than application code. Closing without a code change; reopen as a new
+  finding with concrete repro steps if it recurs.
 
 ## [1.2.0] - 2026-07-06
 
@@ -268,7 +275,8 @@ separate, optional scanner agent.
   into the binaries and reported on `/healthz`, in the startup log, and via
   `--version`.
 
-[Unreleased]: https://github.com/devSealWare/LightIPAM/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/devSealWare/LightIPAM/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.2.1
 [1.2.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.2.0
 [1.1.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.1.0
 [1.0.0]: https://github.com/devSealWare/LightIPAM/releases/tag/v1.0.0

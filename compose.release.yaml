@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/devsealware/lightipam:${LIGHTIPAM_VERSION:-1.2.0}
+    image: ghcr.io/devsealware/lightipam:${LIGHTIPAM_VERSION:-1.2.1}
     environment:
       PORT: "8080"
       DATABASE_URL: postgres://${POSTGRES_USER:-lightipam}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-lightipam}?sslmode=disable
@@ -53,7 +53,7 @@ services:
     restart: "no"
 
   scanner-agent:
-    image: ghcr.io/devsealware/lightipam-scanner:${LIGHTIPAM_VERSION:-1.2.0}
+    image: ghcr.io/devsealware/lightipam-scanner:${LIGHTIPAM_VERSION:-1.2.1}
     profiles:
       - scanner
     depends_on:
