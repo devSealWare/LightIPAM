@@ -10,6 +10,21 @@ migration, requires a major-version bump.
 
 ## [Unreleased]
 
+### Added
+
+- A published-image deployment path using `compose.release.yaml`, pinned by
+  default to the current stable release, with required operator-managed secrets
+  and an optional matching scanner-agent profile.
+- A canonical installation and upgrade guide covering quick evaluation,
+  production deployment, source development, scanner setup, image tags, and
+  safe upgrades.
+
+### Changed
+
+- Reorganized the README as a product landing page with clearer positioning,
+  audience guidance, feature groupings, a short release-image quick start, and
+  direct navigation to operational and technical documentation.
+
 ### Fixed
 
 - Flaky `TestOpenRejectsTampering` in `internal/secret`: the test tampered with

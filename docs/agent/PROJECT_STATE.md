@@ -45,7 +45,7 @@ file** — a stale snapshot here is worse than none.
 
 ## Known limitations
 
-(See the README "Limitations" section for the authoritative list.)
+This is the agent-facing snapshot of current implementation constraints.
 
 - **IPv4 only** — no IPv6 anywhere in the stack.
 - **SNMP is v2c only**; one read community per agent.
@@ -58,13 +58,9 @@ file** — a stale snapshot here is worse than none.
 
 ## Open findings
 
-An audit pass (2026-07-10) surfaced 9 findings; CSV formula injection (0001) and
-cookie `Secure`/TLS deployment guidance (0003) are fixed (see `CHANGELOG.md`).
-7 remain open: missing HSTS/CSP hardening, viewer token-minting policy, webhook
-SSRF-guard parity, a transient export 503, thin audit-log metadata, a non-JSON
-405 response, and two doc nits — see [`docs/agent/findings/`](findings/README.md)
-for the tracker. Each file has priority and implementation instructions for
-whoever picks it up.
+The 2026-07-10 audit findings are all fixed, closed, or investigated. See
+[`docs/agent/findings/`](findings/README.md) for the empty tracker and
+[`CHANGELOG.md`](../../CHANGELOG.md) for the shipped fixes.
 
 ## What's next
 

@@ -101,9 +101,10 @@ Add the same `-dns`/`-ip` SAN flags to the trailing `go run …` as needed. This
 a one-time step — the agent and app mount the resulting `deploy/scanner-certs/`
 read-only.
 
-Production deployments should issue agent certificates from a managed CA with
-rotation rather than this dev generator. See ADR 0002 and the roadmap's Phase 5
-(agent mTLS rotation).
+Production deployments should issue app and agent bundles from LightIPAM's
+managed CA and rotate them through the operator workflow rather than relying on
+this development generator. See ADRs 0002 and 0018. Online agent-pull enrollment
+is not implemented; operators still deploy issued bundles to the agent.
 
 ### Certificate file ownership on Linux
 
@@ -188,6 +189,15 @@ it.
 
 The agent is behind the `scanner` Compose profile, so the default `docker
 compose up` (app + db) is unaffected.
+
+For a published-image deployment, configure `.env` as described in the
+[installation guide](INSTALLATION.md#optional-scanner-agent), then run:
+
+```sh
+docker compose --env-file .env -f compose.release.yaml --profile scanner up -d
+```
+
+For a source-build deployment:
 
 ```sh
 go run ./cmd/scanner-certs -dir deploy/scanner-certs
