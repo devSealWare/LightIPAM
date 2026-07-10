@@ -12,6 +12,12 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Startup panic introduced by the finding-0008 405 fix: the bare (method-less)
+  405-fallback pattern conflicted with the UI's `GET /` catch-all route,
+  crashing `App.New()` on every boot. Replaced it with explicit per-method
+  registration of each path's unsupported methods, which doesn't collide with
+  the catch-all. Added a regression test that registers the API routes
+  alongside a stand-in `GET /` handler.
 - Audit log metadata (docs/agent/findings/0007): `subnet.*`/`address.*`/`device.*`
   create and update events (both the web UI and `/api/v1`) now record the CIDR,
   name, address, or hostname involved instead of an empty `{}`, and the scanner
