@@ -12,6 +12,10 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- `/api/v1` 405 responses use the JSON error envelope (docs/agent/findings/0008):
+  an unsupported method on a registered API path now returns
+  `{"error": "method not allowed"}` with `Content-Type: application/json`
+  instead of `net/http`'s built-in plain-text 405. UI routes are unaffected.
 - README JS-framework wording (docs/agent/findings/0009): the Stack section's
   "no client-side JavaScript framework" line now clarifies that a few
   first-party scripts under `internal/ui/static/` progressively enhance

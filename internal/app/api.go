@@ -60,6 +60,26 @@ func (a *App) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/devices/{id}", a.apiHandler(false, a.apiGetDevice))
 	mux.HandleFunc("PUT /api/v1/devices/{id}", a.apiHandler(true, a.apiUpdateDevice))
 	mux.HandleFunc("DELETE /api/v1/devices/{id}", a.apiHandler(true, a.apiDeleteDevice))
+
+	// Bare (method-less) fallback per registered path: ServeMux only auto-emits its
+	// plain-text 405 when no pattern at all matches an unsupported method. Registering
+	// these less-specific catch-alls means unsupported methods fall through to them
+	// instead, keeping every /api/v1 response — including 405s — in the JSON envelope.
+	for _, path := range []string{
+		"/api/v1/whoami",
+		"/api/v1/subnets",
+		"/api/v1/subnets/{id}",
+		"/api/v1/subnets/{id}/addresses",
+		"/api/v1/addresses/{id}",
+		"/api/v1/devices",
+		"/api/v1/devices/{id}",
+	} {
+		mux.HandleFunc(path, apiMethodNotAllowed)
+	}
+}
+
+func apiMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	apiError(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
 // apiHandler authenticates the bearer token, enforces the role for writes, and

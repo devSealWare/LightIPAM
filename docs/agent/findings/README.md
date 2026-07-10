@@ -20,7 +20,6 @@ finding linger here alongside shipped history.
 | [0005](0005-webhook-ssrf-guard-parity.md) | Webhook dispatcher may lack the agent-endpoint SSRF guard | Security | Medium-High |
 | [0006](0006-export-transient-503.md) | Transient 503 on repeated `/subnets/export.csv` requests | Reliability | Medium |
 | [0007](0007-audit-log-metadata-empty.md) | Audit log metadata mostly empty; `scan.discovery.recorded` mislabels a count as `status` | Observability | Low-Medium |
-| [0008](0008-405-plaintext-response.md) | 405 Method Not Allowed returns plain text instead of the JSON error envelope | API consistency | Low |
 
 ## Priority key
 
