@@ -12,6 +12,12 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Viewer API token creation restricted to admins (docs/agent/findings/0004):
+  `POST /account/tokens` now requires the writer (admin) role, and the
+  "Create token" form is hidden for viewers on the account page. Token
+  deletion stays self-service for every role. Documented the RBAC policy
+  (the `/account/*` blanket exemption vs. this explicit token-creation check)
+  in `docs/SECURITY.md`.
 - Startup panic introduced by the finding-0008 405 fix: the bare (method-less)
   405-fallback pattern conflicted with the UI's `GET /` catch-all route,
   crashing `App.New()` on every boot. Replaced it with explicit per-method

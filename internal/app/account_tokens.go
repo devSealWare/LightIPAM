@@ -13,11 +13,17 @@ import (
 const apiTokenPrefix = "lipam_"
 
 // accountTokenCreate mints a new API token for the signed-in user and shows the
-// plaintext once. The token inherits the user's role, so a viewer's token is
-// read-only on the API.
+// plaintext once. Restricted to admins (finding 0004): although a token
+// inherits its creator's role and a viewer's token would be read-only, token
+// creation is gated on the writer role as a matter of policy so operators can
+// bound the number of long-lived credentials that can touch /api/v1.
 func (a *App) accountTokenCreate(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.requireSession(w, r)
 	if !ok {
+		return
+	}
+	if !canWrite(session.User.Role) {
+		http.Error(w, "Only admins can create API tokens.", http.StatusForbidden)
 		return
 	}
 	if !a.verifySessionCSRF(r, session) {
