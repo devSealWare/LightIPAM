@@ -16,7 +16,6 @@ finding linger here alongside shipped history.
 | # | Finding | Area | Priority |
 |---|---------|------|----------|
 | [0002](0002-missing-hsts-csp-hardening.md) | Missing HSTS header; CSP missing `base-uri`/`object-src` | Security | Medium-High |
-| [0006](0006-export-transient-503.md) | Transient 503 on repeated `/subnets/export.csv` requests | Reliability | Medium |
 
 ## Priority key
 

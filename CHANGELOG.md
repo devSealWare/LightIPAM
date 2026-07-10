@@ -10,6 +10,20 @@ migration, requires a major-version bump.
 
 ## [Unreleased]
 
+### Investigated
+
+- Transient 503 on repeated `/subnets/export.csv` requests
+  (docs/agent/findings/0006): not reproduced. Sequential rapid requests and
+  concurrent bursts up to 300 simultaneous requests against `/subnets/export.csv`,
+  `/addresses/export.csv`, and `/devices/export.csv` all returned `200` with no
+  server-side errors. Static review confirms no code path in the export
+  handlers or their store calls can emit a `503` today — the only `503` sources
+  in the app are `/readyz` and two unrelated MFA config-error paths — so the
+  original observation is most likely an artifact of the reporting
+  environment (proxy, dev tooling, or a one-off DB cold-start race) rather
+  than application code. Closing without a code change; reopen as a new
+  finding with concrete repro steps if it recurs.
+
 ### Fixed
 
 - Webhook Payload URL SSRF guard (docs/agent/findings/0005): webhook create/update
