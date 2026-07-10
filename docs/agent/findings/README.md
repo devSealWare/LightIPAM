@@ -13,9 +13,7 @@ finding linger here alongside shipped history.
 
 ## Open findings
 
-| # | Finding | Area | Priority |
-|---|---------|------|----------|
-| [0002](0002-missing-hsts-csp-hardening.md) | Missing HSTS header; CSP missing `base-uri`/`object-src` | Security | Medium-High |
+None currently open.
 
 ## Priority key
 
