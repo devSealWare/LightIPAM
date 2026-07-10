@@ -465,7 +465,7 @@ func (a *App) subnetCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.saveCustomFieldValues(r, store.CustomFieldSubnet, subnet.ID)
-	a.audit(r, &session.User.ID, "subnet.created", "subnet", subnet.ID)
+	a.auditMeta(r, &session.User.ID, "subnet.created", "subnet", subnet.ID, map[string]string{"cidr": subnet.CIDR, "name": subnet.Name})
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
 }
 
@@ -527,7 +527,7 @@ func (a *App) subnetUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.saveCustomFieldValues(r, store.CustomFieldSubnet, updated.ID)
-	a.audit(r, &session.User.ID, "subnet.updated", "subnet", updated.ID)
+	a.auditMeta(r, &session.User.ID, "subnet.updated", "subnet", updated.ID, map[string]string{"cidr": updated.CIDR, "name": updated.Name})
 	http.Redirect(w, r, "/subnets/"+updated.ID, http.StatusSeeOther)
 }
 
@@ -545,7 +545,7 @@ func (a *App) subnetDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to delete subnet", http.StatusInternalServerError)
 		return
 	}
-	a.audit(r, &session.User.ID, "subnet.deleted", "subnet", subnet.ID)
+	a.auditMeta(r, &session.User.ID, "subnet.deleted", "subnet", subnet.ID, map[string]string{"cidr": subnet.CIDR, "name": subnet.Name})
 	http.Redirect(w, r, "/subnets", http.StatusSeeOther)
 }
 
@@ -589,7 +589,7 @@ func (a *App) addressCreate(w http.ResponseWriter, r *http.Request) {
 		a.renderSubnetDetailError(w, r, session, subnet, addressError(err))
 		return
 	}
-	a.audit(r, &session.User.ID, "address.created", "ip_address", address.ID)
+	a.auditMeta(r, &session.User.ID, "address.created", "ip_address", address.ID, map[string]string{"address": address.Address, "hostname": address.Hostname})
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
 }
 
@@ -621,7 +621,7 @@ func (a *App) addressUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.saveCustomFieldValues(r, store.CustomFieldAddress, updated.ID)
-	a.audit(r, &session.User.ID, "address.updated", "ip_address", updated.ID)
+	a.auditMeta(r, &session.User.ID, "address.updated", "ip_address", updated.ID, map[string]string{"address": updated.Address, "hostname": updated.Hostname})
 	http.Redirect(w, r, "/subnets/"+subnet.ID, http.StatusSeeOther)
 }
 
@@ -719,7 +719,7 @@ func (a *App) deviceCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.saveCustomFieldValues(r, store.CustomFieldDevice, device.ID)
-	a.audit(r, &session.User.ID, "device.created", "device", device.ID)
+	a.auditMeta(r, &session.User.ID, "device.created", "device", device.ID, map[string]string{"name": device.Name})
 	http.Redirect(w, r, "/devices/"+device.ID, http.StatusSeeOther)
 }
 
@@ -794,7 +794,7 @@ func (a *App) deviceUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.saveCustomFieldValues(r, store.CustomFieldDevice, updated.ID)
-	a.audit(r, &session.User.ID, "device.updated", "device", updated.ID)
+	a.auditMeta(r, &session.User.ID, "device.updated", "device", updated.ID, map[string]string{"name": updated.Name})
 	http.Redirect(w, r, "/devices/"+updated.ID, http.StatusSeeOther)
 }
 
@@ -812,7 +812,7 @@ func (a *App) deviceDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unable to delete device", http.StatusInternalServerError)
 		return
 	}
-	a.audit(r, &session.User.ID, "device.deleted", "device", device.ID)
+	a.auditMeta(r, &session.User.ID, "device.deleted", "device", device.ID, map[string]string{"name": device.Name})
 	http.Redirect(w, r, "/devices", http.StatusSeeOther)
 }
 

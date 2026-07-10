@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -127,6 +128,20 @@ func TestSyncImportedGuards(t *testing.T) {
 				t.Fatal("expected no sync")
 			}
 		})
+	}
+}
+
+func TestAuditCountMetadata(t *testing.T) {
+	got := auditCountMetadata("recorded_count", 17)
+	var decoded map[string]int
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got %q: %v", got, err)
+	}
+	if decoded["recorded_count"] != 17 {
+		t.Fatalf("expected recorded_count=17, got %+v", decoded)
+	}
+	if _, ok := decoded["status"]; ok {
+		t.Fatalf("count metadata should not use the status field: %+v", decoded)
 	}
 }
 
