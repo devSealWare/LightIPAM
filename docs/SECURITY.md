@@ -16,6 +16,21 @@ The app container should:
 
 Scanner containers may need capabilities such as `NET_RAW`, but only on hosts and networks where scanning is approved.
 
+### Deploying beyond localhost
+
+The quick-start in `README.md` serves plain HTTP, which is fine for loopback/dev
+use but sends session, CSRF, and OIDC-state cookies without the `Secure`
+attribute — they traverse cleartext. Before deploying past localhost:
+
+- Terminate TLS in front of the app with a reverse proxy (nginx, Caddy, Traefik).
+- Set `COOKIE_SECURE=true` so those cookies get `Secure`, and so the app emits
+  `Strict-Transport-Security` (see Product Security Features below).
+
+`COOKIE_SECURE` defaults to `false` (opt-in) rather than `true` with an
+opt-out, so a bare local/dev instance isn't broken out of the box. Whether that
+default should flip is an open product decision for the maintainer, not
+something to change silently.
+
 ## Agent Trust
 
 Agents should use:

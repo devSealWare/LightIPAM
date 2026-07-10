@@ -140,6 +140,13 @@ docker compose up --build -d
 
 Open `http://localhost:8080` and create the first admin from the bootstrap page.
 
+> **Plaintext HTTP by default.** This quick-start serves over plain HTTP, so
+> session, CSRF, and OIDC cookies are sent without the `Secure` attribute and
+> traverse cleartext. That's fine for loopback/local use, but before deploying
+> anywhere else: terminate TLS with a reverse proxy (nginx/Caddy/Traefik) in
+> front of the app and set `COOKIE_SECURE=true`. See
+> [docs/SECURITY.md → Deploying beyond localhost](docs/SECURITY.md#deploying-beyond-localhost).
+
 > If host port 8080 is already taken, publish elsewhere without editing
 > `compose.yaml`: copy `.env.example` to `.env` and set e.g. `APP_PORT=31415`,
 > then `docker compose up -d`. The `.env` is gitignored, so it survives upgrades.

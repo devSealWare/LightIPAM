@@ -58,9 +58,9 @@ file** — a stale snapshot here is worse than none.
 
 ## Open findings
 
-An audit pass (2026-07-10) surfaced 9 findings; CSV formula injection (0001) is
-fixed (see `CHANGELOG.md`). 8 remain open: missing HSTS/CSP hardening, cookie
-`Secure`/TLS deployment guidance, viewer token-minting policy, webhook
+An audit pass (2026-07-10) surfaced 9 findings; CSV formula injection (0001) and
+cookie `Secure`/TLS deployment guidance (0003) are fixed (see `CHANGELOG.md`).
+7 remain open: missing HSTS/CSP hardening, viewer token-minting policy, webhook
 SSRF-guard parity, a transient export 503, thin audit-log metadata, a non-JSON
 405 response, and two doc nits — see [`docs/agent/findings/`](findings/README.md)
 for the tracker. Each file has priority and implementation instructions for
