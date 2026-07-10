@@ -12,6 +12,12 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Cookie `Secure` flag / TLS deployment guidance (docs/agent/findings/0003):
+  README quick-start now warns that the default plain-HTTP setup sends
+  session/CSRF/OIDC cookies without `Secure`, and `docs/SECURITY.md` gains a
+  "Deploying beyond localhost" subsection covering `COOKIE_SECURE=true` plus a
+  TLS-terminating reverse proxy. Docs-only; the `COOKIE_SECURE` default itself
+  stays opt-in pending a separate maintainer decision.
 - Missing HSTS header and incomplete CSP (docs/agent/findings/0002): responses now
   include `Strict-Transport-Security: max-age=31536000; includeSubDomains` when
   `COOKIE_SECURE=true` (the existing flag operators set once TLS termination is
