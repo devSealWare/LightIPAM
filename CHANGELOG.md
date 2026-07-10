@@ -12,6 +12,12 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Webhook Payload URL SSRF guard (docs/agent/findings/0005): webhook create/update
+  now requires `https://` and rejects a literal loopback, link-local, or
+  unspecified IP (e.g. `169.254.169.254`) via the new `webhook.ValidateURL`,
+  matching the existing agent-endpoint guard. Plain `http://` webhook URLs are
+  no longer accepted — a behavior change for anyone who had configured one.
+  Documented both guards as a matched pair in `docs/SECURITY.md`.
 - Viewer API token creation restricted to admins (docs/agent/findings/0004):
   `POST /account/tokens` now requires the writer (admin) role, and the
   "Create token" form is hidden for viewers on the account page. Token

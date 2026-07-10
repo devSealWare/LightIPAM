@@ -226,7 +226,10 @@ func (d *Dispatcher) deliver(ctx context.Context, event Event) {
 }
 
 // send POSTs the payload to one webhook and returns the delivery result. It does
-// not persist the result; the caller records it.
+// not persist the result; the caller records it. wh.URL is trusted here — it was
+// already validated by ValidateURL at webhook create/update time (the only path
+// that writes it), so TestDeliver and every scheduled delivery go through the
+// same validated URL without re-resolving it against live DNS on each send.
 func (d *Dispatcher) send(ctx context.Context, wh store.Webhook, event Event, body []byte) store.WebhookDelivery {
 	result := store.WebhookDelivery{WebhookID: wh.ID, EventType: event.Type, Status: "failed"}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.URL, bytes.NewReader(body))
