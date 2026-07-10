@@ -67,6 +67,7 @@
       </div>
       {{ end }}
 
+      {{ if .User.IsAdmin }}
       <form method="post" action="/account/tokens" class="mt-5 flex flex-wrap items-end gap-3">
         <input type="hidden" name="csrf_token" value="{{ .CSRF }}">
         <label class="block">
@@ -75,6 +76,9 @@
         </label>
         <button class="button-primary" type="submit">Create token</button>
       </form>
+      {{ else }}
+      <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Only admins can create API tokens. You can still revoke your existing ones below.</p>
+      {{ end }}
 
       {{ if .APITokens }}
       <div class="mt-5 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">

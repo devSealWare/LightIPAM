@@ -59,6 +59,20 @@ Minimum viable security features:
   `COOKIE_SECURE=true` (i.e. the deployment is fronted by TLS) —
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
+### RBAC scope
+
+The `authorize` middleware (`internal/app/authz.go`) exempts every `/account/*`
+path from the admin-only write check — this is intentional: it's a per-user
+self-service surface (password change, MFA enrollment, session sign-out) that
+should not require an admin role, since a user is only ever acting on their own
+account there. That blanket exemption does **not** cover API token creation:
+`POST /account/tokens` has its own explicit `canWrite` (admin-role) check in
+`accountTokenCreate`, gating token creation to admins even though the account
+path itself is otherwise self-service. This keeps a hard bound on how many
+long-lived credentials can touch `/api/v1`, at the cost of viewers needing an
+admin to mint a token on their behalf. Token **deletion** stays self-service for
+every role — revoking your own token is not a privilege concern.
+
 ## Scan Safety
 
 Discovery supports graduated, allowlist-bounded policies. The nmap scan types take

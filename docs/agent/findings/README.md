@@ -16,7 +16,6 @@ finding linger here alongside shipped history.
 | # | Finding | Area | Priority |
 |---|---------|------|----------|
 | [0002](0002-missing-hsts-csp-hardening.md) | Missing HSTS header; CSP missing `base-uri`/`object-src` | Security | Medium-High |
-| [0004](0004-viewer-token-minting.md) | Viewers can mint their own (read-only) API tokens | Security | Medium |
 | [0005](0005-webhook-ssrf-guard-parity.md) | Webhook dispatcher may lack the agent-endpoint SSRF guard | Security | Medium-High |
 | [0006](0006-export-transient-503.md) | Transient 503 on repeated `/subnets/export.csv` requests | Reliability | Medium |
 
