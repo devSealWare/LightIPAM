@@ -15,7 +15,6 @@ finding linger here alongside shipped history.
 
 | # | Finding | Area | Priority |
 |---|---------|------|----------|
-| [0001](0001-csv-formula-injection.md) | CSV formula injection in exports | Security | High |
 | [0002](0002-missing-hsts-csp-hardening.md) | Missing HSTS header; CSP missing `base-uri`/`object-src` | Security | Medium-High |
 | [0003](0003-cookie-secure-tls-guidance.md) | Cookie `Secure` flag is config-dependent; quick-start leads to plaintext HTTP | Security / Docs | Medium |
 | [0004](0004-viewer-token-minting.md) | Viewers can mint their own (read-only) API tokens | Security | Medium |
