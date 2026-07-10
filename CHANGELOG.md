@@ -10,6 +10,16 @@ migration, requires a major-version bump.
 
 ## [Unreleased]
 
+### Fixed
+
+- Flaky `TestOpenRejectsTampering` in `internal/secret`: the test tampered with
+  a sealed token by overwriting its last base64 character with a fixed
+  sentinel, but `RawURLEncoding`'s trailing padding bits mean that edit
+  sometimes decoded to the same byte, making the "should fail to open"
+  assertion intermittently and incorrectly fail (observed on several recent
+  CI runs, unrelated to those PRs' actual changes). Now flips a real decoded
+  ciphertext byte before re-encoding, which always changes the data.
+
 ### Investigated
 
 - Transient 503 on repeated `/subnets/export.csv` requests

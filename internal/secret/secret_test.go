@@ -1,6 +1,7 @@
 package secret
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -70,12 +71,17 @@ func TestSealRandomized(t *testing.T) {
 func TestOpenRejectsTampering(t *testing.T) {
 	s := newTestSealer(t)
 	token, _ := s.Seal("secret")
-	last := token[len(token)-1]
-	flipped := byte('A')
-	if last == 'A' {
-		flipped = 'B'
+	// Flip a decoded ciphertext byte, not the trailing base64 character: RawURLEncoding
+	// pads the last group's unused low bits with zeros, so a fixed-sentinel edit of the
+	// last character can land entirely within those padding bits and decode to the same
+	// byte — a no-op tamper that made this test flaky (~1/16 to ~1/4 of runs, depending
+	// on ciphertext length mod 3). XORing a real decoded byte always changes the data.
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, sealedPrefix))
+	if err != nil {
+		t.Fatalf("decode token: %v", err)
 	}
-	tampered := token[:len(token)-1] + string(flipped)
+	raw[len(raw)-1] ^= 0xFF
+	tampered := sealedPrefix + base64.RawURLEncoding.EncodeToString(raw)
 	if _, err := s.Open(tampered); err == nil {
 		t.Fatal("tampered token should fail to open")
 	}
