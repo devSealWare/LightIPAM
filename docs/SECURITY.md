@@ -38,6 +38,11 @@ Minimum viable security features:
 - CSRF protection for browser forms.
 - Secure session cookies.
 - Optional OIDC integration for production.
+- Baseline security headers on every response: CSP (`default-src 'self'`,
+  `base-uri 'self'`, `object-src 'none'`, no inline JS/CSS), `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and — when
+  `COOKIE_SECURE=true` (i.e. the deployment is fronted by TLS) —
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
 ## Scan Safety
 
