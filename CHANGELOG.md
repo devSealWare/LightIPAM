@@ -12,6 +12,12 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Audit log metadata (docs/agent/findings/0007): `subnet.*`/`address.*`/`device.*`
+  create and update events (both the web UI and `/api/v1`) now record the CIDR,
+  name, address, or hostname involved instead of an empty `{}`, and the scanner
+  orchestrator's `scan.discovery.recorded`/`auto_imported`/`synced` events now
+  write their counts under a named field (e.g. `recorded_count`) instead of
+  mislabeling them as `status`.
 - `/api/v1` 405 responses use the JSON error envelope (docs/agent/findings/0008):
   an unsupported method on a registered API path now returns
   `{"error": "method not allowed"}` with `Content-Type: application/json`

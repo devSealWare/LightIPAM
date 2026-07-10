@@ -262,7 +262,7 @@ func (a *App) apiCreateSubnet(w http.ResponseWriter, r *http.Request, user store
 		apiError(w, http.StatusBadRequest, subnetError(err))
 		return
 	}
-	a.audit(r, &user.ID, "subnet.created", "subnet", s.ID)
+	a.auditMeta(r, &user.ID, "subnet.created", "subnet", s.ID, map[string]string{"cidr": s.CIDR, "name": s.Name})
 	writeJSON(w, http.StatusCreated, subnetToJSON(s))
 }
 
@@ -286,7 +286,7 @@ func (a *App) apiUpdateSubnet(w http.ResponseWriter, r *http.Request, user store
 		apiError(w, http.StatusBadRequest, subnetError(err))
 		return
 	}
-	a.audit(r, &user.ID, "subnet.updated", "subnet", s.ID)
+	a.auditMeta(r, &user.ID, "subnet.updated", "subnet", s.ID, map[string]string{"cidr": s.CIDR, "name": s.Name})
 	writeJSON(w, http.StatusOK, subnetToJSON(s))
 }
 
@@ -369,7 +369,7 @@ func (a *App) apiCreateAddress(w http.ResponseWriter, r *http.Request, user stor
 		apiError(w, http.StatusBadRequest, addressError(err))
 		return
 	}
-	a.audit(r, &user.ID, "address.created", "ip_address", addr.ID)
+	a.auditMeta(r, &user.ID, "address.created", "ip_address", addr.ID, map[string]string{"address": addr.Address, "hostname": addr.Hostname})
 	writeJSON(w, http.StatusCreated, addressToJSON(addr))
 }
 
@@ -397,7 +397,7 @@ func (a *App) apiUpdateAddress(w http.ResponseWriter, r *http.Request, user stor
 		apiError(w, http.StatusBadRequest, addressError(err))
 		return
 	}
-	a.audit(r, &user.ID, "address.updated", "ip_address", addr.ID)
+	a.auditMeta(r, &user.ID, "address.updated", "ip_address", addr.ID, map[string]string{"address": addr.Address, "hostname": addr.Hostname})
 	writeJSON(w, http.StatusOK, addressToJSON(addr))
 }
 
@@ -467,7 +467,7 @@ func (a *App) apiCreateDevice(w http.ResponseWriter, r *http.Request, user store
 	if apiHandleStoreErr(w, err) {
 		return
 	}
-	a.audit(r, &user.ID, "device.created", "device", d.ID)
+	a.auditMeta(r, &user.ID, "device.created", "device", d.ID, map[string]string{"name": d.Name})
 	writeJSON(w, http.StatusCreated, deviceToJSON(d))
 }
 
@@ -485,7 +485,7 @@ func (a *App) apiUpdateDevice(w http.ResponseWriter, r *http.Request, user store
 	if apiHandleStoreErr(w, err) {
 		return
 	}
-	a.audit(r, &user.ID, "device.updated", "device", d.ID)
+	a.auditMeta(r, &user.ID, "device.updated", "device", d.ID, map[string]string{"name": d.Name})
 	writeJSON(w, http.StatusOK, deviceToJSON(d))
 }
 

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -221,13 +220,13 @@ func (s *Service) recordDiscoveries(ctx context.Context, agent store.ScanAgent, 
 		}
 	}
 	if recorded > 0 {
-		s.audit(ctx, nil, "scan.discovery.recorded", job.ID, strconv.Itoa(recorded))
+		s.auditCount(ctx, "scan.discovery.recorded", job.ID, "recorded_count", recorded)
 	}
 	if imported > 0 {
-		s.audit(ctx, nil, "scan.discovery.auto_imported", job.ID, strconv.Itoa(imported))
+		s.auditCount(ctx, "scan.discovery.auto_imported", job.ID, "imported_count", imported)
 	}
 	if synced > 0 {
-		s.audit(ctx, nil, "scan.discovery.synced", job.ID, strconv.Itoa(synced))
+		s.auditCount(ctx, "scan.discovery.synced", job.ID, "synced_count", synced)
 	}
 }
 
@@ -483,6 +482,19 @@ func (s *Service) auditSubject(ctx context.Context, actor *string, action, subje
 	if err := s.store.CreateAuditLog(ctx, actor, action, subjectType, subjectID, metadata); err != nil {
 		s.logger.Error("create scan audit log", "action", action, "error", err)
 	}
+}
+
+// auditCount writes an audit entry whose metadata is a named integer count,
+// rather than being shoehorned into the string-typed "status" field auditSubject
+// uses (e.g. scan.discovery.recorded's count of discoveries, not a status).
+func (s *Service) auditCount(ctx context.Context, action, subjectID, field string, count int) {
+	if err := s.store.CreateAuditLog(ctx, nil, action, "scan_job", subjectID, auditCountMetadata(field, count)); err != nil {
+		s.logger.Error("create scan audit log", "action", action, "error", err)
+	}
+}
+
+func auditCountMetadata(field string, count int) string {
+	return fmt.Sprintf(`{%q:%d}`, field, count)
 }
 
 func registrationFromAgent(agent store.ScanAgent) scanner.AgentRegistration {
