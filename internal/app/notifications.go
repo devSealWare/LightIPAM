@@ -218,10 +218,9 @@ func parseWebhookForm(form url.Values) (store.WebhookInput, string, error) {
 	if name == "" {
 		return store.WebhookInput{}, "", errors.New("Webhook name is required.")
 	}
-	rawURL := strings.TrimSpace(form.Get("url"))
-	u, err := url.Parse(rawURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return store.WebhookInput{}, "", errors.New("Enter a valid http:// or https:// URL.")
+	normalizedURL, err := webhook.ValidateURL(form.Get("url"))
+	if err != nil {
+		return store.WebhookInput{}, "", err
 	}
 	var events []string
 	seen := make(map[string]bool, 4)
@@ -240,7 +239,7 @@ func parseWebhookForm(form url.Values) (store.WebhookInput, string, error) {
 	}
 	return store.WebhookInput{
 		Name:    name,
-		URL:     rawURL,
+		URL:     normalizedURL,
 		Events:  events,
 		Enabled: form.Get("enabled") != "",
 	}, strings.TrimSpace(form.Get("secret")), nil

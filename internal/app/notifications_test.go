@@ -56,6 +56,9 @@ func TestParseWebhookForm(t *testing.T) {
 		{"missing name", url.Values{"url": {"https://x.test"}}},
 		{"missing url", url.Values{"name": {"x"}}},
 		{"non-http scheme", url.Values{"name": {"x"}, "url": {"ftp://x.test"}}},
+		{"plain http rejected (finding 0005 SSRF guard)", url.Values{"name": {"x"}, "url": {"http://x.test"}}},
+		{"loopback rejected (finding 0005 SSRF guard)", url.Values{"name": {"x"}, "url": {"https://127.0.0.1/hook"}}},
+		{"link-local metadata rejected (finding 0005 SSRF guard)", url.Values{"name": {"x"}, "url": {"https://169.254.169.254/latest/meta-data"}}},
 		{"url without host", url.Values{"name": {"x"}, "url": {"https://"}}},
 		{"bad event category", url.Values{"name": {"x"}, "url": {"https://x.test"}, "event": {"bogus"}}},
 	}

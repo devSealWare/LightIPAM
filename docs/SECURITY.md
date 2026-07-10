@@ -41,6 +41,21 @@ Agents should use:
 - Rate limits and concurrency limits.
 - Local allowlists and denylists that cannot be bypassed by the app UI alone.
 
+### Outbound-URL SSRF guards
+
+Two admin-only surfaces make server-initiated outbound requests to an
+admin-supplied URL, and both share the same literal-IP SSRF guard:
+`scanner.ValidateAgentEndpoint` (`internal/scanner/endpoint.go`) for the
+scanner-agent endpoint, and `webhook.ValidateURL`
+(`internal/webhook/endpoint.go`) for the webhook Payload URL. Both require
+`https://` and reject a literal loopback, link-local, or unspecified IP (e.g.
+`127.0.0.1`, `169.254.169.254`, `::1`, `0.0.0.0`), but deliberately do **not**
+resolve hostnames or reject private RFC-1918 ranges — agents and some webhook
+receivers legitimately live on the private LAN. This is a first line of
+defense against a compromised or careless admin pointing either surface at
+cloud instance metadata or another internal-only service, not a substitute for
+admins trusting what they configure.
+
 ## Product Security Features
 
 Minimum viable security features:
