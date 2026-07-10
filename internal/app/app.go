@@ -243,7 +243,7 @@ func New(options Options) http.Handler {
 	// owner's role for writes.
 	app.registerAPIRoutes(mux)
 
-	return securityHeaders(app.authorize(mux))
+	return securityHeaders(app.authorize(mux), app.cfg.CookieSecure)
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
@@ -1803,12 +1803,19 @@ func intString(value int) string {
 	return strconv.Itoa(value)
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+// securityHeaders wraps next with the app's baseline security headers.
+// hstsEnabled mirrors CookieSecure (config.CookieSecure): both answer "is this
+// deployment fronted by TLS", so the same operator-set flag gates HSTS rather
+// than trusting a spoofable X-Forwarded-Proto header from an untrusted proxy.
+func securityHeaders(next http.Handler, hstsEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		if hstsEnabled {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

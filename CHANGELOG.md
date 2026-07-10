@@ -12,6 +12,11 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- Missing HSTS header and incomplete CSP (docs/agent/findings/0002): responses now
+  include `Strict-Transport-Security: max-age=31536000; includeSubDomains` when
+  `COOKIE_SECURE=true` (the existing flag operators set once TLS termination is
+  confirmed), and the CSP gains `base-uri 'self'; object-src 'none'` as
+  defense-in-depth alongside the existing directives.
 - CSV formula injection in exports (docs/agent/findings/0001): subnet, address,
   device, and NetBox-compatible CSV exports now sanitize any cell beginning with
   `=`, `+`, `-`, `@`, tab, or carriage return by prefixing it with a leading `'`,
