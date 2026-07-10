@@ -124,7 +124,9 @@ The design is intentionally split so risk stays isolated:
 - Backend: Go standard library `net/http`, `pgx` for PostgreSQL, embedded Go
   migrations. No large frameworks.
 - Frontend: server-rendered HTML templates with hand-written Tailwind CSS. No
-  client-side JavaScript framework; strict CSP (no inline JS/CSS).
+  client-side JavaScript framework — a few small first-party scripts
+  (`internal/ui/static/*.js`) progressively enhance specific forms (bulk edit,
+  scan form, column preferences); strict CSP (no inline JS/CSS).
 - Database: PostgreSQL 16.
 - Discovery: nmap plus stdlib SNMP (`gosnmp`), NetBIOS, mDNS, DNS, and DHCP
   lease-file parsing, wrapped by the scanner agent.

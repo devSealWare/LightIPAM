@@ -21,7 +21,6 @@ finding linger here alongside shipped history.
 | [0006](0006-export-transient-503.md) | Transient 503 on repeated `/subnets/export.csv` requests | Reliability | Medium |
 | [0007](0007-audit-log-metadata-empty.md) | Audit log metadata mostly empty; `scan.discovery.recorded` mislabels a count as `status` | Observability | Low-Medium |
 | [0008](0008-405-plaintext-response.md) | 405 Method Not Allowed returns plain text instead of the JSON error envelope | API consistency | Low |
-| [0009](0009-readme-js-wording-and-social-preview.md) | README JS-framework wording could mislead; GitHub social-preview image still unset | Docs | Low |
 
 ## Priority key
 

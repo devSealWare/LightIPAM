@@ -12,6 +12,10 @@ migration, requires a major-version bump.
 
 ### Fixed
 
+- README JS-framework wording (docs/agent/findings/0009): the Stack section's
+  "no client-side JavaScript framework" line now clarifies that a few
+  first-party scripts under `internal/ui/static/` progressively enhance
+  specific forms, so it can't be misread as claiming zero JavaScript.
 - Cookie `Secure` flag / TLS deployment guidance (docs/agent/findings/0003):
   README quick-start now warns that the default plain-HTTP setup sends
   session/CSRF/OIDC cookies without `Secure`, and `docs/SECURITY.md` gains a
