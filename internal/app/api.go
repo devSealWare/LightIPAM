@@ -61,20 +61,39 @@ func (a *App) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/devices/{id}", a.apiHandler(true, a.apiUpdateDevice))
 	mux.HandleFunc("DELETE /api/v1/devices/{id}", a.apiHandler(true, a.apiDeleteDevice))
 
-	// Bare (method-less) fallback per registered path: ServeMux only auto-emits its
-	// plain-text 405 when no pattern at all matches an unsupported method. Registering
-	// these less-specific catch-alls means unsupported methods fall through to them
-	// instead, keeping every /api/v1 response — including 405s — in the JSON envelope.
-	for _, path := range []string{
-		"/api/v1/whoami",
-		"/api/v1/subnets",
-		"/api/v1/subnets/{id}",
-		"/api/v1/subnets/{id}/addresses",
-		"/api/v1/addresses/{id}",
-		"/api/v1/devices",
-		"/api/v1/devices/{id}",
-	} {
-		mux.HandleFunc(path, apiMethodNotAllowed)
+	// For every registered API path, explicitly register the HTTP methods that
+	// path does NOT already support, pointed at a JSON 405 handler. A bare
+	// (method-less) pattern here would instead conflict with the UI's catch-all
+	// "GET /" route — ServeMux refuses to register a pattern that matches more
+	// methods than a competing pattern but a more specific path, since it can't
+	// rank the two unambiguously (this panics App.New() at startup). Registering
+	// one explicit method at a time keeps every pattern in the same "single
+	// method, exact path" class as the routes above, so there's no ambiguity.
+	registerAPIMethodNotAllowed(mux, "/api/v1/whoami", "GET")
+	registerAPIMethodNotAllowed(mux, "/api/v1/subnets", "GET", "POST")
+	registerAPIMethodNotAllowed(mux, "/api/v1/subnets/{id}", "GET", "PUT", "DELETE")
+	registerAPIMethodNotAllowed(mux, "/api/v1/subnets/{id}/addresses", "GET", "POST")
+	registerAPIMethodNotAllowed(mux, "/api/v1/addresses/{id}", "GET", "PUT", "DELETE")
+	registerAPIMethodNotAllowed(mux, "/api/v1/devices", "GET", "POST")
+	registerAPIMethodNotAllowed(mux, "/api/v1/devices/{id}", "GET", "PUT", "DELETE")
+}
+
+// apiMethods lists every HTTP method /api/v1 routes above ever register, so
+// registerAPIMethodNotAllowed can fill in the rest with a JSON 405 handler.
+var apiMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
+
+// registerAPIMethodNotAllowed registers a JSON-envelope 405 handler on path for
+// every method in apiMethods not already listed in registered.
+func registerAPIMethodNotAllowed(mux *http.ServeMux, path string, registered ...string) {
+	allowed := make(map[string]bool, len(registered))
+	for _, m := range registered {
+		allowed[m] = true
+	}
+	for _, method := range apiMethods {
+		if allowed[method] {
+			continue
+		}
+		mux.HandleFunc(method+" "+path, apiMethodNotAllowed)
 	}
 }
 

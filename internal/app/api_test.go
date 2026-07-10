@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+// TestRegisterAPIRoutesDoesNotConflictWithUICatchAll guards against the panic
+// App.New() hit in production when the 405 fallback used a bare (method-less)
+// pattern: ServeMux refuses to register a pattern matching more methods than a
+// competing pattern with a more specific path, and the UI's "GET /" catch-all
+// is exactly that competing pattern. registerAPIRoutes must register the mux
+// alongside it without panicking.
+func TestRegisterAPIRoutesDoesNotConflictWithUICatchAll(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("registering API routes alongside the UI catch-all panicked: %v", r)
+		}
+	}()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {})
+	(&App{}).registerAPIRoutes(mux)
+}
+
 func TestAPIMethodNotAllowedUsesJSONEnvelope(t *testing.T) {
 	mux := http.NewServeMux()
 	(&App{}).registerAPIRoutes(mux)
