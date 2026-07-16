@@ -1,0 +1,4 @@
+interface:
+  display_name: "LightIPAM GitHub Workflow"
+  short_description: "Follow LightIPAM GitHub contribution conventions"
+  default_prompt: "Use $lightipam-github-workflow to publish this LightIPAM change through the established branch, commit, pull request, validation, squash-merge, and cleanup workflow."
