@@ -180,7 +180,7 @@ func (a *App) addressesBulk(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "delete" && !req.Confirmed {
 		a.renderBulkDeleteConfirm(w, session, "subnets",
 			"Remove addresses",
-			"This removes the selected address records. You can add them again later.",
+			"This removes the selected address records. Any device left with no addresses is also deleted with its MAC records. You can add or rediscover them later.",
 			countSubject(len(req.IDs), "address"),
 			"/addresses/bulk", returnTo, "Remove addresses", req.IDs, req.SubnetID)
 		return
@@ -237,7 +237,7 @@ func (a *App) devicesBulk(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "delete" && !req.Confirmed {
 		a.renderBulkDeleteConfirm(w, session, "devices",
 			"Delete devices",
-			"This deletes the selected devices, removes their MAC addresses, and leaves linked IP records unassigned.",
+			"This deletes the selected devices and all of their linked IP and MAC records. A later scan can discover and import them again.",
 			countSubject(len(req.IDs), "device"),
 			"/devices/bulk", "/devices", "Delete devices", req.IDs, "")
 		return

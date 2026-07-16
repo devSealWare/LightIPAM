@@ -364,7 +364,9 @@ observation into `scan_discoveries` (`store.UpsertDiscovery`), keyed by IP:
 
 - A new host appears as **pending**.
 - Re-observing a host refreshes its details and `last_seen_at`, but does not
-  resurrect an already **imported** or **dismissed** host.
+  resurrect an already **dismissed** host. An **imported** host stays imported
+  while its managed address exists; if that inventory is deleted, the next scan
+  classifies it as new and returns it to pending so it can be imported again.
 
 In the UI an operator either:
 

@@ -637,7 +637,7 @@ func (a *App) addressDeleteConfirm(w http.ResponseWriter, r *http.Request) {
 		ActiveNav: "subnets",
 		Form: map[string]string{
 			"heading":      "Remove address",
-			"message":      "This removes the address record. You can add the address again later.",
+			"message":      "This removes the address record. If it is the device's last address, the device and its MAC records are also deleted. You can add or rediscover it later.",
 			"subject":      address.Address + " in " + subnet.Name,
 			"action":       "/addresses/" + address.ID + "/delete",
 			"cancel":       "/subnets/" + subnet.ID,
@@ -828,7 +828,7 @@ func (a *App) deviceDeleteConfirm(w http.ResponseWriter, r *http.Request) {
 		ActiveNav: "devices",
 		Form: map[string]string{
 			"heading":      "Delete device",
-			"message":      "This deletes the device, removes its MAC addresses, and leaves linked IP records unassigned.",
+			"message":      "This deletes the device and all of its linked IP and MAC records. A later scan can discover and import it again.",
 			"subject":      device.Name,
 			"action":       "/devices/" + device.ID + "/delete",
 			"cancel":       "/devices/" + device.ID,

@@ -41,11 +41,50 @@ WHERE id = ANY($1)`, ids)
 
 // BulkDeleteAddresses removes the given sparse address records.
 func (s *Store) BulkDeleteAddresses(ctx context.Context, ids []string) (int, error) {
-	tag, err := s.db.Exec(ctx, "DELETE FROM ip_addresses WHERE id = ANY($1)", ids)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin bulk delete addresses: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+DELETE FROM ip_addresses
+WHERE id = ANY($1)
+RETURNING COALESCE(device_id, '')`, ids)
 	if err != nil {
 		return 0, fmt.Errorf("bulk delete addresses: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+	var deviceIDs []string
+	count := 0
+	for rows.Next() {
+		var deviceID string
+		if err := rows.Scan(&deviceID); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan bulk deleted address: %w", err)
+		}
+		count++
+		if deviceID != "" {
+			deviceIDs = append(deviceIDs, deviceID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("bulk delete addresses: %w", err)
+	}
+	rows.Close()
+
+	if len(deviceIDs) > 0 {
+		if _, err := tx.Exec(ctx, `
+DELETE FROM devices d
+WHERE d.id = ANY($1)
+	AND NOT EXISTS (SELECT 1 FROM ip_addresses ip WHERE ip.device_id = d.id)`, deviceIDs); err != nil {
+			return 0, fmt.Errorf("bulk delete address orphan devices: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit bulk delete addresses: %w", err)
+	}
+	return count, nil
 }
 
 // BulkSetSubnetVLAN sets (or, with a nil vlan, clears) the VLAN on the given
@@ -72,12 +111,24 @@ func (s *Store) BulkDeleteSubnets(ctx context.Context, ids []string) (int, error
 	return int(tag.RowsAffected()), nil
 }
 
-// BulkDeleteDevices removes the given devices. Their MAC records cascade and
-// linked IP records are left unassigned, matching the single-device delete.
+// BulkDeleteDevices removes the given devices and their linked IP records. MAC
+// records cascade from the device deletion, matching the single-device delete.
 func (s *Store) BulkDeleteDevices(ctx context.Context, ids []string) (int, error) {
-	tag, err := s.db.Exec(ctx, "DELETE FROM devices WHERE id = ANY($1)", ids)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin bulk delete devices: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "DELETE FROM ip_addresses WHERE device_id = ANY($1)", ids); err != nil {
+		return 0, fmt.Errorf("bulk delete device addresses: %w", err)
+	}
+	tag, err := tx.Exec(ctx, "DELETE FROM devices WHERE id = ANY($1)", ids)
 	if err != nil {
 		return 0, fmt.Errorf("bulk delete devices: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit bulk delete devices: %w", err)
 	}
 	return int(tag.RowsAffected()), nil
 }
