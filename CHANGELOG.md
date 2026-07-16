@@ -10,6 +10,12 @@ migration, requires a major-version bump.
 
 ## [Unreleased]
 
+### Fixed
+
+- Device and address deletion now stays consistent across the Devices and
+  Subnets views, and a deleted imported host returns to the discovery review
+  queue as a new, importable observation when a later scan finds it again.
+
 ## [1.2.1] - 2026-07-10
 
 A backward-compatible patch release focused on security hardening, auditability,
