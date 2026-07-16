@@ -222,12 +222,24 @@ WHERE id = $1`, id, input.Name, input.Description)
 }
 
 func (s *Store) DeleteDevice(ctx context.Context, id string) error {
-	tag, err := s.db.Exec(ctx, "DELETE FROM devices WHERE id = $1", id)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin device delete: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "DELETE FROM ip_addresses WHERE device_id = $1", id); err != nil {
+		return fmt.Errorf("delete device addresses: %w", err)
+	}
+	tag, err := tx.Exec(ctx, "DELETE FROM devices WHERE id = $1", id)
 	if err != nil {
 		return fmt.Errorf("delete device: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit device delete: %w", err)
 	}
 	return nil
 }

@@ -302,12 +302,32 @@ WHERE id = $1`, id, emptyToNil(input.DeviceID), input.Address, input.State, inpu
 }
 
 func (s *Store) DeleteAddress(ctx context.Context, id string) error {
-	tag, err := s.db.Exec(ctx, "DELETE FROM ip_addresses WHERE id = $1", id)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin address delete: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var deviceID string
+	if err := tx.QueryRow(ctx, `
+DELETE FROM ip_addresses
+WHERE id = $1
+RETURNING COALESCE(device_id, '')`, id).Scan(&deviceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
 		return fmt.Errorf("delete address: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+	if deviceID != "" {
+		if _, err := tx.Exec(ctx, `
+DELETE FROM devices d
+WHERE d.id = $1
+	AND NOT EXISTS (SELECT 1 FROM ip_addresses ip WHERE ip.device_id = d.id)`, deviceID); err != nil {
+			return fmt.Errorf("delete address orphan device: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit address delete: %w", err)
 	}
 	return nil
 }

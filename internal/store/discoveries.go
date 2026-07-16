@@ -108,8 +108,9 @@ type DiscoveryUpsert struct {
 }
 
 // UpsertDiscovery records (or refreshes) a discovered host keyed by IP. An
-// existing row's review status is preserved: imported and dismissed hosts are
-// not resurrected to pending when they are seen again. Each observation is
+// existing row's review status is preserved except when an imported address was
+// deleted and is now observed as new; that host returns to pending so it can be
+// imported again. Dismissed hosts are never resurrected. Each observation is
 // reconciled against the managed IPAM records (see reconcileDiscovery): the
 // resulting status/conflict note is stored, and a matching managed address has
 // its last_seen_at refreshed (the only IPAM write a scan performs on its own).
@@ -155,6 +156,16 @@ ON CONFLICT (ip) DO UPDATE SET
 	-- MAC-only source (SNMP ARP harvest) merging onto the same IP does not wipe
 	-- the services an nmap scan recorded. A non-empty list still replaces wholesale.
 	services = CASE WHEN jsonb_array_length(EXCLUDED.services) > 0 THEN EXCLUDED.services ELSE scan_discoveries.services END,
+	-- Deleting imported inventory clears imported_address_id through its foreign
+	-- key. If a later scan now sees the IP as unmanaged, reopen it for review;
+	-- otherwise preserve the operator's imported/dismissed decision.
+	status = CASE
+		WHEN scan_discoveries.status = 'imported'
+			AND scan_discoveries.imported_address_id IS NULL
+			AND EXCLUDED.reconcile_status = 'new'
+		THEN 'pending'
+		ELSE scan_discoveries.status
+	END,
 	reconcile_status = EXCLUDED.reconcile_status,
 	conflict = EXCLUDED.conflict,
 	last_seen_at = now(),
